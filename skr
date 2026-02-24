@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+if command -v readlink >/dev/null 2>&1; then
+  RESOLVED="$(readlink -f "${SCRIPT_PATH}" 2>/dev/null || true)"
+  if [ -n "${RESOLVED}" ]; then
+    SCRIPT_PATH="${RESOLVED}"
+  fi
+fi
+ROOT_DIR="$(cd "$(dirname "${SCRIPT_PATH}")" && pwd)"
+CLI_DIR="${ROOT_DIR}/skuare-cli"
+DIST_ENTRY="${CLI_DIR}/dist/index.js"
+BUILD_STAMP="${CLI_DIR}/dist/.build-stamp"
+
+needs_build() {
+  [ -f "${DIST_ENTRY}" ] || return 0
+  [ -f "${BUILD_STAMP}" ] || return 0
+
+  # Source/config changes should invalidate dist.
+  for p in "${CLI_DIR}/src" "${CLI_DIR}/package.json" "${CLI_DIR}/package-lock.json" "${CLI_DIR}/tsconfig.json"; do
+    [ -e "${p}" ] || continue
+    if find "${p}" -type f -newer "${BUILD_STAMP}" -print -quit | grep -q .; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+if needs_build; then
+  npm --prefix "${CLI_DIR}" run build >/dev/null
+  touch "${BUILD_STAMP}"
+fi
+
+node "${DIST_ENTRY}" "$@"

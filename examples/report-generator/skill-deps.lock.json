@@ -1,0 +1,7 @@
+{
+  "lock_version": 1,
+  "dependencies": [
+    { "skill": "data-normalizer", "version": "1.0.0", "resolved": "1.0.0" },
+    { "skill": "schema-validator", "version": "1.0.0", "resolved": "1.0.0" }
+  ]
+}

@@ -1,0 +1,2 @@
+svc: cd skuare-svc && GOCACHE=/tmp/go-cache-skuare go run ./cmd/skuare-svc --addr 127.0.0.1:15657 --spec-dir ../spec
+cli-build: cd skuare-cli && npm run build -- --watch

@@ -1,0 +1,155 @@
+/**
+ * HTTP 客户端 - 负责发送 API 请求
+ */
+
+import type { HttpMethod, JsonValue } from "../types";
+import { signWriteRequest, type SignatureHeaders } from "./signer";
+
+/**
+ * API 请求选项
+ */
+export type ApiRequestOptions = {
+  method: HttpMethod;
+  path: string;
+  body?: JsonValue;
+  auth?: { keyId: string; privateKeyFile: string };
+  server: string;
+  localMode?: boolean;
+  silent?: boolean;
+};
+
+export type ApiResponse = {
+  status: number;
+  data: JsonValue | string | null;
+};
+
+/**
+ * 检查服务器连通性
+ * @param address 服务器地址
+ * @param port 服务器端口
+ * @param timeoutMs 超时时间（毫秒）
+ * @returns 连通性检查结果
+ */
+export async function checkServerConnectivity(
+  address: string,
+  port: number,
+  timeoutMs: number
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const path = require("node:path") as { join(...parts: string[]): string };
+  const target = `${buildServerURL(address, port)}/healthz`;
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
+
+  try {
+    const resp = await fetch(target, { method: "GET", signal: ctl.signal });
+    if (resp.ok) {
+      return { ok: true };
+    }
+    return { ok: false, reason: `HTTP ${resp.status}` };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, reason: msg };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * 调用 API
+ * @param options 请求选项
+ */
+export async function callApi(options: ApiRequestOptions): Promise<ApiResponse> {
+  const { method, path, body, auth, server, localMode, silent } = options;
+  const url = buildUrl(path, server);
+  const bodyText = body ? JSON.stringify(body) : "";
+  const headers: Record<string, string> = {};
+
+  if (body) {
+    headers["content-type"] = "application/json";
+  }
+
+  if (needsSignature(method, path, !!localMode)) {
+    if (!auth) {
+      throw new Error("Missing signing credentials for write operation");
+    }
+    const signed = await signWriteRequest(method, path, bodyText, auth);
+    Object.assign(headers, signed);
+  }
+
+  const resp = await fetch(url, {
+    method,
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
+    body: bodyText || undefined,
+  });
+
+  const text = await resp.text();
+  const data = text ? tryParseJson(text) : null;
+
+  if (!resp.ok) {
+    throw new Error(
+      `HTTP ${resp.status} ${resp.statusText}: ${typeof data === "string" ? data : JSON.stringify(data)}`
+    );
+  }
+
+  if (!silent) {
+    console.log(JSON.stringify(data, null, 2));
+  }
+  return {
+    status: resp.status,
+    data,
+  };
+}
+
+/**
+ * 判断请求是否需要签名
+ */
+function needsSignature(method: HttpMethod, path: string, localMode: boolean): boolean {
+  if (localMode) {
+    return false;
+  }
+  return (
+    method === "DELETE" ||
+    (method === "POST" && (path === "/api/v1/skills" || path === "/api/v1/reindex"))
+  );
+}
+
+/**
+ * 构建完整的 URL
+ */
+function buildUrl(path: string, server: string): string {
+  const url = new URL(path, ensureTrailingSlash(server)).toString();
+  return url;
+}
+
+/**
+ * 确保服务器 URL 以斜杠结尾
+ */
+function ensureTrailingSlash(server: string): string {
+  return server.endsWith("/") ? server : `${server}/`;
+}
+
+/**
+ * 尝试解析 JSON，失败则返回原文本
+ */
+function tryParseJson(text: string): JsonValue | string {
+  try {
+    return JSON.parse(text) as JsonValue;
+  } catch {
+    return text;
+  }
+}
+
+/**
+ * 构建服务器 URL
+ */
+function buildServerURL(address: string, port: number): string {
+  const host = normalizeAddress(address);
+  return `http://${host}:${port}`;
+}
+
+/**
+ * 规范化地址
+ */
+function normalizeAddress(v: string): string {
+  return v.trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
+}

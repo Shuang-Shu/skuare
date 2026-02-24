@@ -1,0 +1,75 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Node.js / TypeScript (frontend)
+node_modules/
+dist/
+build/
+coverage/
+.next/
+out/
+.vite/
+*.tsbuildinfo
+
+# Frontend frameworks & tools
+.nuxt/
+.output/
+.svelte-kit/
+.astro/
+.parcel-cache/
+rollup.config.js.bak
+*.local
+
+# Lock files (keep one for your package manager)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Package manager caches
+.pnpm-store/
+.npm/
+.yarn/
+
+# Go (backend)
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.out
+
+# Go workspace / vendoring (keep if intentionally committed)
+go.work.sum
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Local tooling
+.specstory/
+.skuare
+plan

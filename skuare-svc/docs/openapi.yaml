@@ -1,0 +1,298 @@
+openapi: 3.0.3
+info:
+  title: skuare-svc SkillHub API
+  version: 0.1.0
+servers:
+  - url: http://localhost:15657
+paths:
+  /healthz:
+    get:
+      summary: 健康检查
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  name:
+                    type: string
+  /api/v1/skills:
+    get:
+      summary: 列出 skill 版本
+      parameters:
+        - in: query
+          name: q
+          schema:
+            type: string
+          required: false
+          description: 按 skill_id/name/description 过滤
+      responses:
+        '200':
+          description: 列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SkillEntry'
+    post:
+      summary: 创建 skill 版本
+      parameters:
+        - $ref: '#/components/parameters/SignatureKeyID'
+        - $ref: '#/components/parameters/SignatureTimestamp'
+        - $ref: '#/components/parameters/SignatureNonce'
+        - $ref: '#/components/parameters/SignatureValue'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSkillVersionRequest'
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillEntry'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/v1/skills/{skillID}:
+    get:
+      summary: 获取 skill 概览
+      parameters:
+        - $ref: '#/components/parameters/SkillID'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillOverview'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/v1/skills/{skillID}/{version}:
+    get:
+      summary: 获取指定版本详情
+      parameters:
+        - $ref: '#/components/parameters/SkillID'
+        - $ref: '#/components/parameters/Version'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillDetail'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      summary: 删除指定版本
+      parameters:
+        - $ref: '#/components/parameters/SkillID'
+        - $ref: '#/components/parameters/Version'
+        - $ref: '#/components/parameters/SignatureKeyID'
+        - $ref: '#/components/parameters/SignatureTimestamp'
+        - $ref: '#/components/parameters/SignatureNonce'
+        - $ref: '#/components/parameters/SignatureValue'
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/v1/skills/{skillID}/{version}/validate:
+    post:
+      summary: 校验 skill 版本
+      parameters:
+        - $ref: '#/components/parameters/SkillID'
+        - $ref: '#/components/parameters/Version'
+      responses:
+        '200':
+          description: 校验通过
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillEntry'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/v1/reindex:
+    post:
+      summary: 重建索引
+      parameters:
+        - $ref: '#/components/parameters/SignatureKeyID'
+        - $ref: '#/components/parameters/SignatureTimestamp'
+        - $ref: '#/components/parameters/SignatureNonce'
+        - $ref: '#/components/parameters/SignatureValue'
+      responses:
+        '200':
+          description: 重建成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/ErrorResponse'
+
+components:
+  parameters:
+    SkillID:
+      in: path
+      name: skillID
+      required: true
+      schema:
+        type: string
+    Version:
+      in: path
+      name: version
+      required: true
+      schema:
+        type: string
+    SignatureKeyID:
+      in: header
+      name: X-Skuare-Key-Id
+      required: true
+      schema:
+        type: string
+    SignatureTimestamp:
+      in: header
+      name: X-Skuare-Timestamp
+      required: true
+      schema:
+        type: string
+    SignatureNonce:
+      in: header
+      name: X-Skuare-Nonce
+      required: true
+      schema:
+        type: string
+    SignatureValue:
+      in: header
+      name: X-Skuare-Signature
+      required: true
+      schema:
+        type: string
+
+  responses:
+    ErrorResponse:
+      description: 错误响应
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    CreateSkillVersionRequest:
+      type: object
+      required: [skill_id, version, skill]
+      properties:
+        skill_id:
+          type: string
+        version:
+          type: string
+        skill:
+          $ref: '#/components/schemas/SkillSpec'
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileSpec'
+    SkillSpec:
+      type: object
+      required: [description, overview]
+      properties:
+        description:
+          type: string
+        overview:
+          type: string
+        sections:
+          type: array
+          items:
+            $ref: '#/components/schemas/SkillSection'
+    SkillSection:
+      type: object
+      required: [title, content]
+      properties:
+        title:
+          type: string
+        content:
+          type: string
+    FileSpec:
+      type: object
+      required: [path, content]
+      properties:
+        path:
+          type: string
+        content:
+          type: string
+    SkillEntry:
+      type: object
+      properties:
+        skill_id:
+          type: string
+        version:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        path:
+          type: string
+        updated_at:
+          type: string
+    SkillOverview:
+      type: object
+      properties:
+        skill_id:
+          type: string
+        versions:
+          type: array
+          items:
+            type: string
+    SkillDetail:
+      allOf:
+        - $ref: '#/components/schemas/SkillEntry'
+        - type: object
+          properties:
+            files:
+              type: array
+              items:
+                type: string
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string

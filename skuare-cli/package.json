@@ -1,0 +1,27 @@
+{
+  "name": "skuare-cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CLI client for Skuare skill management platform",
+  "type": "commonjs",
+  "bin": {
+    "skuare": "dist/index.js",
+    "skr": "dist/index.js",
+    "skuare-cli": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "npm run build && node dist/index.js",
+    "start": "node dist/index.js",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "install-backend": "node scripts/install-skuare-svc.js",
+    "postinstall": "node scripts/install-skuare-svc.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^22.12.0",
+    "typescript": "^5.8.2"
+  }
+}

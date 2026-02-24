@@ -1,0 +1,7 @@
+{
+  "lock_version": 1,
+  "dependencies": [
+    { "skill": "core-text-utils", "version": "1.0.0", "resolved": "1.0.0" },
+    { "skill": "core-time-utils", "version": "1.0.0", "resolved": "1.0.0" }
+  ]
+}

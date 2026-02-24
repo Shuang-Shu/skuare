@@ -1,0 +1,6 @@
+{
+  "dependencies": [
+    { "skill": "api-ingest-pipeline", "version": "1.0.0" },
+    { "skill": "core-time-utils", "version": "1.0.0" }
+  ]
+}

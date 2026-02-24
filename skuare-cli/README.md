@@ -1,0 +1,178 @@
+# skuare-cli
+
+> 文档类型：README
+> 状态：已完成
+> 更新时间：2026-02-23
+> 适用范围：skuare-cli
+
+## 目标与范围
+- 提供 Skuare 命令行入口，作为前端控制层调用 `skuare-svc`。
+- 通过统一 `--server` 参数对接后端 HTTP API，实现基础 Skill 管理链路。
+
+## 架构与 API 设计
+- 运行时：Node.js（>=20），入口文件 `src/index.ts`。
+- 配置文件：
+  - 全局：`~/.skuare/config.json`
+  - 工作区：`<workspace>/.skuare/config.json`
+  - 其中 `<workspace>` 为执行 `skuare/skr` 命令时的当前目录（`cwd`）
+  - 覆盖优先级：`CLI 参数 > 工作区配置 > 全局配置 > 默认值`
+- 后端地址：
+  - 默认由配置项 `remote.address + remote.port` 组合得到
+  - CLI 参数 `--server <url>` 优先级最高
+- 远端模式：
+  - `remote.mode=local`：本地模式，CLI 写操作不附加签名头
+  - `remote.mode=remote`：远端模式，CLI 写操作要求签名参数
+- 签名参数（写操作）：
+  - CLI 参数：`--key-id <id>`、`--privkey-file <path>`
+  - 配置项：`auth.keyId`、`auth.privateKeyFile`
+- 命令到 API 映射：
+  - `health` -> `GET /healthz`
+  - `reindex` -> `POST /api/v1/reindex`
+  - `list [--q]` -> `GET /api/v1/skills`
+  - `get <skillID> [version]` -> `GET /api/v1/skills/:skillID[/version]`
+  - `create --file <json>` -> `POST /api/v1/skills`
+  - `create --skill <SKILL.md> [--skill-id] [--version]` -> `POST /api/v1/skills`（显式 `SKILL.md` 模式，版本读取 frontmatter）
+  - `create --dir <skillDir> [--skill-id] [--version]` -> `POST /api/v1/skills`（显式目录模式，自动探测 `<dir>/SKILL.md` 并读取 version）
+  - `create <path> [--skill-id] [--version]` -> 自动检测：`SKILL.md` 文件 -> 目录 -> JSON 回退
+  - `delete <skillID> <version>` -> `DELETE /api/v1/skills/:skillID/:version`
+  - `validate <skillID> <version>` -> `POST /api/v1/skills/:skillID/:version/validate`
+
+## 鉴权机制说明
+- 写操作（`create`、`delete`、`reindex`）会进行数字签名。
+- 当 `remote.mode=local` 时，CLI 会跳过写操作签名。
+- CLI 签名参数：
+  - 参数：`--key-id <id>`、`--privkey-file <path>`
+  - 环境变量：`SKUARE_KEY_ID`、`SKUARE_PRIVKEY_FILE`
+- CLI 会自动附加签名头：
+  - `X-Skuare-Key-Id`
+  - `X-Skuare-Timestamp`
+  - `X-Skuare-Nonce`
+  - `X-Skuare-Signature`
+- 读操作（`health`、`list`、`get`、`validate`）不强制要求签名。
+- 当服务端返回 `403 FORBIDDEN` 时，优先检查：
+  - 是否传了 `--key-id` 与 `--privkey-file`（或对应环境变量）
+  - `key_id` 是否已写入 server 端注册文件
+  - 私钥是否与注册公钥匹配
+
+## 使用方式（启动/构建/配置）
+```bash
+cd skuare-cli
+npm run check
+npm run build
+skuare init
+skuare help
+skuare --server http://127.0.0.1:15657 health
+# 或
+skr help
+```
+
+后端二进制自动安装（GitHub Releases）：
+- `postinstall` 默认不下载后端，避免开发环境无网络时阻塞。
+- 设置 `SKUARE_AUTO_INSTALL_BACKEND=1` 后，安装 CLI 时会尝试下载后端二进制。
+- 必填环境变量：
+  - `SKUARE_RELEASE_REPO`：GitHub 仓库，格式 `owner/repo`
+- 可选环境变量：
+  - `SKUARE_SVC_VERSION`：指定版本（如 `v0.1.0`），默认 `latest`
+  - `SKUARE_SVC_BIN_DIR`：安装目录，默认 `~/.skuare/bin`
+  - `GITHUB_TOKEN`：私有仓库或高频调用时建议设置
+
+示例：
+```bash
+cd skuare-cli
+SKUARE_AUTO_INSTALL_BACKEND=1 \
+SKUARE_RELEASE_REPO=your-org/skuare \
+SKUARE_SVC_VERSION=v0.1.0 \
+npm install
+```
+
+`skuare init` 交互项（带预填默认值）：
+- 远端模式：`local` / `remote`（方向键选择）
+- 当选择 `remote` 时需要输入远端地址与端口。
+- 当选择 `local` 时默认使用 `127.0.0.1:15657`。
+- 配置作用域：`global` / `workspace`（单选，方向键 ↑/↓ 选择，Enter 确认）
+- 默认作用域规则：
+  - global 配置不存在：默认 `global`
+  - global 配置存在：默认 `workspace`
+- 若当前目录位于 `~/.skuare`（全局配置目录）内：禁止创建 workspace 配置，`init` 会强制使用 `global`
+- `init` 启动时会先检测全局配置文件是否存在，并以彩色状态显示：`[EXISTS]` / `[NOT EXISTS]`
+- 当选择 `workspace` 且 global 配置存在时，会先选择工作区初始化模式：
+  - `1) reuse global`
+  - `2) modify`
+  - `3) new`
+- `modify` 模式会先展示 global 配置快照，再进入字段多选框（↑/↓、Space、Enter），仅对勾选字段进行修改
+- 远端仓库地址（`remote.address`）
+- 远端仓库端口（`remote.port`）
+- 远端仓库存储目录（`remote.storageDir`，默认 `~/.skuare`）
+- 输入地址与端口后会执行连通性检测（默认 10s 超时，目标 `http://<addr>:<port>/healthz`）
+- 连通性检测失败仅告警，不会在中途触发保存确认；是否落盘统一在最后一步 `Save config now (Y/n)` 决定
+- 默认签名 key id（`auth.keyId`）
+- 默认私钥文件路径（`auth.privateKeyFile`）
+- LLM Tool 多选（`llmTools`）：
+  - 预置选项：`codex`、`claudecode`、`custom`
+  - 选择方式：方向键 ↑/↓ 移动，Space 勾选，Enter 提交
+- 在 `custom` 行按 Space 会立即弹出输入框；提交后会新增一行 `custom: <name>`，可重复添加多个
+- 所有字段编辑与 LLM Tool 选择完成后，最后一步会再次确认 `Save config now (Y/n)`，确认后才真正写入配置文件
+
+创建 Skill 示例：
+```bash
+cat > /tmp/create-skill.json <<'EOF'
+{
+  "skill_id": "pdf-reader",
+  "version": "1.0.0",
+  "skill": {
+    "description": "Read and analyze PDF files",
+    "overview": "Extract text by page range and return structured summary"
+  }
+}
+EOF
+
+skuare --server http://127.0.0.1:15657 create --file /tmp/create-skill.json
+
+# 从 SKILL.md 创建（自动解析 frontmatter 的 name/version/description + 正文）
+skuare --server http://127.0.0.1:15657 create --skill ./skills/pdf-reader/SKILL.md
+
+# 从目录创建（自动查找 <dir>/SKILL.md，并打包目录下其他文件到 files）
+skuare --server http://127.0.0.1:15657 create --dir ./skills/pdf-reader
+
+# 自动检测 source 路径：优先当 SKILL.md / 目录处理，失败再按 JSON 处理
+skuare --server http://127.0.0.1:15657 create ./skills/pdf-reader
+skuare --server http://127.0.0.1:15657 create /tmp/create-skill.json
+
+# 可选：传 --version 做一致性校验（与 frontmatter version 不一致会报错）
+skuare --server http://127.0.0.1:15657 create --dir ./skills/pdf-reader --version 1.0.0
+```
+
+`create` 依赖上传行为：
+- 若来源是 `--skill`/`--dir`/`<path>` 且解析到技能目录，CLI 会读取 `skill-deps.json` 并递归上传依赖技能。
+- 依赖已存在（`409 SKILL_VERSION_ALREADY_EXISTS`）会自动跳过。
+- 依赖目录默认按同级目录解析（例如 `skills/<depSkillID>`）。
+- 当前 skill 若已存在（`409 SKILL_VERSION_ALREADY_EXISTS`），CLI 输出 `WARN` 并返回成功，不再报错退出。
+
+`list` 输出字段：
+- `skr list` 仅展示：`skill_id`、`version`、`name`、`description`。
+
+写操作示例（携带公钥）：
+```bash
+skuare --server http://127.0.0.1:15657 \
+  --key-id writer-a \
+  --privkey-file ~/.skuare/keys/writer-a.pem \
+  create --dir ./skills/pdf-reader
+```
+
+## 验收标准与风险
+- 验收标准：
+  - `npm run check` 与 `npm run build` 通过。
+  - CLI 命令路径与 `skuare-svc/docs/openapi.yaml` 保持一致。
+- 风险：
+  - 服务不可达时命令失败。
+  - 运行环境若禁用本地监听端口，无法完成端到端联调。
+- 缓解：
+  - 明确错误输出包含 HTTP 状态与响应体。
+  - 在支持端口监听的环境执行联调脚本。
+
+## 变更记录
+- 2026-02-23：新增后端联动命令（health/list/get/create/delete/validate/reindex）与 `--server` 全局参数。
+- 2026-02-23：CLI 命令入口简化为 `skuare` 与 `skr`，并保留 `skuare-cli` 兼容别名。
+- 2026-02-23：升级写操作鉴权为数字签名：新增 `--key-id`、`--privkey-file` 与对应环境变量。
+- 2026-02-24：`create` 新增 `--skill/--dir` 显式模式与 `create <path>` 自动检测（`SKILL.md`/目录优先，失败后 JSON 回退）；`SKILL.md` 模式强制从 frontmatter 读取 `version`，无 version 禁止上传。
+- 2026-02-24：`init` 新增 `remote.mode(local/remote)` 配置；`local` 模式下写操作免签名。

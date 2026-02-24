@@ -1,0 +1,7 @@
+{
+  "dependencies": [
+    { "skill": "api-ingest-pipeline", "version": "1.0.0" },
+    { "skill": "report-generator", "version": "1.0.0" },
+    { "skill": "alert-router", "version": "1.0.0" }
+  ]
+}
