@@ -40,8 +40,10 @@ skr list
 ```bash
 skr health
 skr list --q observability
+skr peek observability-orchestrator
 skr get observability-orchestrator
 skr create --dir ./skills/observability-orchestrator
+skr format ./skills/observability-orchestrator/SKILL.md 1.0.0
 skr validate observability-orchestrator 1.0.0
 skr delete observability-orchestrator 1.0.0
 ```
@@ -57,3 +59,4 @@ skr delete observability-orchestrator 1.0.0
 
 ## 变更记录
 - 2026-02-26：README 调整为更通用的 GitHub 风格，保留原有信息并优化表达。
+- 2026-02-26：命令语义调整：`peek` 查询、`get` 安装、`format` 格式化，`create` 支持多路径与 `--all`。

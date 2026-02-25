@@ -4,6 +4,7 @@
 
 import type { HttpMethod, JsonValue } from "../types";
 import { signWriteRequest, type SignatureHeaders } from "./signer";
+import { DomainError } from "../domain/errors";
 
 /**
  * API 请求选项
@@ -70,25 +71,29 @@ export async function callApi(options: ApiRequestOptions): Promise<ApiResponse> 
 
   if (needsSignature(method, path, !!localMode)) {
     if (!auth) {
-      throw new Error("Missing signing credentials for write operation");
+      throw new DomainError("CLI_SIGNING_CREDENTIALS_MISSING", "Missing signing credentials for write operation");
     }
     const signed = await signWriteRequest(method, path, bodyText, auth);
     Object.assign(headers, signed);
   }
 
-  const resp = await fetch(url, {
-    method,
-    headers: Object.keys(headers).length > 0 ? headers : undefined,
-    body: bodyText || undefined,
-  });
+  let resp: Response;
+  try {
+    resp = await fetch(url, {
+      method,
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
+      body: bodyText || undefined,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new DomainError("CLI_NETWORK_ERROR", message, { cause: err, details: { method, path, server } });
+  }
 
   const text = await resp.text();
   const data = text ? tryParseJson(text) : null;
 
   if (!resp.ok) {
-    throw new Error(
-      `HTTP ${resp.status} ${resp.statusText}: ${typeof data === "string" ? data : JSON.stringify(data)}`
-    );
+    throw toHttpDomainError(resp.status, resp.statusText, data);
   }
 
   if (!silent) {
@@ -100,6 +105,19 @@ export async function callApi(options: ApiRequestOptions): Promise<ApiResponse> 
   };
 }
 
+function toHttpDomainError(status: number, statusText: string, data: JsonValue | string | null): DomainError {
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    const row = data as Record<string, JsonValue>;
+    const code = String(row.code || "").trim();
+    const message = String(row.message || "").trim();
+    if (code && message) {
+      return new DomainError(code, message, { details: { status } });
+    }
+  }
+  const message = typeof data === "string" ? data : JSON.stringify(data);
+  return new DomainError("CLI_HTTP_ERROR", `HTTP ${status} ${statusText}: ${message}`, { details: { status } });
+}
+
 /**
  * 判断请求是否需要签名
  */
@@ -109,7 +127,7 @@ function needsSignature(method: HttpMethod, path: string, localMode: boolean): b
   }
   return (
     method === "DELETE" ||
-    (method === "POST" && (path === "/api/v1/skills" || path === "/api/v1/reindex"))
+    (method === "POST" && path === "/api/v1/skills")
   );
 }
 

@@ -2,7 +2,7 @@
 
 > 文档类型：README
 > 状态：已完成
-> 更新时间：2026-02-23
+> 更新时间：2026-02-26
 > 适用范围：skuare-cli
 
 ## 目标与范围
@@ -27,18 +27,19 @@
   - 配置项：`auth.keyId`、`auth.privateKeyFile`
 - 命令到 API 映射：
   - `health` -> `GET /healthz`
-  - `reindex` -> `POST /api/v1/reindex`
   - `list [--q]` -> `GET /api/v1/skills`
-  - `get <skillID> [version]` -> `GET /api/v1/skills/:skillID[/version]`
+  - `peek <skillID> [version]` -> `GET /api/v1/skills/:skillID[/version]`
+  - `get <skillID> [version]` -> 安装到 `.<llmTool>/skills`（按依赖平铺写入目录与文件内容）
   - `create --file <json>` -> `POST /api/v1/skills`
-  - `create --skill <SKILL.md> [--skill-id] [--version]` -> `POST /api/v1/skills`（显式 `SKILL.md` 模式，版本读取 frontmatter）
-  - `create --dir <skillDir> [--skill-id] [--version]` -> `POST /api/v1/skills`（显式目录模式，自动探测 `<dir>/SKILL.md` 并读取 version）
-  - `create <path> [--skill-id] [--version]` -> 自动检测：`SKILL.md` 文件 -> 目录 -> JSON 回退
+  - `create --skill <SKILL.md> [--skill-id] [--version]` -> `POST /api/v1/skills`（显式 `SKILL.md` 模式，版本读取 `metadata.version`）
+  - `create --dir <skillDir> [--skill-id] [--version]` -> `POST /api/v1/skills`（显式目录模式，自动探测 `<dir>/SKILL.md` 并读取 `metadata.version`）
+  - `create <path...> [--all] [--skill-id] [--version]` -> 自动检测每个 path：`SKILL.md` 文件 -> 目录 -> JSON 回退
+  - `format [files...] <version>` -> 交互式补齐/更新 `metadata.version`
   - `delete <skillID> <version>` -> `DELETE /api/v1/skills/:skillID/:version`
   - `validate <skillID> <version>` -> `POST /api/v1/skills/:skillID/:version/validate`
 
 ## 鉴权机制说明
-- 写操作（`create`、`delete`、`reindex`）会进行数字签名。
+- 写操作（`create`、`delete`）会进行数字签名。
 - 当 `remote.mode=local` 时，CLI 会跳过写操作签名。
 - CLI 签名参数：
   - 参数：`--key-id <id>`、`--privkey-file <path>`
@@ -48,7 +49,7 @@
   - `X-Skuare-Timestamp`
   - `X-Skuare-Nonce`
   - `X-Skuare-Signature`
-- 读操作（`health`、`list`、`get`、`validate`）不强制要求签名。
+- 读操作（`health`、`list`、`peek`、`get`、`validate`）不强制要求签名。
 - 当服务端返回 `403 FORBIDDEN` 时，优先检查：
   - 是否传了 `--key-id` 与 `--privkey-file`（或对应环境变量）
   - `key_id` 是否已写入 server 端注册文件
@@ -128,17 +129,18 @@ EOF
 
 skuare --server http://127.0.0.1:15657 create --file /tmp/create-skill.json
 
-# 从 SKILL.md 创建（自动解析 frontmatter 的 name/version/description + 正文）
+# 从 SKILL.md 创建（自动解析 frontmatter 的 name/description + metadata.version + 正文）
 skuare --server http://127.0.0.1:15657 create --skill ./skills/pdf-reader/SKILL.md
 
 # 从目录创建（自动查找 <dir>/SKILL.md，并打包目录下其他文件到 files）
 skuare --server http://127.0.0.1:15657 create --dir ./skills/pdf-reader
 
-# 自动检测 source 路径：优先当 SKILL.md / 目录处理，失败再按 JSON 处理
-skuare --server http://127.0.0.1:15657 create ./skills/pdf-reader
+# 自动检测多个 source 路径；可叠加 --all 扫描当前目录所有子目录
+skuare --server http://127.0.0.1:15657 create ./skills/pdf-reader ./skills/api-debugger
+skuare --server http://127.0.0.1:15657 create --all
 skuare --server http://127.0.0.1:15657 create /tmp/create-skill.json
 
-# 可选：传 --version 做一致性校验（与 frontmatter version 不一致会报错）
+# 可选：传 --version 做一致性校验（与 frontmatter metadata.version 不一致会报错）
 skuare --server http://127.0.0.1:15657 create --dir ./skills/pdf-reader --version 1.0.0
 ```
 
@@ -176,3 +178,5 @@ skuare --server http://127.0.0.1:15657 \
 - 2026-02-23：升级写操作鉴权为数字签名：新增 `--key-id`、`--privkey-file` 与对应环境变量。
 - 2026-02-24：`create` 新增 `--skill/--dir` 显式模式与 `create <path>` 自动检测（`SKILL.md`/目录优先，失败后 JSON 回退）；`SKILL.md` 模式强制从 frontmatter 读取 `version`，无 version 禁止上传。
 - 2026-02-24：`init` 新增 `remote.mode(local/remote)` 配置；`local` 模式下写操作免签名。
+- 2026-02-26：命令语义调整：`peek` 承接原查询语义，`get` 改为安装语义；`create` 支持多输入与 `--all`，并强制 `metadata.version`；新增 `format`；客户端移除 `reindex`。
+- 2026-02-26：CLI 异常治理：统一抛领域错误；HTTP 失败优先透传服务端 `code/message`；终端保持 `[ERROR]` 风格输出。

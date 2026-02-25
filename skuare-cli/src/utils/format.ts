@@ -38,5 +38,6 @@ export function yellow(text: string): string {
  * 格式化错误并抛出
  */
 export function fail(message: string): never {
-  throw new Error(`${Status.Error} ${message}`);
+  throw new DomainError("CLI_OPERATION_FAILED", message);
 }
+import { DomainError } from "../domain/errors";

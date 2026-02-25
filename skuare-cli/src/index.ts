@@ -13,42 +13,44 @@
  */
 
 import { parseGlobalFlags } from "./utils/parser";
-import { fail } from "./utils/format";
+import { Status } from "./utils/format";
 import { resolveConfig } from "./config/resolver";
 import { createCommandRegistry } from "./commands/registry";
 import type { CommandContext } from "./commands/types";
+import { formatDomainError, normalizeUnknownError } from "./domain/errors";
 
 /**
  * 主函数
  */
 async function main(): Promise<void> {
-  const [, , ...args] = process.argv;
-  const parsed = parseGlobalFlags(args);
-  const [commandName, ...rest] = parsed.rest;
-
-  // 创建命令注册表
-  const registry = createCommandRegistry();
-
-  // 默认命令：help
-  const name = !commandName || commandName === "help" || commandName === "--help" || commandName === "-h"
-    ? "help"
-    : commandName;
-
-  // 版本命令特殊处理
-  if (name === "version" || name === "--version" || name === "-v") {
-    console.log("skuare v0.1.0");
-    return;
-  }
-
-  // 查找命令
-  const command = registry.get(name);
-  if (!command) {
-    console.error(`${fail(`Unknown command: ${[commandName, ...rest].filter(Boolean).join(" ")}`)}`);
-    printHelp();
-    return;
-  }
-
   try {
+    const [, , ...args] = process.argv;
+    const parsed = parseGlobalFlags(args);
+    const [commandName, ...rest] = parsed.rest;
+
+    // 创建命令注册表
+    const registry = createCommandRegistry();
+
+    // 默认命令：help
+    const name = !commandName || commandName === "help" || commandName === "--help" || commandName === "-h"
+      ? "help"
+      : commandName;
+
+    // 版本命令特殊处理
+    if (name === "version" || name === "--version" || name === "-v") {
+      console.log("skuare v0.1.0");
+      return;
+    }
+
+    // 查找命令
+    const command = registry.get(name);
+    if (!command) {
+      console.error(`${Status.Error} [CLI_INVALID_ARGUMENT] Unknown command: ${[commandName, ...rest].filter(Boolean).join(" ")}`);
+      printHelp();
+      process.exit(1);
+      return;
+    }
+
     // 解析配置
     const cwd = process.cwd();
     const resolved = await resolveConfig(cwd, parsed);
@@ -57,6 +59,8 @@ async function main(): Promise<void> {
     const context: CommandContext = {
       server: resolved.server,
       localMode: resolved.localMode,
+      cwd,
+      llmTools: resolved.merged.llmTools,
       auth: resolved.auth,
       args: rest,
     };
@@ -64,12 +68,9 @@ async function main(): Promise<void> {
     // 执行命令
     await command.execute(context);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.includes("[ERROR]")) {
-      console.error(message);
-      process.exit(1);
-    }
-    fail(message);
+    const domainErr = normalizeUnknownError(err);
+    console.error(`${Status.Error} ${formatDomainError(domainErr)}`);
+    process.exit(1);
   }
 }
 
@@ -89,17 +90,18 @@ Commands:
   init                                 Interactive init for global/workspace config
   health                               Health check (GET /healthz)
   list [--q <keyword>]                 List skills (GET /api/v1/skills)
-  get <skillID> [version]              Get skill overview/detail
+  peek <skillID> [version]             Peek skill overview/detail
+  get <skillID> [version]              Install skill to local llm tool directory
   validate <skillID> <version>         Validate a version
   create --file <request.json>         Create from request JSON
   create --skill <SKILL.md> [--skill-id <id>] [--version <v>]
-                                       Explicit SKILL.md mode, version from frontmatter
+                                       Explicit SKILL.md mode, version from frontmatter metadata.version
   create --dir <skillDir> [--skill-id <id>] [--version <v>]
-                                       Explicit dir mode, version from <dir>/SKILL.md frontmatter
-  create <path> [--skill-id <id>] [--version <v>]
-                                       Auto detect: SKILL.md -> dir -> JSON fallback
+                                       Explicit dir mode, version from <dir>/SKILL.md frontmatter metadata.version
+  create <path...> [--all] [--skill-id <id>] [--version <v>]
+                                       Auto detect each path: SKILL.md -> dir -> JSON fallback
   delete <skillID> <version>           Delete skill version
-  reindex                              Rebuild index
+  format [files...] <version>          Format skill files with metadata.version
 
 Global Flags:
   --server <url>                       Backend URL (highest priority)
@@ -112,7 +114,8 @@ Config Precedence:
 Examples:
   skr health
   skr list --q pdf
-  skr get pdf-reader 1.0.0
+  skr peek pdf-reader 1.0.0
+  skr get pdf-reader
   skr create --file /tmp/create-skill.json
   skr create --skill ./skills/pdf-reader/SKILL.md
   skr create --dir ./skills/pdf-reader

@@ -21,7 +21,7 @@ LOCAL_BIN ?= /tmp/skuare-bin/bin
 RELEASE_REPO ?=
 SVC_VERSION ?= latest
 
-.PHONY: help start-be start-cli install-skr install-backend health reindex list get create delete validate
+.PHONY: help start-be start-cli install-skr install-backend health list peek get create format delete validate
 
 help:
 	@echo "Available targets:"
@@ -33,12 +33,13 @@ help:
 	@echo "  make install-backend RELEASE_REPO=owner/repo [SVC_VERSION=v0.1.0]"
 	@echo "  make <write-op> KEY_ID=... PRIVKEY_FILE=...  # 写操作需提供签名参数"
 	@echo "  make health                    # 健康检查"
-	@echo "  make reindex                   # 重建索引"
 	@echo "  make list Q='kw'               # 查询 skills"
+	@echo "  make peek SKILL_ID=... [VERSION=...]"
 	@echo "  make get SKILL_ID=... [VERSION=...]"
 	@echo "  make create FILE=...                            # 从 JSON 创建"
 	@echo "  make create SKILL_FILE=... [SKILL_ID=...] [VERSION=...] # 从 SKILL.md 创建（version 读 frontmatter）"
 	@echo "  make create SKILL_DIR=... [SKILL_ID=...] [VERSION=...]  # 从目录创建（自动找 SKILL.md）"
+	@echo "  make format FILE='path1 path2' VERSION=...      # 交互式前可直接批量格式化"
 	@echo "  make delete SKILL_ID=... VERSION=..."
 	@echo "  make validate SKILL_ID=... VERSION=..."
 
@@ -62,11 +63,12 @@ install-backend:
 health:
 	$(MAKE) start-cli CLI_ARGS="health"
 
-reindex:
-	$(MAKE) start-cli CLI_ARGS="reindex"
-
 list:
 	$(MAKE) start-cli CLI_ARGS="list $(if $(Q),--q '$(Q)',)"
+
+peek:
+	@if [ -z "$(SKILL_ID)" ]; then echo "SKILL_ID is required"; exit 2; fi
+	$(MAKE) start-cli CLI_ARGS="peek $(SKILL_ID) $(VERSION)"
 
 get:
 	@if [ -z "$(SKILL_ID)" ]; then echo "SKILL_ID is required"; exit 2; fi
@@ -91,3 +93,6 @@ delete:
 validate:
 	@if [ -z "$(SKILL_ID)" ] || [ -z "$(VERSION)" ]; then echo "SKILL_ID and VERSION are required"; exit 2; fi
 	$(MAKE) start-cli CLI_ARGS="validate $(SKILL_ID) $(VERSION)"
+format:
+	@if [ -z "$(VERSION)" ]; then echo "VERSION is required"; exit 2; fi
+	$(MAKE) start-cli CLI_ARGS="format $(FILE) $(VERSION)"

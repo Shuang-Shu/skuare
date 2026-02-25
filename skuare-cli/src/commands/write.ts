@@ -5,8 +5,9 @@
 import type { CommandContext, JsonValue } from "./types";
 import { BaseCommand } from "./base";
 import { callApi } from "../http/client";
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, posix, relative, resolve } from "node:path";
+import * as readlinePromises from "node:readline/promises";
 
 type CreateSource =
   | { kind: "json"; path: string }
@@ -26,32 +27,34 @@ export class CreateCommand extends BaseCommand {
   readonly description = "Create skill version";
 
   async execute(context: CommandContext): Promise<void> {
-    const source = await this.resolveCreateSource(context.args);
-    if (source.kind !== "json") {
-      await this.uploadDependencies(source, context);
-    }
-    const body = source.kind === "json"
-      ? (await this.readJsonFile(source.path) as JsonValue)
-      : (await this.buildRequestFromSkillSource(context.args, source) as JsonValue);
-
-    try {
-      const resp = await callApi({
-        method: "POST",
-        path: "/api/v1/skills",
-        body,
-        server: context.server,
-        localMode: context.localMode,
-        auth: context.auth,
-        silent: true,
-      });
-      this.printCreateResult(resp.data);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!this.isAlreadyExistsError(msg)) {
-        throw err;
+    const sources = await this.resolveCreateSources(context.args, context.cwd);
+    for (const source of sources) {
+      if (source.kind !== "json") {
+        await this.uploadDependencies(source, context);
       }
-      const info = this.extractSkillVersion(body);
-      console.log(`${this.yellow("[WARN]")} skill version already exists: ${info.skillID}@${info.version}`);
+      const body = source.kind === "json"
+        ? (await this.readJsonFile(source.path) as JsonValue)
+        : (await this.buildRequestFromSkillSource(context.args, source) as JsonValue);
+
+      try {
+        const resp = await callApi({
+          method: "POST",
+          path: "/api/v1/skills",
+          body,
+          server: context.server,
+          localMode: context.localMode,
+          auth: context.auth,
+          silent: true,
+        });
+        this.printCreateResult(resp.data);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!this.isAlreadyExistsError(msg)) {
+          throw err;
+        }
+        const info = this.extractSkillVersion(body);
+        console.log(`${this.yellow("[WARN]")} skill version already exists: ${info.skillID}@${info.version}`);
+      }
     }
   }
 
@@ -196,7 +199,7 @@ export class CreateCommand extends BaseCommand {
 
     const version = parsed.version.trim();
     if (!version) {
-      this.fail("Frontmatter requires version; uploading SKILL.md without version is not allowed");
+      this.fail("Frontmatter requires metadata.version; uploading SKILL.md without metadata.version is not allowed");
     }
     if (versionFromArg && versionFromArg.trim() !== version) {
       this.fail(`Version mismatch: --version=${versionFromArg.trim()} but SKILL.md frontmatter version=${version}`);
@@ -216,59 +219,88 @@ export class CreateCommand extends BaseCommand {
     } satisfies JsonValue;
   }
 
-  private async resolveCreateSource(args: string[]): Promise<CreateSource> {
+  private async resolveCreateSources(args: string[], cwd: string): Promise<CreateSource[]> {
     const requestFile = this.parseOptionValue(args, "--file");
     const skillFile = this.parseOptionValue(args, "--skill");
     const skillDir = this.parseOptionValue(args, "--dir");
+    const includeAll = args.includes("--all");
     const modeCount = [requestFile, skillFile, skillDir].filter(Boolean).length;
     if (modeCount > 1) {
       this.fail("Only one source mode is allowed: --file or --skill or --dir");
     }
+    if (modeCount > 0 && includeAll) {
+      this.fail("--all cannot be used together with --file/--skill/--dir");
+    }
 
     if (skillFile) {
       await this.assertSkillFile(skillFile);
-      return { kind: "skill", path: skillFile };
+      return [{ kind: "skill", path: skillFile }];
     }
     if (skillDir) {
       await this.assertSkillDir(skillDir);
-      return { kind: "dir", path: skillDir };
+      return [{ kind: "dir", path: skillDir }];
     }
     if (requestFile) {
       await this.assertJsonFile(requestFile);
-      return { kind: "json", path: requestFile };
+      return [{ kind: "json", path: requestFile }];
     }
 
     const positional = this.getPositionalArgs(args);
-    if (positional.length === 0) {
-      this.fail("Usage: skuare create --skill <SKILL.md> | --dir <skillDir> | --file <request.json> | create <path>");
-    }
-    if (positional.length > 1) {
-      this.fail(`Too many positional args for create: ${positional.join(" ")}`);
-    }
-    const p = positional[0];
-    const abs = resolve(p);
-    const info = await stat(abs).catch(() => undefined);
-    if (!info) {
-      this.fail(`Path not found: ${p}`);
+    const allPositional = includeAll
+      ? [...positional, ...(await this.discoverSkillDirsInCurrentDir(cwd))]
+      : positional;
+    const unique = Array.from(new Set(allPositional.map((v) => v.trim()).filter(Boolean)));
+    if (unique.length === 0) {
+      this.fail("Usage: skuare create --skill <SKILL.md> | --dir <skillDir> | --file <request.json> | create <path...> [--all]");
     }
 
-    if (info.isFile() && basename(abs) === "SKILL.md") {
-      return { kind: "skill", path: p };
-    }
+    const out: CreateSource[] = [];
+    for (const p of unique) {
+      const abs = resolve(p);
+      const info = await stat(abs).catch(() => undefined);
+      if (!info) {
+        this.fail(`Path not found: ${p}`);
+      }
 
-    if (info.isDirectory()) {
-      const skillPath = join(abs, "SKILL.md");
-      const skillInfo = await stat(skillPath).catch(() => undefined);
-      if (skillInfo?.isFile()) {
-        return { kind: "dir", path: p };
+      if (info.isFile() && basename(abs) === "SKILL.md") {
+        out.push({ kind: "skill", path: p });
+        continue;
+      }
+
+      if (info.isDirectory()) {
+        const skillPath = join(abs, "SKILL.md");
+        const skillInfo = await stat(skillPath).catch(() => undefined);
+        if (skillInfo?.isFile()) {
+          out.push({ kind: "dir", path: p });
+          continue;
+        }
+      }
+
+      if (info.isFile()) {
+        out.push({ kind: "json", path: p });
+        continue;
+      }
+
+      this.fail(`Cannot detect source mode from path: ${p}`);
+    }
+    return out;
+  }
+
+  private async discoverSkillDirsInCurrentDir(cwd: string): Promise<string[]> {
+    const entries = await readdir(cwd, { withFileTypes: true });
+    const out: string[] = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      const dir = join(cwd, entry.name);
+      const skillPath = join(dir, "SKILL.md");
+      const info = await stat(skillPath).catch(() => undefined);
+      if (info?.isFile()) {
+        out.push(dir);
       }
     }
-
-    if (info.isFile()) {
-      return { kind: "json", path: p };
-    }
-
-    this.fail(`Cannot detect source mode from path: ${p}`);
+    return out;
   }
 
   private getPositionalArgs(args: string[]): string[] {
@@ -278,6 +310,9 @@ export class CreateCommand extends BaseCommand {
       const v = args[i];
       if (optionsWithValue.has(v)) {
         i += 1;
+        continue;
+      }
+      if (v === "--all") {
         continue;
       }
       if (v.startsWith("--")) {
@@ -358,12 +393,24 @@ export class CreateCommand extends BaseCommand {
     let name = "";
     let version = "";
     let description = "";
+    let metadataIndent = -1;
     for (const rawLine of lines.slice(1, fmEnd)) {
       const line = rawLine.trim();
+      const indent = rawLine.length - rawLine.trimStart().length;
+      if (line === "metadata:") {
+        metadataIndent = indent;
+        continue;
+      }
+      if (metadataIndent >= 0) {
+        if (line && indent <= metadataIndent) {
+          metadataIndent = -1;
+        } else if (line.startsWith("version:")) {
+          version = this.unquote(line.slice("version:".length).trim());
+          continue;
+        }
+      }
       if (line.startsWith("name:")) {
         name = this.unquote(line.slice("name:".length).trim());
-      } else if (line.startsWith("version:")) {
-        version = this.unquote(line.slice("version:".length).trim());
       } else if (line.startsWith("description:")) {
         description = this.unquote(line.slice("description:".length).trim());
       }
@@ -372,7 +419,7 @@ export class CreateCommand extends BaseCommand {
       this.fail("Frontmatter requires name");
     }
     if (!version) {
-      this.fail("Frontmatter requires version");
+      this.fail("Frontmatter requires metadata.version");
     }
     if (!description) {
       this.fail("Frontmatter requires description");
@@ -381,9 +428,6 @@ export class CreateCommand extends BaseCommand {
     const body = lines.slice(fmEnd + 1).join("\n");
     const blocks = this.parseH2Blocks(body);
     const overview = (blocks.find((b) => b.title.toLowerCase() === "overview")?.content || "").trim();
-    if (!overview) {
-      this.fail("SKILL.md requires ## Overview section");
-    }
 
     const sections = blocks
       .filter((b) => b.title.toLowerCase() !== "overview" && b.content.trim() !== "")
@@ -462,6 +506,130 @@ export class CreateCommand extends BaseCommand {
     await walk(root);
     out.sort((a, b) => a.path.localeCompare(b.path));
     return out;
+  }
+}
+
+export class FormatCommand extends BaseCommand {
+  readonly name = "format";
+  readonly description = "Format skill files with metadata.version";
+
+  async execute(context: CommandContext): Promise<void> {
+    const positional = this.getPositionalArgs(context.args);
+    let version = positional.length > 0 ? positional[positional.length - 1].trim() : "";
+    let files = positional.length > 1 ? positional.slice(0, -1) : [];
+
+    const rl = readlinePromises.createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      if (!version) {
+        version = (await rl.question("Input metadata.version: ")).trim();
+      }
+      if (!version) {
+        this.fail("Missing version. Usage: skuare format [files...] <version>");
+      }
+
+      if (files.length === 0) {
+        const raw = (await rl.question("Input files or dirs (comma separated, empty=./SKILL.md): ")).trim();
+        files = raw ? raw.split(",").map((v: string) => v.trim()).filter(Boolean) : ["./SKILL.md"];
+      }
+    } finally {
+      rl.close();
+    }
+
+    const normalized = Array.from(new Set(files));
+    const changed: string[] = [];
+    for (const input of normalized) {
+      const path = await this.resolveSkillFilePath(input);
+      const raw = await readFile(path, "utf8");
+      const next = this.withMetadataVersion(raw, version);
+      await writeFile(path, next, "utf8");
+      changed.push(path);
+    }
+    console.log(JSON.stringify({ version, files: changed }, null, 2));
+  }
+
+  private getPositionalArgs(args: string[]): string[] {
+    return args.filter((v) => !v.startsWith("--"));
+  }
+
+  private async resolveSkillFilePath(input: string): Promise<string> {
+    const abs = resolve(input);
+    const info = await stat(abs).catch(() => undefined);
+    if (!info) {
+      this.fail(`Path not found: ${input}`);
+    }
+    if (info.isDirectory()) {
+      const skill = join(abs, "SKILL.md");
+      const skillInfo = await stat(skill).catch(() => undefined);
+      if (!skillInfo?.isFile()) {
+        this.fail(`SKILL.md not found in directory: ${input}`);
+      }
+      return skill;
+    }
+    if (!info.isFile()) {
+      this.fail(`Only regular file or skill directory is supported: ${input}`);
+    }
+    return abs;
+  }
+
+  private withMetadataVersion(content: string, version: string): string {
+    const lines = content.split(/\r?\n/);
+    if (lines[0]?.trim() !== "---") {
+      const fm = ["---", "metadata:", `  version: ${version}`, "---", ""].join("\n");
+      return `${fm}${content}`;
+    }
+
+    let fmEnd = -1;
+    for (let i = 1; i < lines.length; i += 1) {
+      if (lines[i].trim() === "---") {
+        fmEnd = i;
+        break;
+      }
+    }
+    if (fmEnd < 0) {
+      this.fail("Invalid frontmatter: missing closing ---");
+    }
+
+    const fmLines = lines.slice(1, fmEnd);
+    const rest = lines.slice(fmEnd + 1);
+
+    let metaStart = -1;
+    let metaEnd = -1;
+    for (let i = 0; i < fmLines.length; i += 1) {
+      const l = fmLines[i];
+      if (l.trim() === "metadata:") {
+        metaStart = i;
+        metaEnd = i;
+        for (let j = i + 1; j < fmLines.length; j += 1) {
+          const next = fmLines[j];
+          const indent = next.length - next.trimStart().length;
+          if (next.trim() !== "" && indent === 0) {
+            break;
+          }
+          metaEnd = j;
+        }
+        break;
+      }
+    }
+
+    if (metaStart < 0) {
+      fmLines.push("metadata:");
+      fmLines.push(`  version: ${version}`);
+    } else {
+      let replaced = false;
+      for (let i = metaStart + 1; i <= metaEnd; i += 1) {
+        const t = fmLines[i].trim();
+        if (t.startsWith("version:")) {
+          fmLines[i] = `  version: ${version}`;
+          replaced = true;
+          break;
+        }
+      }
+      if (!replaced) {
+        fmLines.splice(metaEnd + 1, 0, `  version: ${version}`);
+      }
+    }
+
+    return ["---", ...fmLines, "---", ...rest].join("\n");
   }
 }
 

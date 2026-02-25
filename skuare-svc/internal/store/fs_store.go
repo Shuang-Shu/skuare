@@ -185,18 +185,27 @@ func (s *FSStore) GetVersion(skillID string, version string) (model.SkillDetail,
 
 	versionDir := s.versionDir(skillID, version)
 
-	files := make([]string, 0)
+	files := make([]model.FileSpec, 0)
 	_ = filepath.WalkDir(versionDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
 		}
 		rel, relErr := filepath.Rel(versionDir, path)
 		if relErr == nil {
-			files = append(files, rel)
+			b, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return nil
+			}
+			files = append(files, model.FileSpec{
+				Path:    filepath.ToSlash(rel),
+				Content: string(b),
+			})
 		}
 		return nil
 	})
-	sort.Strings(files)
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].Path < files[j].Path
+	})
 
 	return model.SkillDetail{
 		SkillEntry: entry,
