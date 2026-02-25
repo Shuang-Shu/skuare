@@ -478,10 +478,9 @@ export class CreateCommand extends BaseCommand {
     return v.trim();
   }
 
-  private async collectSideFiles(dir: string, skillFilePath: string): Promise<Array<{ path: string; content: string }>> {
+  private async collectSideFiles(dir: string, _skillFilePath: string): Promise<Array<{ path: string; content: string }>> {
     const out: Array<{ path: string; content: string }> = [];
     const root = resolve(dir);
-    const skillAbs = resolve(skillFilePath);
 
     const walk = async (current: string): Promise<void> => {
       const entries = await readdir(current, { withFileTypes: true });
@@ -492,9 +491,6 @@ export class CreateCommand extends BaseCommand {
           continue;
         }
         if (!entry.isFile()) {
-          continue;
-        }
-        if (resolve(full) === skillAbs) {
           continue;
         }
         const rel = relative(root, full).split("\\").join("/");
