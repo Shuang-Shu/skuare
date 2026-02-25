@@ -3,6 +3,7 @@
  */
 
 import type { Command, CommandContext } from "./types";
+import { DomainError } from "../domain/errors";
 
 export abstract class BaseCommand implements Command {
   abstract readonly name: string;
@@ -20,7 +21,7 @@ export abstract class BaseCommand implements Command {
     }
     const value = args[idx + 1];
     if (!value) {
-      throw new Error(`Missing value for ${option}`);
+      throw new DomainError("CLI_MISSING_OPTION_VALUE", `Missing value for ${option}`);
     }
     return value;
   }
@@ -38,7 +39,7 @@ export abstract class BaseCommand implements Command {
    * 输出错误并抛出异常
    */
   protected fail(message: string): never {
-    throw new Error(`${this.colorize("[ERROR]", 31)} ${message}`);
+    throw new DomainError("CLI_OPERATION_FAILED", message);
   }
 
   /**

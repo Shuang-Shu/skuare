@@ -5,6 +5,7 @@
 import { readFile } from "node:fs/promises";
 import { randomBytes, createHash, createPrivateKey, sign } from "node:crypto";
 import type { WriteAuth, HttpMethod } from "../types";
+import { DomainError } from "../domain/errors";
 
 /**
  * 签名请求头
@@ -31,10 +32,10 @@ export async function signWriteRequest(
   auth: WriteAuth
 ): Promise<SignatureHeaders> {
   if (!auth.keyId) {
-    throw new Error("Missing --key-id for write operation");
+    throw new DomainError("CLI_SIGNING_CREDENTIALS_MISSING", "Missing --key-id for write operation");
   }
   if (!auth.privateKeyFile) {
-    throw new Error("Missing --privkey-file for write operation");
+    throw new DomainError("CLI_SIGNING_CREDENTIALS_MISSING", "Missing --privkey-file for write operation");
   }
 
   const privateKeyPem = await readFile(auth.privateKeyFile, "utf8");

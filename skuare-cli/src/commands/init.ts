@@ -19,6 +19,7 @@ import { mergeConfig } from "../config/merger";
 import { checkServerConnectivity } from "../http/client";
 import { selectScope, selectWorkspaceMode, selectModifyFields, selectRemoteMode } from "../ui/selectors";
 import { selectLLMTools, askWithDefault, askYesNo, parsePort } from "../ui/prompts";
+import { DomainError } from "../domain/errors";
 
 export class InitCommand extends BaseCommand {
   readonly name = "init";
@@ -232,7 +233,7 @@ async function runInitTUI(cwd: string): Promise<void> {
     // 最后确认
     const confirmed = await askYesNo(rl, "Save config now", true);
     if (!confirmed) {
-      throw new Error("Aborted by user before saving");
+      throw new DomainError("CLI_OPERATION_FAILED", "Aborted by user before saving");
     }
 
     await writeConfig(targetPath, next);

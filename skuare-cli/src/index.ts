@@ -13,42 +13,44 @@
  */
 
 import { parseGlobalFlags } from "./utils/parser";
-import { fail } from "./utils/format";
+import { Status } from "./utils/format";
 import { resolveConfig } from "./config/resolver";
 import { createCommandRegistry } from "./commands/registry";
 import type { CommandContext } from "./commands/types";
+import { formatDomainError, normalizeUnknownError } from "./domain/errors";
 
 /**
  * 主函数
  */
 async function main(): Promise<void> {
-  const [, , ...args] = process.argv;
-  const parsed = parseGlobalFlags(args);
-  const [commandName, ...rest] = parsed.rest;
-
-  // 创建命令注册表
-  const registry = createCommandRegistry();
-
-  // 默认命令：help
-  const name = !commandName || commandName === "help" || commandName === "--help" || commandName === "-h"
-    ? "help"
-    : commandName;
-
-  // 版本命令特殊处理
-  if (name === "version" || name === "--version" || name === "-v") {
-    console.log("skuare v0.1.0");
-    return;
-  }
-
-  // 查找命令
-  const command = registry.get(name);
-  if (!command) {
-    console.error(`${fail(`Unknown command: ${[commandName, ...rest].filter(Boolean).join(" ")}`)}`);
-    printHelp();
-    return;
-  }
-
   try {
+    const [, , ...args] = process.argv;
+    const parsed = parseGlobalFlags(args);
+    const [commandName, ...rest] = parsed.rest;
+
+    // 创建命令注册表
+    const registry = createCommandRegistry();
+
+    // 默认命令：help
+    const name = !commandName || commandName === "help" || commandName === "--help" || commandName === "-h"
+      ? "help"
+      : commandName;
+
+    // 版本命令特殊处理
+    if (name === "version" || name === "--version" || name === "-v") {
+      console.log("skuare v0.1.0");
+      return;
+    }
+
+    // 查找命令
+    const command = registry.get(name);
+    if (!command) {
+      console.error(`${Status.Error} [CLI_INVALID_ARGUMENT] Unknown command: ${[commandName, ...rest].filter(Boolean).join(" ")}`);
+      printHelp();
+      process.exit(1);
+      return;
+    }
+
     // 解析配置
     const cwd = process.cwd();
     const resolved = await resolveConfig(cwd, parsed);
@@ -66,12 +68,9 @@ async function main(): Promise<void> {
     // 执行命令
     await command.execute(context);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.includes("[ERROR]")) {
-      console.error(message);
-      process.exit(1);
-    }
-    fail(message);
+    const domainErr = normalizeUnknownError(err);
+    console.error(`${Status.Error} ${formatDomainError(domainErr)}`);
+    process.exit(1);
   }
 }
 

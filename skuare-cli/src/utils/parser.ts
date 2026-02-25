@@ -3,6 +3,7 @@
  */
 
 import type { CliArgs } from "../types";
+import { DomainError } from "../domain/errors";
 
 /**
  * 解析全局标志
@@ -19,7 +20,7 @@ export function parseGlobalFlags(argv: string[]): CliArgs {
     if (v === "--server") {
       const next = argv[i + 1];
       if (!next) {
-        throw new Error("Missing value for --server");
+        throw new DomainError("CLI_MISSING_OPTION_VALUE", "Missing value for --server");
       }
       serverOverride = next;
       i++;
@@ -29,7 +30,7 @@ export function parseGlobalFlags(argv: string[]): CliArgs {
     if (v === "--key-id") {
       const next = argv[i + 1];
       if (!next) {
-        throw new Error("Missing value for --key-id");
+        throw new DomainError("CLI_MISSING_OPTION_VALUE", "Missing value for --key-id");
       }
       keyIdOverride = next;
       i++;
@@ -39,7 +40,7 @@ export function parseGlobalFlags(argv: string[]): CliArgs {
     if (v === "--privkey-file") {
       const next = argv[i + 1];
       if (!next) {
-        throw new Error("Missing value for --privkey-file");
+        throw new DomainError("CLI_MISSING_OPTION_VALUE", "Missing value for --privkey-file");
       }
       privateKeyFileOverride = next;
       i++;

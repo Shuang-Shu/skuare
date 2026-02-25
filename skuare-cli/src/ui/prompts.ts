@@ -3,6 +3,7 @@
  */
 
 import * as readlinePromises from "node:readline/promises";
+import { DomainError } from "../domain/errors";
 
 type ReadlineInterface = Awaited<ReturnType<typeof readlinePromises.createInterface>>;
 
@@ -43,7 +44,7 @@ export async function askYesNo(
 export function parsePort(portRaw: string): number {
   const port = Number.parseInt(portRaw, 10);
   if (!Number.isInteger(port) || port <= 0 || port > 65535) {
-    throw new Error(`Invalid port: ${portRaw}`);
+    throw new DomainError("CLI_INVALID_ARGUMENT", `Invalid port: ${portRaw}`);
   }
   return port;
 }
@@ -221,7 +222,7 @@ export async function selectLLMTools(defaultTools: string[]): Promise<string[]> 
   const out = Array.from(confirmed);
 
   if (out.length === 0) {
-    throw new Error("At least one LLM tool must be selected");
+    throw new DomainError("CLI_INVALID_ARGUMENT", "At least one LLM tool must be selected");
   }
 
   console.log("Selected LLM tools:");
