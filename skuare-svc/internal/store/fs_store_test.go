@@ -85,10 +85,7 @@ func TestFSStoreCreateRespectsUploadedSkillMD(t *testing.T) {
 	req := model.CreateSkillVersionRequest{
 		SkillID: "custom-reader",
 		Version: "1.0.0",
-		Skill: model.SkillSpec{
-			Description: "fallback desc",
-			Overview:    "fallback overview",
-		},
+		Skill: model.SkillSpec{},
 		Files: []model.FileSpec{
 			{Path: "SKILL.md", Content: customSkillMD},
 		},

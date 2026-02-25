@@ -49,10 +49,24 @@ func (s *FSStore) Create(req model.CreateSkillVersionRequest) (model.SkillEntry,
 	if err := validator.ValidateVersion(req.Version); err != nil {
 		return model.SkillEntry{}, err
 	}
-	if err := validator.ValidateSkillSpec(req.Skill); err != nil {
-		return model.SkillEntry{}, err
+	uploadedSkillMD := ""
+	for _, f := range req.Files {
+		if err := validator.ValidateRelativeFilePath(f.Path); err != nil {
+			return model.SkillEntry{}, err
+		}
+		if filepath.Clean(f.Path) == "SKILL.md" {
+			uploadedSkillMD = f.Content
+		}
 	}
-	skillMD := validator.RenderSkillMD(req.SkillID, req.Skill)
+
+	skillMD := uploadedSkillMD
+	if skillMD == "" {
+		if err := validator.ValidateSkillSpec(req.Skill); err != nil {
+			return model.SkillEntry{}, err
+		}
+		skillMD = validator.RenderSkillMD(req.SkillID, req.Skill)
+	}
+
 	name, desc, err := validator.ValidateSkillMD(req.SkillID, skillMD)
 	if err != nil {
 		return model.SkillEntry{}, err
@@ -89,10 +103,11 @@ func (s *FSStore) Create(req model.CreateSkillVersionRequest) (model.SkillEntry,
 		return model.SkillEntry{}, err
 	}
 	for _, f := range req.Files {
-		if err := validator.ValidateRelativeFilePath(f.Path); err != nil {
-			return model.SkillEntry{}, err
+		cleanPath := filepath.Clean(f.Path)
+		if cleanPath == "SKILL.md" {
+			continue
 		}
-		if err := s.writeFile(filepath.Join(tmpDir, filepath.Clean(f.Path)), f.Content); err != nil {
+		if err := s.writeFile(filepath.Join(tmpDir, cleanPath), f.Content); err != nil {
 			return model.SkillEntry{}, err
 		}
 	}
