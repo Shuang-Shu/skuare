@@ -1,72 +1,59 @@
 # skuare
 
-> 文档类型：README
-> 状态：已完成
-> 更新时间：2026-02-24
-> 适用范围：project-wide
+本地优先的 Skill Registry，用来像“包管理”一样管理 AI Skill：可版本化、可追踪、可回滚、可验证。
 
-## 目标与范围
-- 面向用户提供 `skuare-svc`（后端）与 `skr`（CLI）的一站式 Skill 管理能力。
-- 支持本地模式快速开发与远端模式签名写入。
-- 规则：禁止创建 `openai.yaml`（避免厂商强耦合）。
+## 为什么用 skuare
+- 统一管理 Skill 版本：按 `<skill_id>/<version>` 存储，便于审计与回溯。
+- 本地开发体验好：`local` 模式下快速启动，适合调试与迭代。
+- 生产模式可收敛：`remote` 模式对写操作启用签名校验。
+- 依赖可组合：支持通过依赖清单递归上传与安装。
 
-## 架构与 API 设计
-- 模块：
-  - `skuare-svc`：Go + Hertz 服务端。
-  - `skuare-cli`：TypeScript CLI（命令入口 `skr` / `skuare`）。
-- 核心 API：
-  - `GET /healthz`
-  - `POST /api/v1/skills`
-  - `GET /api/v1/skills`
-  - `GET /api/v1/skills/:skillID`
-  - `GET /api/v1/skills/:skillID/:version`
-  - `DELETE /api/v1/skills/:skillID/:version`
-  - `POST /api/v1/skills/:skillID/:version/validate`
-  - `POST /api/v1/reindex`
-- 默认存储目录：`$HOME/.skuare/skills`。
+## 项目组成
+- `skuare-svc`：后端服务（Skill 存储与 API）。
+- `skuare-cli`：命令行工具（`skr` / `skuare`）。
 
-## 使用方式（启动/构建/配置）
+默认存储路径：`$HOME/.skuare/skills`
+
+## Quick Start
 ```bash
-# 1) 启动后端（本地模式：写操作免签）
+# 1) 启动后端（本地模式）
 make start-be LOCAL_MODE=true
 
-# 可选参数覆盖
-make start-be ADDR=127.0.0.1:15657 \
-  SPEC_DIR="$HOME/.skuare/skills" \
-  AUTHORIZED_KEYS_FILE="$HOME/.skuare/authorized_keys" \
-  AUTH_MAX_SKEW_SEC=300
-
-# 2) 安装 skr
+# 2) 安装 CLI
 make install-skr
 export PATH=/tmp/skuare-bin/bin:$PATH
 
-# 3) 初始化 CLI（可选）
+# 3) 初始化（可选）
 skr init
 
-# 4) 常用命令
+# 4) 健康检查
 skr health
-skr list
+
+# 5) 创建 Skill（支持递归处理依赖）
 skr create --dir ./skills/observability-orchestrator
-skr get observability-orchestrator
+
+# 6) 查看列表
+skr list
 ```
 
-依赖上传行为：
-- `skr create --skill/--dir/<path>` 会读取 `skill-deps.json` 并递归上传依赖。
-- 依赖或当前版本已存在时输出 `WARN`，不报错退出。
+## 常用命令
+```bash
+skr health
+skr list --q observability
+skr get observability-orchestrator
+skr create --dir ./skills/observability-orchestrator
+skr validate observability-orchestrator 1.0.0
+skr delete observability-orchestrator 1.0.0
+```
 
-输出约束：
-- `skr list` 仅展示：`skill_id`、`version`、`name`、`description`。
-- `skr create` 不展示服务端本地 `path` 字段。
+## 运行模式
+- `local`：开发优先，写操作免签名。
+- `remote`：生产优先，写操作需签名。
 
-## 验收标准与风险
-- 验收标准：
-  - `skr health` 可用。
-  - `skr create` 可创建（或重复创建时 `WARN`）。
-  - `skr list` 输出字段符合约束。
-- 风险：
-  - 配置的服务地址不一致导致请求打到错误后端。
-  - 远端模式未配置签名信息导致写操作失败。
+## 文档导航
+- 技术综述：`docs/tech_summary.md`
+- 服务端说明：`skuare-svc/README.md`
+- CLI 说明：`skuare-cli/README.md`
 
 ## 变更记录
-- 2026-02-24：README 重写为用户快速使用指南。
-- 2026-02-24：技术细节迁移到 `docs/tech_summary.md`。
+- 2026-02-26：README 调整为更通用的 GitHub 风格，保留原有信息并优化表达。
