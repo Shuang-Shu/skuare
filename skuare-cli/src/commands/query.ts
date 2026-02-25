@@ -6,8 +6,14 @@ import type { CommandContext } from "./types";
 import { BaseCommand } from "./base";
 import { callApi } from "../http/client";
 import type { JsonValue } from "./types";
-import { mkdir, readFile, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+
+type RemoteFile = { path: string; content: string };
+
+function normalizePath(input: string): string {
+  return input.replace(/\\/g, "/").replace(/^\.\/+/, "");
+}
 
 /**
  * 列出技能命令
@@ -81,12 +87,8 @@ export class GetCommand extends BaseCommand {
     }
     const tool = this.resolveTargetTool(context.llmTools);
     const targetRoot = join(context.cwd, `.${tool}`, "skills");
-    const installed = await this.collectInstallSet(context, skillID, versionArg);
-
-    for (const id of installed) {
-      await mkdir(join(targetRoot, id), { recursive: true });
-    }
-    console.log(JSON.stringify({ llm_tool: tool, target: targetRoot, skills: installed }, null, 2));
+    const installed = await this.installWithDependencies(context, targetRoot, skillID, versionArg);
+    console.log(JSON.stringify({ llm_tool: tool, target: targetRoot, skills: installed.sort((a, b) => a.localeCompare(b)) }, null, 2));
   }
 
   private resolveTargetTool(llmTools: string[]): string {
@@ -97,27 +99,42 @@ export class GetCommand extends BaseCommand {
     return first;
   }
 
-  private async collectInstallSet(context: CommandContext, rootSkill: string, versionArg?: string): Promise<string[]> {
+  private async installWithDependencies(
+    context: CommandContext,
+    targetRoot: string,
+    rootSkill: string,
+    versionArg?: string
+  ): Promise<string[]> {
     const queue: string[] = [rootSkill];
-    const seen = new Set<string>();
+    const installed = new Set<string>();
+    const visiting = new Set<string>();
 
     while (queue.length > 0) {
-      const current = queue.shift() as string;
-      if (seen.has(current)) {
+      const skill = queue.shift() as string;
+      if (installed.has(skill)) {
         continue;
       }
-      seen.add(current);
+      if (visiting.has(skill)) {
+        continue;
+      }
+      visiting.add(skill);
 
-      const version = await this.resolveVersion(context, current, current === rootSkill ? versionArg : undefined);
-      const depSkills = await this.readDependenciesFromRemoteFiles(context, current, version);
-      for (const dep of depSkills) {
-        if (!seen.has(dep)) {
+      const version = await this.resolveVersion(context, skill, skill === rootSkill ? versionArg : undefined);
+      const files = await this.fetchRemoteFiles(context, skill, version);
+      const deps = this.parseDependenciesFromFiles(files);
+
+      await this.writeSkillFiles(targetRoot, skill, files);
+      installed.add(skill);
+      visiting.delete(skill);
+
+      for (const dep of deps) {
+        if (!installed.has(dep)) {
           queue.push(dep);
         }
       }
     }
 
-    return Array.from(seen).sort((a, b) => a.localeCompare(b));
+    return Array.from(installed);
   }
 
   private async resolveVersion(context: CommandContext, skillID: string, preferred?: string): Promise<string> {
@@ -140,7 +157,7 @@ export class GetCommand extends BaseCommand {
     return versions[versions.length - 1];
   }
 
-  private async readDependenciesFromRemoteFiles(context: CommandContext, skillID: string, version: string): Promise<string[]> {
+  private async fetchRemoteFiles(context: CommandContext, skillID: string, version: string): Promise<RemoteFile[]> {
     const resp = await callApi({
       method: "GET",
       path: `/api/v1/skills/${encodeURIComponent(skillID)}/${encodeURIComponent(version)}`,
@@ -150,35 +167,55 @@ export class GetCommand extends BaseCommand {
     const data = (resp.data && typeof resp.data === "object" && !Array.isArray(resp.data))
       ? (resp.data as { files?: JsonValue }).files
       : undefined;
-    const files = Array.isArray(data) ? data.map((v) => String(v).trim()).filter(Boolean) : [];
-    const depName = files.includes("skill-deps.lock.json") ? "skill-deps.lock.json" : (files.includes("skill-deps.json") ? "skill-deps.json" : "");
-    if (!depName) {
-      return [];
-    }
-
-    // 服务端 detail 当前仅返回文件名，内容缺失时回退到本地同名 skill 目录依赖文件解析。
-    const localCandidates = [
-      join(context.cwd, skillID, depName),
-      join(context.cwd, "examples", skillID, depName),
-    ];
-    for (const p of localCandidates) {
-      const info = await stat(p).catch(() => undefined);
-      if (!info?.isFile()) {
+    const rows = Array.isArray(data) ? data : [];
+    const files: RemoteFile[] = [];
+    for (const row of rows) {
+      if (!row || typeof row !== "object" || Array.isArray(row)) {
         continue;
       }
-      const raw = await readFile(p, "utf8");
-      const parsed = JSON.parse(raw) as unknown;
-      const deps = (parsed && typeof parsed === "object" && !Array.isArray(parsed))
-        ? (parsed as { dependencies?: unknown }).dependencies
-        : undefined;
-      if (!Array.isArray(deps)) {
-        return [];
+      const obj = row as Record<string, JsonValue>;
+      const path = String(obj.path || "").trim();
+      const content = String(obj.content || "");
+      if (!path) {
+        continue;
       }
-      return deps
-        .map((row) => (row && typeof row === "object" ? String((row as { skill?: unknown }).skill || "").trim() : ""))
-        .filter(Boolean);
+      files.push({ path, content });
     }
-    return [];
+    if (files.length === 0) {
+      this.fail(`Skill ${skillID}@${version} does not contain downloadable files`);
+    }
+    return files;
+  }
+
+  private parseDependenciesFromFiles(files: RemoteFile[]): string[] {
+    const lock = files.find((f) => normalizePath(f.path) === "skill-deps.lock.json");
+    const plain = files.find((f) => normalizePath(f.path) === "skill-deps.json");
+    const depFile = lock || plain;
+    if (!depFile) {
+      return [];
+    }
+    const parsed = JSON.parse(depFile.content) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return [];
+    }
+    const deps = (parsed as { dependencies?: unknown }).dependencies;
+    if (!Array.isArray(deps)) {
+      return [];
+    }
+    return deps
+      .map((row) => (row && typeof row === "object" ? String((row as { skill?: unknown }).skill || "").trim() : ""))
+      .filter(Boolean);
+  }
+
+  private async writeSkillFiles(targetRoot: string, skillID: string, files: RemoteFile[]): Promise<void> {
+    const skillDir = join(targetRoot, skillID);
+    await mkdir(skillDir, { recursive: true });
+    for (const file of files) {
+      const rel = normalizePath(file.path).replace(/^(\.\.\/)+/, "");
+      const dest = join(skillDir, rel);
+      await mkdir(dirname(dest), { recursive: true });
+      await writeFile(dest, file.content, "utf8");
+    }
   }
 }
 

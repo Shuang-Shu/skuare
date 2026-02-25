@@ -34,7 +34,7 @@ type SkillEntry struct {
 
 type SkillDetail struct {
 	SkillEntry
-	Files []string `json:"files"`
+	Files []FileSpec `json:"files"`
 }
 
 type SkillOverview struct {

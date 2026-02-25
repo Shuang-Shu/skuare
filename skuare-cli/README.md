@@ -29,7 +29,7 @@
   - `health` -> `GET /healthz`
   - `list [--q]` -> `GET /api/v1/skills`
   - `peek <skillID> [version]` -> `GET /api/v1/skills/:skillID[/version]`
-  - `get <skillID> [version]` -> 安装到 `.<llmTool>/skills`（按依赖平铺创建目录）
+  - `get <skillID> [version]` -> 安装到 `.<llmTool>/skills`（按依赖平铺写入目录与文件内容）
   - `create --file <json>` -> `POST /api/v1/skills`
   - `create --skill <SKILL.md> [--skill-id] [--version]` -> `POST /api/v1/skills`（显式 `SKILL.md` 模式，版本读取 `metadata.version`）
   - `create --dir <skillDir> [--skill-id] [--version]` -> `POST /api/v1/skills`（显式目录模式，自动探测 `<dir>/SKILL.md` 并读取 `metadata.version`）
