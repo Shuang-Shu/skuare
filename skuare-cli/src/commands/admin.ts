@@ -18,21 +18,3 @@ export class HealthCommand extends BaseCommand {
     });
   }
 }
-
-/**
- * 重新索引命令
- */
-export class ReindexCommand extends BaseCommand {
-  readonly name = "reindex";
-  readonly description = "Rebuild index";
-
-  async execute(context: CommandContext): Promise<void> {
-    await callApi({
-      method: "POST",
-      path: "/api/v1/reindex",
-      server: context.server,
-      localMode: context.localMode,
-      auth: context.auth,
-    });
-  }
-}

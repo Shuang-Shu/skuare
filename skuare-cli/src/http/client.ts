@@ -109,7 +109,7 @@ function needsSignature(method: HttpMethod, path: string, localMode: boolean): b
   }
   return (
     method === "DELETE" ||
-    (method === "POST" && (path === "/api/v1/skills" || path === "/api/v1/reindex"))
+    (method === "POST" && path === "/api/v1/skills")
   );
 }
 

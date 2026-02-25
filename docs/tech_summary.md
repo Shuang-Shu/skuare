@@ -2,7 +2,7 @@
 
 > 文档类型：TECH
 > 状态：已完成
-> 更新时间：2026-02-24
+> 更新时间：2026-02-26
 > 适用范围：project-wide
 
 ## 目标与范围
@@ -12,7 +12,7 @@
 ## 现状与事实依据
 - 模块：
   - `skuare-svc`：文件系统存储模型 `<specDir>/<skillID>/<version>`。
-  - `skuare-cli`：命令式前端，支持 `init/health/list/get/create/delete/validate/reindex`。
+  - `skuare-cli`：命令式前端，支持 `init/health/list/peek/get/create/format/delete/validate`。
 - 关键配置：
   - 后端默认 `spec-dir`：`$HOME/.skuare/skills`（可由 `SKUARE_SPEC_DIR` 或 `--spec-dir` 覆盖）。
   - 启动参数：`--addr`、`--spec-dir`、`--authorized-keys-file`、`--local`、`--auth-max-skew-sec`。

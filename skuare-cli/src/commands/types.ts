@@ -13,6 +13,8 @@ export type JsonValue = null | boolean | number | string | JsonValue[] | { [k: s
 export type CommandContext = {
   server: string;
   localMode: boolean;
+  cwd: string;
+  llmTools: string[];
   auth: {
     keyId: string;
     privateKeyFile: string;

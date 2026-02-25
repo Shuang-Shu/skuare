@@ -4,9 +4,9 @@
 
 import type { Command, CommandRegistry } from "./types";
 import { HelpCommand, VersionCommand } from "./help";
-import { HealthCommand, ReindexCommand } from "./admin";
-import { ListCommand, GetCommand, ValidateCommand } from "./query";
-import { CreateCommand, DeleteCommand } from "./write";
+import { HealthCommand } from "./admin";
+import { ListCommand, GetCommand, PeekCommand, ValidateCommand } from "./query";
+import { CreateCommand, DeleteCommand, FormatCommand } from "./write";
 import { InitCommand } from "./init";
 
 /**
@@ -20,12 +20,13 @@ export function createCommandRegistry(): CommandRegistry {
     new VersionCommand(),
     new InitCommand(),
     new HealthCommand(),
-    new ReindexCommand(),
     new ListCommand(),
+    new PeekCommand(),
     new GetCommand(),
     new ValidateCommand(),
     new CreateCommand(),
     new DeleteCommand(),
+    new FormatCommand(),
   ];
 
   for (const cmd of commands) {
