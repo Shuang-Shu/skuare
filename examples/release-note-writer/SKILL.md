@@ -1,6 +1,7 @@
 ---
 name: release-note-writer
-version: 1.0.0
+metadata:
+  version: "1.0.0"
 description: Turn raw commits and PR notes into concise, user-facing release notes by audience and impact.
 ---
 

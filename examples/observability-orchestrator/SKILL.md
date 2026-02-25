@@ -1,6 +1,7 @@
 ---
 name: observability-orchestrator
-version: 1.0.0
+metadata:
+  version: "1.0.0"
 description: Coordinate ingestion, reporting, and alert routing into a full observability workflow with end-to-end traceability.
 ---
 

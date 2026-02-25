@@ -1,6 +1,7 @@
 ---
 name: sql-query-helper
-version: 1.0.0
+metadata:
+  version: "1.0.0"
 description: Help users design, optimize, and verify SQL queries with clear assumptions and safe defaults.
 ---
 

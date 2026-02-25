@@ -1,6 +1,7 @@
 ---
 name: schema-validator
-version: 1.0.0
+metadata:
+  version: "1.0.0"
 description: Validate records against target schema contracts and emit actionable validation diagnostics for repair flows.
 ---
 

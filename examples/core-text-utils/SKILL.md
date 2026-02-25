@@ -1,6 +1,7 @@
 ---
 name: core-text-utils
-version: 1.0.0
+metadata:
+  version: "1.0.0"
 description: Provide low-level text normalization, token cleanup, and content slicing primitives for upper-layer skills.
 ---
 

@@ -1,12 +1,13 @@
 # skuare
 
-本地优先的 Skill Registry，用来像“包管理”一样管理 AI Skill：可版本化、可追踪、可回滚、可验证。
+本地优先的 Skill Registry，用来像“包管理”一样管理 AI Skill。  
+核心价值是把“Skill 本体 + 依赖关系”一起纳入版本化管理：可追踪、可回滚、可验证。
 
 ## 为什么用 skuare
 - 统一管理 Skill 版本：按 `<skill_id>/<version>` 存储，便于审计与回溯。
+- 依赖管理内建：通过依赖清单描述关系，上传与安装时可递归处理依赖链。
 - 本地开发体验好：`local` 模式下快速启动，适合调试与迭代。
 - 生产模式可收敛：`remote` 模式对写操作启用签名校验。
-- 依赖可组合：支持通过依赖清单递归上传与安装。
 
 ## 项目组成
 - `skuare-svc`：后端服务（Skill 存储与 API）。
@@ -14,10 +15,19 @@
 
 默认存储路径：`$HOME/.skuare/skills`
 
+## 核心能力：依赖管理
+- 依赖描述文件：`skill-deps.json`
+- 依赖锁定文件：`skill-deps.lock.json`
+- `skr create --dir <skill-dir>`：读取依赖描述并递归上传依赖 Skill。
+- `skr get <skill-id>`：按配置的 `llmTool` 安装目标 Skill，并平铺安装其依赖。
+
+示例：
+- 若 `a` 依赖 `b` 和 `c`，执行 `skr get a` 后，目标工具目录下会得到 `a`、`b`、`c` 三个技能目录。
+
 ## Quick Start
 ```bash
-# 1) 启动后端（本地模式）
-make start-be LOCAL_MODE=true
+# 1) 启动后端（本地模式，守护进程）
+make start-be LOCAL_MODE=true DAEMON=true
 
 # 2) 安装 CLI
 make install-skr
@@ -29,11 +39,17 @@ skr init
 # 4) 健康检查
 skr health
 
-# 5) 创建 Skill（支持递归处理依赖）
+# 5) 创建 Skill（会递归处理依赖）
 skr create --dir ./skills/observability-orchestrator
 
-# 6) 查看列表
+# 6) 安装 Skill（会平铺安装依赖）
+skr get observability-orchestrator
+
+# 7) 查看列表
 skr list
+
+# 8) 停止后端守护进程
+make stop-be
 ```
 
 ## 常用命令

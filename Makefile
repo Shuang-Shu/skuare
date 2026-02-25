@@ -2,6 +2,7 @@ SHELL := /bin/sh
 
 ADDR ?= 127.0.0.1:15657
 LOCAL_MODE ?= true
+DAEMON ?= false
 SPEC_DIR ?= $(HOME)/.skuare/skills
 GOCACHE ?= /tmp/go-cache-skuare
 AUTHORIZED_KEYS_FILE ?=
@@ -22,11 +23,13 @@ RELEASE_REPO ?=
 SVC_VERSION ?= latest
 
 .PHONY: help start-be start-cli install-skr install-backend health list peek get create format delete validate
+.PHONY: help start-be stop-be start-cli install-skr install-backend health list peek get create format delete validate
 
 help:
 	@echo "Available targets:"
 	@echo "  make start-be [ADDR=host:port] [LOCAL_MODE=true|false] [SPEC_DIR=$(HOME)/.skuare/skills]"
-	@echo "                 [AUTHORIZED_KEYS_FILE=path] [AUTH_MAX_SKEW_SEC=300] [BE_ARGS='--xxx ...']"
+	@echo "                 [AUTHORIZED_KEYS_FILE=path] [AUTH_MAX_SKEW_SEC=300] [DAEMON=true|false] [BE_ARGS='--xxx ...']"
+	@echo "  make stop-be                   # 停止后台守护的 skuare-svc"
 	@echo "  make start-cli                 # 启动 CLI（默认 help）"
 	@echo "  make start-cli CLI_ARGS='...'  # 传入 CLI 参数"
 	@echo "  make install-skr               # 注册 skr 到本地 bin"
@@ -44,7 +47,14 @@ help:
 	@echo "  make validate SKILL_ID=... VERSION=..."
 
 start-be:
-	cd skuare-svc && GOCACHE=$(GOCACHE) SKUARE_LOCAL_MODE=$(LOCAL_MODE) go run ./cmd/skuare-svc --addr $(ADDR) --spec-dir $(abspath $(SPEC_DIR)) --local $(LOCAL_MODE) $(if $(AUTHORIZED_KEYS_FILE),--authorized-keys-file $(AUTHORIZED_KEYS_FILE),) --auth-max-skew-sec $(AUTH_MAX_SKEW_SEC) $(BE_ARGS)
+	@if [ "$(DAEMON)" = "true" ]; then \
+		ADDR="$(ADDR)" LOCAL_MODE="$(LOCAL_MODE)" SPEC_DIR="$(SPEC_DIR)" GOCACHE="$(GOCACHE)" AUTHORIZED_KEYS_FILE="$(AUTHORIZED_KEYS_FILE)" AUTH_MAX_SKEW_SEC="$(AUTH_MAX_SKEW_SEC)" BE_ARGS="$(BE_ARGS)" ./scripts/dev-up.sh; \
+	else \
+		cd skuare-svc && GOCACHE=$(GOCACHE) SKUARE_LOCAL_MODE=$(LOCAL_MODE) go run ./cmd/skuare-svc --addr $(ADDR) --spec-dir $(abspath $(SPEC_DIR)) --local $(LOCAL_MODE) $(if $(AUTHORIZED_KEYS_FILE),--authorized-keys-file $(AUTHORIZED_KEYS_FILE),) --auth-max-skew-sec $(AUTH_MAX_SKEW_SEC) $(BE_ARGS); \
+	fi
+
+stop-be:
+	@./scripts/dev-down.sh
 
 start-cli:
 	cd skuare-cli && npm run build && node dist/index.js --server $(SERVER) $(if $(KEY_ID),--key-id '$(KEY_ID)',) $(if $(PRIVKEY_FILE),--privkey-file '$(PRIVKEY_FILE)',) $(CLI_ARGS)

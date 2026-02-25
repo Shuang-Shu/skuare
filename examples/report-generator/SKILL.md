@@ -1,6 +1,7 @@
 ---
 name: report-generator
-version: 1.0.0
+metadata:
+  version: "1.0.0"
 description: Build structured operational reports from normalized and validated datasets with clear summaries and drill-down sections.
 ---
 

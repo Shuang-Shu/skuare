@@ -69,14 +69,18 @@ go run ./cmd/skuare-svc --addr :15657 --spec-dir "$HOME/.skuare/skills"
 项目根目录也提供本地一键启动脚本（后台启动并健康检查）：
 ```bash
 make start-be
+make start-be DAEMON=true
 make start-be ADDR=127.0.0.1:18080
+make start-be DAEMON=true ADDR=127.0.0.1:18080
 make start-be LOCAL_MODE=false
 make start-be SPEC_DIR="$HOME/.skuare/skills" GOCACHE=/tmp/go-cache-skuare
 make start-be AUTHORIZED_KEYS_FILE="$HOME/.skuare/authorized_keys" AUTH_MAX_SKEW_SEC=300
 make start-be BE_ARGS="--auth-max-skew-sec 120"
+make stop-be
 ```
 
-`make start-be` 支持参数覆盖：`ADDR`、`LOCAL_MODE`、`SPEC_DIR`、`GOCACHE`、`AUTHORIZED_KEYS_FILE`、`AUTH_MAX_SKEW_SEC`，并支持 `BE_ARGS` 透传任意后端参数。
+`make start-be` 支持参数覆盖：`ADDR`、`LOCAL_MODE`、`DAEMON`、`SPEC_DIR`、`GOCACHE`、`AUTHORIZED_KEYS_FILE`、`AUTH_MAX_SKEW_SEC`，并支持 `BE_ARGS` 透传任意后端参数。
+`DAEMON=true` 时以后端守护进程方式启动（日志与 PID 位于 `.skuare/dev`）；`make stop-be` 用于停止守护进程。
 建议本地调试使用 `LOCAL_MODE=true`，生产环境保持 `LOCAL_MODE=false`。
 
 注册公钥文件示例（每行一个，支持 `#` 注释）：

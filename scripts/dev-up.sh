@@ -5,6 +5,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SPEC_DIR="${SPEC_DIR:-./spec}"
 GOCACHE_DIR="${GOCACHE:-/tmp/go-cache-skuare}"
 LOCAL_MODE="${LOCAL_MODE:-true}"
+AUTHORIZED_KEYS_FILE="${AUTHORIZED_KEYS_FILE:-}"
+AUTH_MAX_SKEW_SEC="${AUTH_MAX_SKEW_SEC:-300}"
+BE_ARGS="${BE_ARGS:-}"
 
 DEV_DIR="${ROOT_DIR}/.skuare/dev"
 PID_FILE="${DEV_DIR}/skuare-svc.pid"
@@ -85,7 +88,17 @@ mkdir -p "${SPEC_ABS}"
 echo "starting skuare-svc ..."
 (
   cd "${ROOT_DIR}/skuare-svc"
-  nohup env GOCACHE="${GOCACHE_DIR}" SKUARE_LOCAL_MODE="${LOCAL_MODE}" go run ./cmd/skuare-svc --addr "${ADDR}" --spec-dir "${SPEC_ABS}" --local="${LOCAL_MODE}" >>"${LOG_FILE}" 2>&1 &
+  cmd=(go run ./cmd/skuare-svc --addr "${ADDR}" --spec-dir "${SPEC_ABS}" --local="${LOCAL_MODE}" --auth-max-skew-sec "${AUTH_MAX_SKEW_SEC}")
+  if [ -n "${AUTHORIZED_KEYS_FILE}" ]; then
+    cmd+=(--authorized-keys-file "${AUTHORIZED_KEYS_FILE}")
+  fi
+  if [ -n "${BE_ARGS}" ]; then
+    # shellcheck disable=SC2206
+    extra_args=(${BE_ARGS})
+    cmd+=("${extra_args[@]}")
+  fi
+
+  nohup env GOCACHE="${GOCACHE_DIR}" SKUARE_LOCAL_MODE="${LOCAL_MODE}" "${cmd[@]}" >>"${LOG_FILE}" 2>&1 &
   echo $! >"${PID_FILE}"
 )
 

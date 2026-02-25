@@ -1,6 +1,7 @@
 ---
 name: data-normalizer
-version: 1.0.0
+metadata:
+  version: "1.0.0"
 description: Normalize mixed-source records into canonical field shapes before validation, indexing, and downstream processing.
 ---
 

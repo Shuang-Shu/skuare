@@ -1,6 +1,7 @@
 ---
 name: core-time-utils
-version: 1.0.0
+metadata:
+  version: "1.0.0"
 description: Provide time parsing, timezone normalization, and timestamp window calculations for event-oriented workflows.
 ---
 
