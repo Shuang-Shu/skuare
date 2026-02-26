@@ -1,9 +1,11 @@
 ---
 name: git-commit-composer
+metadata:
+  version: "1.0.1"
 description: Summarize git diff changes, craft accurate commit messages, and execute a safe commit workflow.
 ---
 
-# git-commit-composer
+# Git Commit Composer
 
 ## Overview
 Use this skill to turn raw git changes into a high-quality commit in one flow:
@@ -53,4 +55,3 @@ Use this skill to turn raw git changes into a high-quality commit in one flow:
   - Executed command
   - Commit hash
   - Included file list
-

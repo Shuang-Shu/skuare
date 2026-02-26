@@ -6,10 +6,10 @@ import (
 )
 
 type SkillService struct {
-	store *store.FSStore
+	store store.Store
 }
 
-func NewSkillService(store *store.FSStore) *SkillService {
+func NewSkillService(store store.Store) *SkillService {
 	return &SkillService{store: store}
 }
 

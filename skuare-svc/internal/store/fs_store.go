@@ -24,17 +24,27 @@ var (
 
 type FSStore struct {
 	specDir string
+	fs      FileSystem
 }
 
+var _ Store = (*FSStore)(nil)
+
 func NewFSStore(specDir string) (*FSStore, error) {
-	s := &FSStore{specDir: specDir}
-	if err := os.MkdirAll(s.systemDir(), 0o755); err != nil {
+	return NewFSStoreWithFS(specDir, OSFileSystem{})
+}
+
+func NewFSStoreWithFS(specDir string, fileSystem FileSystem) (*FSStore, error) {
+	if fileSystem == nil {
+		fileSystem = OSFileSystem{}
+	}
+	s := &FSStore{specDir: specDir, fs: fileSystem}
+	if err := s.fs.MkdirAll(s.systemDir(), 0o755); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(s.lockDir(), 0o755); err != nil {
+	if err := s.fs.MkdirAll(s.lockDir(), 0o755); err != nil {
 		return nil, err
 	}
-	if _, err := os.Stat(s.indexPath()); errors.Is(err, os.ErrNotExist) {
+	if _, err := s.fs.Stat(s.indexPath()); errors.Is(err, os.ErrNotExist) {
 		if err := s.writeIndex(model.Index{UpdatedAt: time.Now().UTC().Format(time.RFC3339), Entries: nil}); err != nil {
 			return nil, err
 		}
@@ -79,23 +89,23 @@ func (s *FSStore) Create(req model.CreateSkillVersionRequest) (model.SkillEntry,
 	defer unlock()
 
 	targetDir := s.versionDir(req.SkillID, req.Version)
-	if _, err := os.Stat(targetDir); err == nil {
+	if _, err := s.fs.Stat(targetDir); err == nil {
 		return model.SkillEntry{}, ErrAlreadyExists
 	}
 
 	skillDir := filepath.Dir(targetDir)
-	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+	if err := s.fs.MkdirAll(skillDir, 0o755); err != nil {
 		return model.SkillEntry{}, err
 	}
 
 	tmpDir := filepath.Join(skillDir, req.Version+".tmp-"+fmt.Sprintf("%d", time.Now().UnixNano()))
-	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+	if err := s.fs.MkdirAll(tmpDir, 0o755); err != nil {
 		return model.SkillEntry{}, err
 	}
 	cleanup := true
 	defer func() {
 		if cleanup {
-			_ = os.RemoveAll(tmpDir)
+			_ = s.fs.RemoveAll(tmpDir)
 		}
 	}()
 
@@ -112,7 +122,7 @@ func (s *FSStore) Create(req model.CreateSkillVersionRequest) (model.SkillEntry,
 		}
 	}
 
-	if err := os.Rename(tmpDir, targetDir); err != nil {
+	if err := s.fs.Rename(tmpDir, targetDir); err != nil {
 		return model.SkillEntry{}, err
 	}
 	cleanup = false
@@ -201,13 +211,13 @@ func (s *FSStore) GetVersion(skillID string, version string) (model.SkillDetail,
 	versionDir := s.versionDir(skillID, version)
 
 	files := make([]model.FileSpec, 0)
-	_ = filepath.WalkDir(versionDir, func(path string, d fs.DirEntry, err error) error {
+	_ = s.fs.WalkDir(versionDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
 		}
 		rel, relErr := filepath.Rel(versionDir, path)
 		if relErr == nil {
-			b, readErr := os.ReadFile(path)
+			b, readErr := s.fs.ReadFile(path)
 			if readErr != nil {
 				return nil
 			}
@@ -243,10 +253,10 @@ func (s *FSStore) Delete(skillID string, version string) error {
 	defer unlock()
 
 	versionDir := s.versionDir(skillID, version)
-	if _, err := os.Stat(versionDir); errors.Is(err, os.ErrNotExist) {
+	if _, err := s.fs.Stat(versionDir); errors.Is(err, os.ErrNotExist) {
 		return ErrNotFound
 	}
-	if err := os.RemoveAll(versionDir); err != nil {
+	if err := s.fs.RemoveAll(versionDir); err != nil {
 		return err
 	}
 
@@ -255,9 +265,9 @@ func (s *FSStore) Delete(skillID string, version string) error {
 	}
 
 	parent := filepath.Dir(versionDir)
-	empty, err := isDirEmpty(parent)
+	empty, err := s.isDirEmpty(parent)
 	if err == nil && empty {
-		_ = os.Remove(parent)
+		_ = s.fs.Remove(parent)
 	}
 	return nil
 }
@@ -270,7 +280,7 @@ func (s *FSStore) Validate(skillID string, version string) (model.SkillEntry, er
 		return model.SkillEntry{}, err
 	}
 	skillMDPath := filepath.Join(s.versionDir(skillID, version), "SKILL.md")
-	b, err := os.ReadFile(skillMDPath)
+	b, err := s.fs.ReadFile(skillMDPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return model.SkillEntry{}, ErrNotFound
@@ -294,7 +304,7 @@ func (s *FSStore) Validate(skillID string, version string) (model.SkillEntry, er
 
 func (s *FSStore) Reindex() (int, error) {
 	entries := make([]model.SkillEntry, 0)
-	skillDirs, err := os.ReadDir(s.specDir)
+	skillDirs, err := s.fs.ReadDir(s.specDir)
 	if err != nil {
 		return 0, err
 	}
@@ -306,7 +316,7 @@ func (s *FSStore) Reindex() (int, error) {
 		if err := validator.ValidateSkillID(skillID); err != nil {
 			continue
 		}
-		versions, err := os.ReadDir(filepath.Join(s.specDir, skillID))
+		versions, err := s.fs.ReadDir(filepath.Join(s.specDir, skillID))
 		if err != nil {
 			continue
 		}
@@ -344,15 +354,15 @@ func (s *FSStore) indexPath() string {
 }
 
 func (s *FSStore) writeFile(path string, content string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := s.fs.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(content), 0o644)
+	return s.fs.WriteFile(path, []byte(content), 0o644)
 }
 
 func (s *FSStore) lockSkill(skillID string) (func(), error) {
 	lockPath := filepath.Join(s.lockDir(), skillID+".lock")
-	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	f, err := s.fs.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return nil, err
 	}
@@ -367,7 +377,7 @@ func (s *FSStore) lockSkill(skillID string) (func(), error) {
 }
 
 func (s *FSStore) readIndex() (model.Index, error) {
-	b, err := os.ReadFile(s.indexPath())
+	b, err := s.fs.ReadFile(s.indexPath())
 	if err != nil {
 		return model.Index{}, err
 	}
@@ -387,10 +397,10 @@ func (s *FSStore) writeIndex(idx model.Index) error {
 		return err
 	}
 	tmp := s.indexPath() + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	if err := s.fs.WriteFile(tmp, b, 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.indexPath())
+	return s.fs.Rename(tmp, s.indexPath())
 }
 
 func (s *FSStore) upsertIndex(entry model.SkillEntry) error {
@@ -429,8 +439,8 @@ func (s *FSStore) deleteIndexEntry(skillID string, version string) error {
 	return s.writeIndex(idx)
 }
 
-func isDirEmpty(path string) (bool, error) {
-	entries, err := os.ReadDir(path)
+func (s *FSStore) isDirEmpty(path string) (bool, error) {
+	entries, err := s.fs.ReadDir(path)
 	if err != nil {
 		return false, err
 	}

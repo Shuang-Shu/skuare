@@ -11,7 +11,10 @@
 
 ## 架构与 API 设计
 - 技术栈：Go + Hertz。
-- 分层：`api -> service -> store(fs) -> index`。
+- 分层：`api -> service -> store(interface) -> fs-store(default)`。
+- 存储抽象：
+  - `store.Store`：业务存储接口，service 层仅依赖该接口。
+  - `store.FileSystem`：文件系统操作接口，`FSStore` 默认使用 `OSFileSystem`，可扩展为其它 FS 实现（如分布式 FS）。
 - 启动参数：
   - `--addr`：监听地址，默认 `:15657`（可由 `SKUARE_SVC_ADDR` 覆盖）
   - `--spec-dir`：规格根目录，默认 `~/.skuare/skills`（可由 `SKUARE_SPEC_DIR` 覆盖）
