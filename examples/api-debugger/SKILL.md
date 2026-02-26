@@ -1,7 +1,8 @@
 ---
 name: api-debugger
 metadata:
-  version: "1.0.0"
+  version: "0.0.1"
+  author: "ShuangShu"
 description: Diagnose API integration failures by tracing request/response details, auth, and environment differences.
 ---
 

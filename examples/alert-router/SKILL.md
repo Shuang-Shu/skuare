@@ -1,7 +1,8 @@
 ---
 name: alert-router
 metadata:
-  version: "1.0.0"
+  version: "0.0.1"
+  author: "ShuangShu"
 description: Route ingestion anomalies to downstream channels with severity policies, schedule windows, and deduplication controls.
 ---
 

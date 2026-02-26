@@ -1,7 +1,8 @@
 ---
 name: core-http-client
 metadata:
-  version: "1.0.0"
+  version: "0.0.1"
+  author: "ShuangShu"
 description: Provide reusable HTTP request execution patterns including retries, timeout boundaries, and response sanity checks.
 ---
 

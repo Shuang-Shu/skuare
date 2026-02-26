@@ -1,7 +1,8 @@
 ---
 name: report-generator
 metadata:
-  version: "1.0.0"
+  version: "0.0.1"
+  author: "ShuangShu"
 description: Build structured operational reports from normalized and validated datasets with clear summaries and drill-down sections.
 ---
 

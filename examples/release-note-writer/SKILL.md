@@ -1,7 +1,8 @@
 ---
 name: release-note-writer
 metadata:
-  version: "1.0.0"
+  version: "0.0.1"
+  author: "ShuangShu"
 description: Turn raw commits and PR notes into concise, user-facing release notes by audience and impact.
 ---
 

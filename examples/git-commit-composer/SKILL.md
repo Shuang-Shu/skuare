@@ -1,7 +1,8 @@
 ---
 name: git-commit-composer
 metadata:
-  version: "1.0.1"
+  version: "0.0.1"
+  author: "ShuangShu"
 description: Summarize git diff changes, craft accurate commit messages, and execute a safe commit workflow.
 ---
 

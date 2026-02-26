@@ -1,7 +1,8 @@
 ---
 name: sql-query-helper
 metadata:
-  version: "1.0.0"
+  version: "0.0.1"
+  author: "ShuangShu"
 description: Help users design, optimize, and verify SQL queries with clear assumptions and safe defaults.
 ---
 

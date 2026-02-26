@@ -1,7 +1,8 @@
 ---
 name: pdf-reader
 metadata:
-  version: "1.0.0"
+  version: "0.0.1"
+  author: "ShuangShu"
 description: Read and analyze PDF files, extract text by page range, and produce structured summaries with citations. Use when a user asks to read, summarize, compare, or QA against PDF documents, including long reports, papers, contracts, manuals, and scanned PDFs.
 ---
 

@@ -1,7 +1,8 @@
 ---
 name: api-ingest-pipeline
 metadata:
-  version: "1.0.0"
+  version: "0.0.1"
+  author: "ShuangShu"
 description: Fetch upstream API payloads, normalize records, validate schema, and output ingestion-ready batches.
 ---
 
