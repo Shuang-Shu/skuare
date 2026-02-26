@@ -3,10 +3,9 @@ package http
 import (
 	"errors"
 	"net/http"
-	"strings"
 
-	"skuare-svc/internal/authz"
 	"skuare-svc/internal/store"
+	"skuare-svc/internal/util"
 )
 
 type errorResponse struct {
@@ -20,20 +19,20 @@ func mapError(err error) (int, string, string) {
 	}
 
 	if errors.Is(err, store.ErrAlreadyExists) {
-		return http.StatusConflict, "SKILL_VERSION_ALREADY_EXISTS", err.Error()
+		return http.StatusConflict, util.ErrCodeSkillVersionAlreadyExists, err.Error()
 	}
 	if errors.Is(err, store.ErrNotFound) {
-		return http.StatusNotFound, "SKILL_VERSION_NOT_FOUND", err.Error()
+		return http.StatusNotFound, util.ErrCodeSkillVersionNotFound, err.Error()
 	}
-	if errors.Is(err, authz.ErrForbidden) {
-		return http.StatusForbidden, "FORBIDDEN", err.Error()
+	if errors.Is(err, util.ErrForbidden) {
+		return http.StatusForbidden, util.ErrCodeForbidden, err.Error()
 	}
 
 	msg := err.Error()
-	if strings.Contains(msg, "invalid ") || strings.Contains(msg, "required") || strings.Contains(msg, "frontmatter") {
-		return http.StatusBadRequest, "INVALID_ARGUMENT", msg
+	if util.IsInvalidArgumentError(err) {
+		return http.StatusBadRequest, util.ErrCodeInvalidArgument, msg
 	}
-	return http.StatusInternalServerError, "INTERNAL_ERROR", msg
+	return http.StatusInternalServerError, util.ErrCodeInternalError, msg
 }
 
 func writeError(c interface{ JSON(int, any) }, err error) {

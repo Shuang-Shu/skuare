@@ -10,8 +10,6 @@ import (
 	"strings"
 )
 
-var ErrForbidden = errors.New("forbidden")
-
 type PublicKeyRegistry struct {
 	keys map[string]ed25519.PublicKey
 }

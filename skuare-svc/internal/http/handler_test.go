@@ -6,13 +6,13 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/app"
 
-	"skuare-svc/internal/authz"
+	"skuare-svc/internal/util"
 )
 
 type denyAuthorizer struct{}
 
 func (d *denyAuthorizer) Verify(string, string, []byte, string, string, string, string) error {
-	return authz.ErrForbidden
+	return util.ErrForbidden
 }
 
 func TestCheckWritePermissionLocalMode(t *testing.T) {
@@ -27,7 +27,7 @@ func TestCheckWritePermissionNonLocalNoAuthorizer(t *testing.T) {
 	h := &Handler{localMode: false, authorizer: nil}
 	c := &app.RequestContext{}
 	err := h.checkWritePermission(c)
-	if !errors.Is(err, authz.ErrForbidden) {
+	if !errors.Is(err, util.ErrForbidden) {
 		t.Fatalf("expected forbidden, got %v", err)
 	}
 }
@@ -36,7 +36,7 @@ func TestCheckWritePermissionNonLocalDenied(t *testing.T) {
 	h := &Handler{localMode: false, authorizer: &denyAuthorizer{}}
 	c := &app.RequestContext{}
 	err := h.checkWritePermission(c)
-	if !errors.Is(err, authz.ErrForbidden) {
+	if !errors.Is(err, util.ErrForbidden) {
 		t.Fatalf("expected forbidden, got %v", err)
 	}
 }

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"skuare-svc/internal/util"
 )
 
 const (
@@ -57,16 +59,16 @@ func CanonicalMessage(method string, path string, body []byte, timestamp string,
 
 func (v *SignatureVerifier) Verify(method string, path string, body []byte, keyID string, timestamp string, nonce string, signatureB64 string) error {
 	if v.reg == nil {
-		return ErrForbidden
+		return util.ErrForbidden
 	}
 	pub, ok := v.reg.GetPublicKey(keyID)
 	if !ok || len(pub) != ed25519.PublicKeySize {
-		return ErrForbidden
+		return util.ErrForbidden
 	}
 
 	ts, err := strconv.ParseInt(strings.TrimSpace(timestamp), 10, 64)
 	if err != nil {
-		return ErrForbidden
+		return util.ErrForbidden
 	}
 	now := v.now().UTC()
 	reqTime := time.Unix(ts, 0).UTC()
@@ -75,24 +77,24 @@ func (v *SignatureVerifier) Verify(method string, path string, body []byte, keyI
 		diff = -diff
 	}
 	if diff > v.maxSkew {
-		return ErrForbidden
+		return util.ErrForbidden
 	}
 
 	nonce = strings.TrimSpace(nonce)
 	if nonce == "" {
-		return ErrForbidden
+		return util.ErrForbidden
 	}
 	if !v.claimNonce(keyID, nonce, now.Add(v.maxSkew)) {
-		return ErrForbidden
+		return util.ErrForbidden
 	}
 
 	sig, err := base64.StdEncoding.DecodeString(strings.TrimSpace(signatureB64))
 	if err != nil {
-		return ErrForbidden
+		return util.ErrForbidden
 	}
 	msg := CanonicalMessage(method, path, body, timestamp, nonce)
 	if !ed25519.Verify(pub, msg, sig) {
-		return ErrForbidden
+		return util.ErrForbidden
 	}
 	return nil
 }

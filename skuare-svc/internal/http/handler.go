@@ -9,6 +9,7 @@ import (
 	"skuare-svc/internal/authz"
 	"skuare-svc/internal/model"
 	"skuare-svc/internal/service"
+	"skuare-svc/internal/util"
 )
 
 type Handler struct {
@@ -136,7 +137,7 @@ func (h *Handler) checkWritePermission(c *app.RequestContext) error {
 		return nil
 	}
 	if h.authorizer == nil {
-		return authz.ErrForbidden
+		return util.ErrForbidden
 	}
 	keyID := string(c.Request.Header.Peek(authz.HeaderKeyID))
 	ts := string(c.Request.Header.Peek(authz.HeaderTimestamp))

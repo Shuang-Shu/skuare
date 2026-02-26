@@ -32,7 +32,15 @@
   - `POST /api/v1/reindex`
 - OpenAPI：`skuare-svc/docs/openapi.yaml`
 - 错误响应：统一为 `{ "code": "...", "message": "..." }`
+- 错误码定义：统一收敛到 `internal/util/errcode.go`
 - 写操作鉴权：`POST /api/v1/skills`、`DELETE /api/v1/skills/:skillID/:version`、`POST /api/v1/reindex` 需要数字签名请求头（`X-Skuare-Key-Id`/`X-Skuare-Timestamp`/`X-Skuare-Nonce`/`X-Skuare-Signature`）。
+
+### 错误码约定
+- `SKILL_VERSION_ALREADY_EXISTS`：创建已存在的技能版本。
+- `SKILL_VERSION_NOT_FOUND`：查询/删除不存在的技能版本。
+- `FORBIDDEN`：写接口鉴权失败（缺失签名头、未注册 key、签名无效、时间戳过期、nonce 重放等）。
+- `INVALID_ARGUMENT`：请求参数或 `SKILL.md` 校验失败。
+- `INTERNAL_ERROR`：未归类错误。
 
 ## 鉴权机制说明
 - 目标：限制 server 端写操作，仅允许“持有已注册公钥对应私钥”的客户端执行写入。
