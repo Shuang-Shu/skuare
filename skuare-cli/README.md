@@ -29,7 +29,10 @@
   - `health` -> `GET /healthz`
   - `list [--q]` -> `GET /api/v1/skills`
   - `peek <skillID> [version]` -> `GET /api/v1/skills/:skillID[/version]`
-  - `get <skillID> [version]` -> 安装到 `.<llmTool>/skills`（按依赖平铺写入目录与文件内容）
+  - `get <skillID> [version]` -> 按工具目录规则安装（按依赖平铺写入目录与文件内容）
+    - `codex` 默认：`<cwd>/skills`
+    - `claudecode` 默认：`~/.claudecode/skills`
+    - custom 默认：`~/.<toolName>/skills`（可在 `skr init` 中配置覆盖）
   - `create --file <json>` -> `POST /api/v1/skills`
   - `create --skill <SKILL.md> [--skill-id] [--version]` -> `POST /api/v1/skills`（显式 `SKILL.md` 模式，版本读取 `metadata.version`）
   - `create --dir <skillDir> [--skill-id] [--version]` -> `POST /api/v1/skills`（显式目录模式，自动探测 `<dir>/SKILL.md` 并读取 `metadata.version`）
@@ -113,6 +116,9 @@ npm install
   - 预置选项：`codex`、`claudecode`、`custom`
   - 选择方式：方向键 ↑/↓ 移动，Space 勾选，Enter 提交
 - 在 `custom` 行按 Space 会立即弹出输入框；提交后会新增一行 `custom: <name>`，可重复添加多个
+- 当选中 custom 工具时，`init` 会逐个提示 `Skills directory for custom tool "<name>"`：
+  - 预填默认值：`~/.<name>/skills`
+  - 支持输入绝对路径、相对路径或 `~/`，保存时会规范化
 - 所有字段编辑与 LLM Tool 选择完成后，最后一步会再次确认 `Save config now (Y/n)`，确认后才真正写入配置文件
 
 创建 Skill 示例：
@@ -182,3 +188,4 @@ skuare --server http://127.0.0.1:15657 \
 - 2026-02-26：命令语义调整：`peek` 承接原查询语义，`get` 改为安装语义；`create` 支持多输入与 `--all`，并强制 `metadata.version`；新增 `format`；客户端移除 `reindex`。
 - 2026-02-26：CLI 异常治理：统一抛领域错误；HTTP 失败优先透传服务端 `code/message`；终端保持 `[ERROR]` 风格输出。
 - 2026-02-26：`format` 交互增强：改为 `skr format [skillDir...]`，新增 `All/Each` 模式选择；支持 `skr format --all` 扫描当前目录批量格式化并统一写入 `metadata.version`/`metadata.author`。
+- 2026-02-27：`get` 安装目录改为按 LLMTool 规则解析（`codex` -> `./skills`，`claudecode` -> `~/.claudecode/skills`）；`init` 支持为 custom 工具配置 skills 目录映射。

@@ -13,6 +13,9 @@ import {
   isInsidePath,
   buildServerURL,
   normalizeAddress,
+  getDefaultToolSkillsDir,
+  isBuiltinLLMTool,
+  normalizeToolSkillsDir,
 } from "../config/resolver";
 import { loadConfig, writeConfig } from "../config/loader";
 import { mergeConfig } from "../config/merger";
@@ -58,6 +61,16 @@ function printConfigSnapshot(cfg: SkuareConfig): void {
   console.log(`  auth.keyId: ${cfg.auth.keyId || "(empty)"}`);
   console.log(`  auth.privateKeyFile: ${cfg.auth.privateKeyFile || "(empty)"}`);
   console.log(`  llmTools: ${cfg.llmTools.join(", ")}`);
+  if (Object.keys(cfg.toolSkillDirs).length > 0) {
+    console.log("  toolSkillDirs:");
+    for (const [tool, dir] of Object.entries(cfg.toolSkillDirs)) {
+      console.log(`    - ${tool}: ${dir}`);
+    }
+  }
+}
+
+function getCustomTools(llmTools: string[]): string[] {
+  return llmTools.map((tool) => tool.trim()).filter((tool) => tool && !isBuiltinLLMTool(tool));
 }
 
 /**
@@ -128,6 +141,7 @@ async function runInitTUI(cwd: string): Promise<void> {
     let keyId = baseCfg.auth.keyId;
     let privateKeyFile = baseCfg.auth.privateKeyFile;
     let llmTools = baseCfg.llmTools;
+    let toolSkillDirs = { ...baseCfg.toolSkillDirs };
     let modifyLLMTools = scope === "global";
 
     if (scope === "workspace" && workspaceMode === "reuse-global") {
@@ -213,6 +227,30 @@ async function runInitTUI(cwd: string): Promise<void> {
       llmTools = await runArrowSelector(() => selectLLMTools(llmTools));
     }
 
+    const customTools = getCustomTools(llmTools);
+    const shouldPromptCustomDirs = modifyLLMTools || customTools.some((tool) => !toolSkillDirs[tool]);
+    if (customTools.length > 0 && shouldPromptCustomDirs) {
+      console.log("\nConfigure custom tool skills directories:");
+      for (const tool of customTools) {
+        const fallback = getDefaultToolSkillsDir(cwd, tool);
+        const current = normalizeToolSkillsDir(cwd, toolSkillDirs[tool] || "") || fallback;
+        const answer = await askWithDefault(rl, `Skills directory for custom tool "${tool}"`, current);
+        const normalized = normalizeToolSkillsDir(cwd, answer);
+        if (!normalized) {
+          throw new DomainError("CLI_INVALID_ARGUMENT", `Invalid skills directory for custom tool: ${tool}`);
+        }
+        toolSkillDirs[tool] = normalized;
+      }
+    }
+
+    const nextToolSkillDirs: Record<string, string> = {};
+    for (const tool of customTools) {
+      const normalized = normalizeToolSkillsDir(cwd, toolSkillDirs[tool] || "");
+      if (normalized) {
+        nextToolSkillDirs[tool] = normalized;
+      }
+    }
+
     // 合并配置
     const targetPath = scope === "global" ? globalPath : workspacePath;
     const existing = await loadConfig(targetPath);
@@ -228,6 +266,7 @@ async function runInitTUI(cwd: string): Promise<void> {
         privateKeyFile,
       },
       llmTools,
+      toolSkillDirs: nextToolSkillDirs,
     });
 
     // 最后确认
@@ -243,6 +282,12 @@ async function runInitTUI(cwd: string): Promise<void> {
     console.log(`  path:  ${targetPath}`);
     console.log(`  server preview: ${buildServerURL(next.remote.address, next.remote.port)}`);
     console.log(`  llmTools: ${next.llmTools.join(", ")}`);
+    if (Object.keys(next.toolSkillDirs).length > 0) {
+      console.log("  toolSkillDirs:");
+      for (const [tool, dir] of Object.entries(next.toolSkillDirs)) {
+        console.log(`    - ${tool}: ${dir}`);
+      }
+    }
     console.log("\nPrecedence: CLI flags > workspace config > global config > defaults");
   } finally {
     rl.close();

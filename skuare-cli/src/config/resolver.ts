@@ -69,6 +69,52 @@ export function normalizeAddress(address: string): string {
 }
 
 /**
+ * 是否预置 LLMTool
+ */
+export function isBuiltinLLMTool(tool: string): boolean {
+  const t = tool.trim().toLowerCase();
+  return t === "codex" || t === "claudecode";
+}
+
+/**
+ * 获取工具默认 skills 目录
+ */
+export function getDefaultToolSkillsDir(cwd: string, tool: string): string {
+  const name = tool.trim();
+  const lower = name.toLowerCase();
+  if (lower === "codex") {
+    return join(cwd, "skills");
+  }
+  if (lower === "claudecode") {
+    return join(homedir(), ".claudecode", "skills");
+  }
+  return join(homedir(), `.${name}`, "skills");
+}
+
+/**
+ * 规范化 skills 目录输入（支持 ~ 与相对路径）
+ */
+export function normalizeToolSkillsDir(cwd: string, input: string): string {
+  const raw = String(input || "").trim();
+  if (!raw) {
+    return "";
+  }
+  const expanded = raw === "~" ? homedir() : raw.startsWith("~/") ? join(homedir(), raw.slice(2)) : raw;
+  return isAbsolutePath(expanded) ? expanded : resolve(cwd, expanded);
+}
+
+/**
+ * 解析工具最终 skills 目录（配置优先，其次默认规则）
+ */
+export function resolveToolSkillsDir(cwd: string, tool: string, configured?: string): string {
+  const configuredPath = normalizeToolSkillsDir(cwd, configured || "");
+  if (configuredPath) {
+    return configuredPath;
+  }
+  return getDefaultToolSkillsDir(cwd, tool);
+}
+
+/**
  * 解析最终配置
  * @param cwd 当前工作目录
  * @param cli CLI 参数
@@ -103,4 +149,8 @@ export async function resolveConfig(cwd: string, cli: CliArgs): Promise<Resolved
 function resolveRelative(from: string, to: string): string {
   const path = require("node:path") as { relative(from: string, to: string): string };
   return path.relative(from, to);
+}
+
+function isAbsolutePath(path: string): boolean {
+  return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path);
 }

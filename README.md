@@ -20,6 +20,9 @@
 - 依赖锁定文件：`skill-deps.lock.json`
 - `skr create --dir <skill-dir>`：读取依赖描述并递归上传依赖 Skill。
 - `skr get <skill-id>`：按配置的 `llmTool` 安装目标 Skill，并平铺安装其依赖。
+  - `codex` 默认安装到当前目录 `./skills`
+  - `claudecode` 默认安装到 `~/.claudecode/skills`
+  - custom 默认安装到 `~/.<toolName>/skills`（可在 `skr init` 里覆盖）
 
 示例：
 - 若 `a` 依赖 `b` 和 `c`，执行 `skr get a` 后，目标工具目录下会得到 `a`、`b`、`c` 三个技能目录。
@@ -77,3 +80,4 @@ skr delete observability-orchestrator 1.0.0
 ## 变更记录
 - 2026-02-26：README 调整为更通用的 GitHub 风格，保留原有信息并优化表达。
 - 2026-02-26：命令语义调整：`peek` 查询、`get` 安装、`format` 格式化，`create` 支持多路径与 `--all`。
+- 2026-02-27：`get` 安装目录按 LLMTool 区分（`codex`/`claudecode`/custom），`init` 支持 custom 工具 skills 目录配置。

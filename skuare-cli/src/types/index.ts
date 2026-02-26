@@ -29,6 +29,7 @@ export type SkuareConfig = {
   remote: RemoteConfig;
   auth: WriteAuth;
   llmTools: string[];
+  toolSkillDirs: Record<string, string>;
 };
 
 // ============================================================================
@@ -95,5 +96,6 @@ export function createDefaultConfig(): SkuareConfig {
       privateKeyFile: "",
     },
     llmTools: ["codex"],
+    toolSkillDirs: {},
   };
 }

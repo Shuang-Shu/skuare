@@ -61,6 +61,7 @@ async function main(): Promise<void> {
       localMode: resolved.localMode,
       cwd,
       llmTools: resolved.merged.llmTools,
+      toolSkillDirs: resolved.merged.toolSkillDirs,
       auth: resolved.auth,
       args: rest,
     };

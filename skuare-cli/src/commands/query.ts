@@ -8,6 +8,7 @@ import { callApi } from "../http/client";
 import type { JsonValue } from "./types";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { resolveToolSkillsDir } from "../config/resolver";
 
 type RemoteFile = { path: string; content: string };
 
@@ -86,7 +87,7 @@ export class GetCommand extends BaseCommand {
       this.fail("Missing <skillID>. Usage: skuare get <skillID> [version]");
     }
     const tool = this.resolveTargetTool(context.llmTools);
-    const targetRoot = join(context.cwd, `.${tool}`, "skills");
+    const targetRoot = resolveToolSkillsDir(context.cwd, tool, context.toolSkillDirs[tool]);
     const installed = await this.installWithDependencies(context, targetRoot, skillID, versionArg);
     console.log(JSON.stringify({ llm_tool: tool, target: targetRoot, skills: installed.sort((a, b) => a.localeCompare(b)) }, null, 2));
   }

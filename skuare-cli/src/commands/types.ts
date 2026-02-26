@@ -15,6 +15,7 @@ export type CommandContext = {
   localMode: boolean;
   cwd: string;
   llmTools: string[];
+  toolSkillDirs: Record<string, string>;
   auth: {
     keyId: string;
     privateKeyFile: string;

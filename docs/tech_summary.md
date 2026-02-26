@@ -18,6 +18,7 @@
   - 启动参数：`--addr`、`--spec-dir`、`--authorized-keys-file`、`--local`、`--auth-max-skew-sec`。
   - CLI 配置优先级：`CLI 参数 > workspace > global > defaults`。
   - CLI `remote.mode`：`local`（写免签）/`remote`（写需签名）。
+  - CLI `toolSkillDirs`：可配置 custom 工具 skills 目录映射；`get` 未配置时按工具默认目录回退（`codex`=`<cwd>/skills`，`claudecode`=`~/.claudecode/skills`，其他=`~/.<tool>/skills`）。
 - 鉴权：
   - 写接口在 remote 模式要求 Ed25519 签名头。
   - `local=true` 时后端直接放行写请求。

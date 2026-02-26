@@ -47,6 +47,17 @@ export function mergeConfig(...items: Array<Partial<SkuareConfig> | undefined>):
         new Set(item.llmTools.map((t) => String(t).trim()).filter(Boolean))
       );
     }
+
+    if (item.toolSkillDirs && typeof item.toolSkillDirs === "object" && !Array.isArray(item.toolSkillDirs)) {
+      for (const [tool, dir] of Object.entries(item.toolSkillDirs)) {
+        const key = String(tool).trim();
+        const val = String(dir ?? "").trim();
+        if (!key || !val) {
+          continue;
+        }
+        result.toolSkillDirs[key] = val;
+      }
+    }
   }
 
   return result;
