@@ -1,8 +1,8 @@
 # 后端错误码与通用能力归一计划
 
 > 文档类型：PLAN
-> 状态：进行中
-> 当前节点状态：验收
+> 状态：已完成
+> 当前节点状态：结束
 > 更新时间：2026-02-27
 > 适用范围：skuare-svc/internal, skuare-svc/README.md
 > 日期分支：feat/2026-02-27
@@ -76,3 +76,8 @@
 - [2026-02-27 00:45] 用户验收结论：待用户确认。
 - [2026-02-27 00:46] 单测通过记录：`cd skuare-svc && GOCACHE=/tmp/go-cache-skuare-backend-util go test ./...` 全量通过。
 - [2026-02-27 00:46] 构建通过记录：`cd skuare-svc && GOCACHE=/tmp/go-cache-skuare-backend-util go build ./...` 通过。
+- [2026-02-27 00:54] 用户验收结论：用户确认“合入master，然后结束需求”。
+
+## 结束（仅在用户明确同意后填写）
+### Log
+- [2026-02-27 00:54] 用户同意结束：“合入master，然后结束需求”。
