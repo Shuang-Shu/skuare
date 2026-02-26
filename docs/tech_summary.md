@@ -28,6 +28,7 @@
 - 输出约束：
   - `skr list` 输出精简为 `skill_id/version/name/description`。
   - `skr create` 输出不包含服务端本地路径。
+  - `skr format [skillDir...]` 交互式支持 `All/Each`，并统一写入 `metadata.version`/`metadata.author`；`skr format --all` 自动扫描当前目录子技能。
 
 ## 差距分析
 - 文档层面：

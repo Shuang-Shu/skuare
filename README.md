@@ -59,7 +59,8 @@ skr list --q observability
 skr peek observability-orchestrator
 skr get observability-orchestrator
 skr create --dir ./skills/observability-orchestrator
-skr format ./skills/observability-orchestrator/SKILL.md 1.0.0
+skr format ./skills/observability-orchestrator
+skr format --all
 skr validate observability-orchestrator 1.0.0
 skr delete observability-orchestrator 1.0.0
 ```

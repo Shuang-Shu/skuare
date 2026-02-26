@@ -50,7 +50,8 @@ Commands:
   create <path...> [--all] [--skill-id <id>] [--version <v>]
                                        Auto detect each path: SKILL.md -> dir -> JSON fallback
   delete <skillID> <version>           Delete skill version
-  format [files...] <version>          Format skill files with metadata.version
+  format [skillDir...]                 Interactive format for metadata.version/metadata.author
+  format --all                         Format all skill dirs under current directory
 
 Global Flags:
   --server <url>                       Backend URL (highest priority)

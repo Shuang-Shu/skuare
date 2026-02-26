@@ -9,6 +9,8 @@ import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, posix, relative, resolve } from "node:path";
 import * as readlinePromises from "node:readline/promises";
 
+type ReadlineInterface = Awaited<ReturnType<typeof readlinePromises.createInterface>>;
+
 type CreateSource =
   | { kind: "json"; path: string }
   | { kind: "skill"; path: string }
@@ -507,44 +509,119 @@ export class CreateCommand extends BaseCommand {
 
 export class FormatCommand extends BaseCommand {
   readonly name = "format";
-  readonly description = "Format skill files with metadata.version";
+  readonly description = "Format skill dirs with metadata.version and metadata.author";
 
   async execute(context: CommandContext): Promise<void> {
+    const includeAll = context.args.includes("--all");
     const positional = this.getPositionalArgs(context.args);
-    let version = positional.length > 0 ? positional[positional.length - 1].trim() : "";
-    let files = positional.length > 1 ? positional.slice(0, -1) : [];
+    if (includeAll && positional.length > 0) {
+      this.fail("--all cannot be used with positional skillDir arguments");
+    }
+
+    const files = await this.resolveFormatTargets(positional, context.cwd, includeAll);
+    if (files.length === 0) {
+      this.fail("No skill directories found. Usage: skuare format [skillDir...] | skuare format --all");
+    }
 
     const rl = readlinePromises.createInterface({ input: process.stdin, output: process.stdout });
     try {
-      if (!version) {
-        version = (await rl.question("Input metadata.version: ")).trim();
-      }
-      if (!version) {
-        this.fail("Missing version. Usage: skuare format [files...] <version>");
+      const mode = includeAll ? "all" : await this.selectMode(rl);
+      const changed: Array<{ file: string; version: string; author: string }> = [];
+
+      if (mode === "all") {
+        const defaults = await this.readMetadataDefaults(files[0]);
+        const version = await this.askRequired(rl, "Input metadata.version", defaults.version || "1.0.0");
+        const author = await this.askRequired(rl, "Input metadata.author", defaults.author || "ProjectHub");
+
+        for (const path of files) {
+          const raw = await readFile(path, "utf8");
+          const next = this.withMetadata(raw, version, author);
+          await writeFile(path, next, "utf8");
+          changed.push({ file: path, version, author });
+        }
+      } else {
+        for (const path of files) {
+          const defaults = await this.readMetadataDefaults(path);
+          const version = await this.askRequired(
+            rl,
+            `Input metadata.version for ${path}`,
+            defaults.version || "1.0.0"
+          );
+          const author = await this.askRequired(
+            rl,
+            `Input metadata.author for ${path}`,
+            defaults.author || "ProjectHub"
+          );
+          const raw = await readFile(path, "utf8");
+          const next = this.withMetadata(raw, version, author);
+          await writeFile(path, next, "utf8");
+          changed.push({ file: path, version, author });
+        }
       }
 
-      if (files.length === 0) {
-        const raw = (await rl.question("Input files or dirs (comma separated, empty=./SKILL.md): ")).trim();
-        files = raw ? raw.split(",").map((v: string) => v.trim()).filter(Boolean) : ["./SKILL.md"];
-      }
+      console.log(JSON.stringify({ mode, files: changed, count: changed.length }, null, 2));
     } finally {
       rl.close();
     }
-
-    const normalized = Array.from(new Set(files));
-    const changed: string[] = [];
-    for (const input of normalized) {
-      const path = await this.resolveSkillFilePath(input);
-      const raw = await readFile(path, "utf8");
-      const next = this.withMetadataVersion(raw, version);
-      await writeFile(path, next, "utf8");
-      changed.push(path);
-    }
-    console.log(JSON.stringify({ version, files: changed }, null, 2));
   }
 
   private getPositionalArgs(args: string[]): string[] {
-    return args.filter((v) => !v.startsWith("--"));
+    const out: string[] = [];
+    for (const arg of args) {
+      if (arg.startsWith("--")) {
+        continue;
+      }
+      out.push(arg);
+    }
+    return out;
+  }
+
+  private async resolveFormatTargets(inputs: string[], cwd: string, includeAll: boolean): Promise<string[]> {
+    const targets = includeAll || inputs.length === 0 ? await this.discoverSkillDirsInCurrentDir(cwd) : inputs;
+    const unique = Array.from(new Set(targets.map((v) => v.trim()).filter(Boolean)));
+    const resolved: string[] = [];
+    for (const input of unique) {
+      resolved.push(await this.resolveSkillFilePath(input));
+    }
+    return resolved;
+  }
+
+  private async discoverSkillDirsInCurrentDir(cwd: string): Promise<string[]> {
+    const entries = await readdir(cwd, { withFileTypes: true });
+    const out: string[] = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      const dirPath = join(cwd, entry.name);
+      const skillPath = join(dirPath, "SKILL.md");
+      const info = await stat(skillPath).catch(() => undefined);
+      if (info?.isFile()) {
+        out.push(dirPath);
+      }
+    }
+    out.sort((a, b) => a.localeCompare(b));
+    return out;
+  }
+
+  private async selectMode(rl: ReadlineInterface): Promise<"all" | "each"> {
+    const raw = (await rl.question("Select format mode: All / Each [All]: ")).trim().toLowerCase();
+    if (!raw || raw === "all" || raw === "a") {
+      return "all";
+    }
+    if (raw === "each" || raw === "e") {
+      return "each";
+    }
+    this.fail("Invalid mode. Expected All or Each");
+  }
+
+  private async askRequired(rl: ReadlineInterface, label: string, defaultValue: string): Promise<string> {
+    const raw = (await rl.question(`${label} [${defaultValue}]: `)).trim();
+    const val = raw || defaultValue;
+    if (!val) {
+      this.fail(`${label} is required`);
+    }
+    return val;
   }
 
   private async resolveSkillFilePath(input: string): Promise<string> {
@@ -553,24 +630,65 @@ export class FormatCommand extends BaseCommand {
     if (!info) {
       this.fail(`Path not found: ${input}`);
     }
-    if (info.isDirectory()) {
-      const skill = join(abs, "SKILL.md");
-      const skillInfo = await stat(skill).catch(() => undefined);
-      if (!skillInfo?.isFile()) {
-        this.fail(`SKILL.md not found in directory: ${input}`);
-      }
-      return skill;
+    if (!info.isDirectory()) {
+      this.fail(`Only skill directory is supported: ${input}`);
     }
-    if (!info.isFile()) {
-      this.fail(`Only regular file or skill directory is supported: ${input}`);
+    const skill = join(abs, "SKILL.md");
+    const skillInfo = await stat(skill).catch(() => undefined);
+    if (!skillInfo?.isFile()) {
+      this.fail(`SKILL.md not found in directory: ${input}`);
     }
-    return abs;
+    return skill;
   }
 
-  private withMetadataVersion(content: string, version: string): string {
+  private async readMetadataDefaults(path: string): Promise<{ version: string; author: string }> {
+    const content = await readFile(path, "utf8");
     const lines = content.split(/\r?\n/);
     if (lines[0]?.trim() !== "---") {
-      const fm = ["---", "metadata:", `  version: ${version}`, "---", ""].join("\n");
+      return { version: "", author: "" };
+    }
+    let fmEnd = -1;
+    for (let i = 1; i < lines.length; i += 1) {
+      if (lines[i].trim() === "---") {
+        fmEnd = i;
+        break;
+      }
+    }
+    if (fmEnd < 0) {
+      return { version: "", author: "" };
+    }
+
+    let metaIndent = -1;
+    let version = "";
+    let author = "";
+    for (const rawLine of lines.slice(1, fmEnd)) {
+      const line = rawLine.trim();
+      const indent = rawLine.length - rawLine.trimStart().length;
+      if (line === "metadata:") {
+        metaIndent = indent;
+        continue;
+      }
+      if (metaIndent >= 0) {
+        if (line && indent <= metaIndent) {
+          metaIndent = -1;
+        } else if (line.startsWith("version:") && !version) {
+          version = this.unquote(line.slice("version:".length).trim());
+          continue;
+        } else if (line.startsWith("author:") && !author) {
+          author = this.unquote(line.slice("author:".length).trim());
+          continue;
+        }
+      }
+    }
+    return { version, author };
+  }
+
+  private withMetadata(content: string, version: string, author: string): string {
+    const versionVal = this.toYamlString(version);
+    const authorVal = this.toYamlString(author);
+    const lines = content.split(/\r?\n/);
+    if (lines[0]?.trim() !== "---") {
+      const fm = ["---", "metadata:", `  author: ${authorVal}`, `  version: ${versionVal}`, "---", ""].join("\n");
       return `${fm}${content}`;
     }
 
@@ -587,6 +705,28 @@ export class FormatCommand extends BaseCommand {
 
     const fmLines = lines.slice(1, fmEnd);
     const rest = lines.slice(fmEnd + 1);
+
+    // Normalize top-level `author/version` to `metadata.author/metadata.version`.
+    let topLevelAuthorValue = "";
+    let topLevelVersionValue = "";
+    for (let i = fmLines.length - 1; i >= 0; i -= 1) {
+      const raw = fmLines[i];
+      const trimmed = raw.trim();
+      const indent = raw.length - raw.trimStart().length;
+      if (indent === 0 && trimmed.startsWith("author:")) {
+        if (!topLevelAuthorValue) {
+          topLevelAuthorValue = raw.slice(raw.indexOf("author:") + "author:".length).trim();
+        }
+        fmLines.splice(i, 1);
+        continue;
+      }
+      if (indent === 0 && trimmed.startsWith("version:")) {
+        if (!topLevelVersionValue) {
+          topLevelVersionValue = raw.slice(raw.indexOf("version:") + "version:".length).trim();
+        }
+        fmLines.splice(i, 1);
+      }
+    }
 
     let metaStart = -1;
     let metaEnd = -1;
@@ -609,23 +749,60 @@ export class FormatCommand extends BaseCommand {
 
     if (metaStart < 0) {
       fmLines.push("metadata:");
-      fmLines.push(`  version: ${version}`);
+      fmLines.push(`  author: ${authorVal || topLevelAuthorValue}`);
+      fmLines.push(`  version: ${versionVal || topLevelVersionValue}`);
     } else {
-      let replaced = false;
+      let hasAuthor = false;
+      let hasVersion = false;
       for (let i = metaStart + 1; i <= metaEnd; i += 1) {
         const t = fmLines[i].trim();
+        if (t.startsWith("author:")) {
+          hasAuthor = true;
+        }
         if (t.startsWith("version:")) {
-          fmLines[i] = `  version: ${version}`;
-          replaced = true;
-          break;
+          hasVersion = true;
         }
       }
-      if (!replaced) {
-        fmLines.splice(metaEnd + 1, 0, `  version: ${version}`);
+      if (hasAuthor) {
+        for (let i = metaStart + 1; i <= metaEnd; i += 1) {
+          const t = fmLines[i].trim();
+          if (t.startsWith("author:")) {
+            fmLines[i] = `  author: ${authorVal}`;
+            break;
+          }
+        }
+      }
+      if (!hasAuthor) {
+        fmLines.splice(metaEnd + 1, 0, `  author: ${authorVal || topLevelAuthorValue}`);
+        metaEnd += 1;
+      }
+
+      if (hasVersion) {
+        for (let i = metaStart + 1; i <= metaEnd; i += 1) {
+          const t = fmLines[i].trim();
+          if (t.startsWith("version:")) {
+            fmLines[i] = `  version: ${versionVal}`;
+            break;
+          }
+        }
+      }
+      if (!hasVersion) {
+        fmLines.splice(metaEnd + 1, 0, `  version: ${versionVal || topLevelVersionValue}`);
       }
     }
 
     return ["---", ...fmLines, "---", ...rest].join("\n");
+  }
+
+  private toYamlString(input: string): string {
+    return `"${input.replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`;
+  }
+
+  private unquote(v: string): string {
+    if ((v.startsWith("\"") && v.endsWith("\"")) || (v.startsWith("'") && v.endsWith("'"))) {
+      return v.slice(1, -1).trim();
+    }
+    return v.trim();
   }
 }
 
