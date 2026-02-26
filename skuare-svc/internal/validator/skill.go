@@ -65,9 +65,6 @@ func ValidateSkillSpec(skill model.SkillSpec) error {
 	if strings.TrimSpace(skill.Description) == "" {
 		return errors.New("skill.description is required")
 	}
-	if strings.TrimSpace(skill.Overview) == "" {
-		return errors.New("skill.overview is required")
-	}
 	for i, s := range skill.Sections {
 		if strings.TrimSpace(s.Title) == "" {
 			return fmt.Errorf("skill.sections[%d].title is required", i)

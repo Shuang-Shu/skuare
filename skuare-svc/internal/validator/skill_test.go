@@ -33,7 +33,6 @@ func TestValidateSkillMD(t *testing.T) {
 func TestValidateAndRenderSkillSpec(t *testing.T) {
 	spec := model.SkillSpec{
 		Description: "read pdf skill",
-		Overview:    "overview",
 		Sections: []model.SkillSection{
 			{Title: "目标与范围", Content: "范围说明"},
 		},
