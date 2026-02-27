@@ -2,17 +2,18 @@
 
 > 文档类型：TECH
 > 状态：已完成
-> 更新时间：2026-02-26
+> 更新时间：2026-02-28
 > 适用范围：project-wide
 
 ## 目标与范围
 - 汇总 `skuare` 当前技术实现、接口约束、配置机制、依赖模型与运维参数。
 - 作为 README 的技术补充，面向开发/维护人员。
+- 依赖文件精确格式见：`docs/skill_deps_format.md`。
 
 ## 现状与事实依据
 - 模块：
   - `skuare-svc`：文件系统存储模型 `<specDir>/<skillID>/<version>`。
-  - `skuare-cli`：命令式前端，支持 `init/health/list/peek/get/create/format/delete/validate`。
+  - `skuare-cli`：命令式前端，支持 `init/health/list/peek/get/create/build/format/delete/validate`。
 - 关键配置：
   - 后端默认 `spec-dir`：`$HOME/.skuare/skills`（可由 `SKUARE_SPEC_DIR` 或 `--spec-dir` 覆盖）。
   - 启动参数：`--addr`、`--spec-dir`、`--authorized-keys-file`、`--local`、`--auth-max-skew-sec`。
@@ -25,9 +26,14 @@
 - 依赖模型：
   - 依赖不在 `SKILL.md` frontmatter 声明。
   - 使用 `skill-deps.json` + `skill-deps.lock.json`。
+  - `skill-deps*.json` 字段结构以 `@examples` 目录样例为准。
+  - `SKILL.md` 正文跨 Skill 引用格式统一为 `{{ <author>/<name>@<version> }}`。
   - `skr create` 会递归上传依赖，已存在版本返回 `WARN`。
 - 输出约束：
-  - `skr list` 输出精简为 `skill_id/version/name/description`。
+  - `skr list` 输出包含 `id/name/author/skill_id/version/description`，其中 `id=<author>/<name>@<version>` 且先于 `name`。
+  - `skr list` 支持 `--regex <pattern>` 客户端正则过滤（匹配 `id/skill_id/name/author/description`）。
+  - `skr peek` 输出对齐 `id/name/author` 展示规范。
+  - `skr peek` 支持 `--regex <pattern>` 唯一匹配后查询详情。
   - `skr create` 输出不包含服务端本地路径。
   - `skr format [skillDir...]` 交互式支持 `All/Each`，并统一写入 `metadata.version`/`metadata.author`；`skr format --all` 自动扫描当前目录子技能。
 

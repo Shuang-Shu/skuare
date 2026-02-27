@@ -19,6 +19,7 @@
 - 依赖描述文件：`skill-deps.json`
 - 依赖锁定文件：`skill-deps.lock.json`
 - `skr create --dir <skill-dir>`：读取依赖描述并递归上传依赖 Skill。
+- `skr build <skillName> [refSkill...]`：为本地 skill 自动创建或追加更新依赖文件（`skill-deps.json` / `skill-deps.lock.json`），支持 `alias=refSkill`。
 - `skr get <skill-id>`：按配置的 `llmTool` 安装目标 Skill，并平铺安装其依赖。
   - `codex` 默认安装到当前目录 `./skills`
   - `claudecode` 默认安装到 `~/.claudecode/skills`
@@ -59,9 +60,12 @@ make stop-be
 ```bash
 skr health
 skr list --q observability
+skr list --regex "report|alert"
 skr peek observability-orchestrator
+skr peek --regex "^skuare/report-generator@"
 skr get observability-orchestrator
 skr create --dir ./skills/observability-orchestrator
+skr build observability-orchestrator core-time-utils report-generator
 skr format ./skills/observability-orchestrator
 skr format --all
 skr validate observability-orchestrator 1.0.0
@@ -81,3 +85,5 @@ skr delete observability-orchestrator 1.0.0
 - 2026-02-26：README 调整为更通用的 GitHub 风格，保留原有信息并优化表达。
 - 2026-02-26：命令语义调整：`peek` 查询、`get` 安装、`format` 格式化，`create` 支持多路径与 `--all`。
 - 2026-02-27：`get` 安装目录按 LLMTool 区分（`codex`/`claudecode`/custom），`init` 支持 custom 工具 skills 目录配置。
+- 2026-02-27：新增 `build <skillName> [refSkill...]`，支持自动创建/追加 `skill-deps.json` 与 `skill-deps.lock.json`。
+- 2026-02-28：`list/peek` 新增 `--regex` 正则匹配能力（`peek` 需唯一命中）。 

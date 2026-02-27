@@ -806,6 +806,225 @@ export class FormatCommand extends BaseCommand {
   }
 }
 
+export class BuildCommand extends BaseCommand {
+  readonly name = "build";
+  readonly description = "Build skill dependency files";
+
+  async execute(context: CommandContext): Promise<void> {
+    const [skillName, ...rawRefs] = context.args.map((v) => v.trim()).filter(Boolean);
+    if (!skillName) {
+      this.fail("Usage: skuare build <skillName> [refSkill...]");
+    }
+
+    const targetDir = await this.resolveSkillDir(skillName, context.cwd, context.cwd);
+    const skillDirRoot = dirname(targetDir);
+
+    const refs = Array.from(new Set(rawRefs));
+    const resolvedRefs: Array<{ skill: string; version: string; dir: string; alias?: string }> = [];
+    for (const ref of refs) {
+      const parsed = this.parseRefArg(ref);
+      const refDir = await this.resolveSkillDir(parsed.refSkill, skillDirRoot, context.cwd);
+      const refSkill = basename(refDir);
+      if (resolve(refDir) === resolve(targetDir)) {
+        this.fail(`Self dependency is not allowed: ${refSkill}`);
+      }
+      const version = await this.readSkillVersion(refDir);
+      resolvedRefs.push({ skill: refSkill, version, dir: refDir, alias: parsed.alias });
+    }
+
+    const depPath = join(targetDir, "skill-deps.json");
+    const lockPath = join(targetDir, "skill-deps.lock.json");
+
+    const existingDeps = await this.readDepsFile(depPath);
+    const existingLock = await this.readLockFile(lockPath);
+
+    const merged = new Map<string, BuildDependency>();
+    for (const item of existingDeps) {
+      merged.set(this.depKey(item), { skill: item.skill, version: item.version, alias: item.alias });
+    }
+    for (const ref of resolvedRefs) {
+      merged.set(this.depKey(ref), { skill: ref.skill, version: ref.version, alias: ref.alias });
+    }
+
+    const dependencies = Array.from(merged.values()).sort((a, b) => this.depKey(a).localeCompare(this.depKey(b)));
+    const lockBySkill = new Map(existingLock.map((item) => [this.depKey(item), item]));
+    const lockDependencies = dependencies.map((dep) => {
+      const old = lockBySkill.get(this.depKey(dep));
+      const resolved = old && old.version === dep.version && old.skill === dep.skill ? old.resolved : dep.version;
+      const out: BuildLockDependency = {
+        skill: dep.skill,
+        version: dep.version,
+        resolved,
+      };
+      if (dep.alias) {
+        out.alias = dep.alias;
+      }
+      return out;
+    });
+
+    await writeFile(depPath, `${JSON.stringify({ dependencies }, null, 2)}\n`, "utf8");
+    await writeFile(lockPath, `${JSON.stringify({ lock_version: 1, dependencies: lockDependencies }, null, 2)}\n`, "utf8");
+
+    console.log(JSON.stringify({
+      skill: basename(targetDir),
+      target_dir: targetDir,
+      added: resolvedRefs.map((v) => ({ skill: v.skill, version: v.version, ...(v.alias ? { alias: v.alias } : {}) })),
+      dependency_count: dependencies.length,
+      files: [depPath, lockPath],
+    }, null, 2));
+  }
+
+  private parseRefArg(input: string): { refSkill: string; alias?: string } {
+    const m = input.match(/^([A-Za-z0-9._-]+)=(.+)$/);
+    if (!m) {
+      return { refSkill: input };
+    }
+    return { alias: m[1], refSkill: m[2] };
+  }
+
+  private async resolveSkillDir(input: string, baseDir: string, fallbackDir: string): Promise<string> {
+    const direct = resolve(input);
+    const inBase = resolve(baseDir, input);
+    const inFallback = resolve(fallbackDir, input);
+    const candidates = Array.from(new Set([direct, inBase, inFallback]));
+    for (const candidate of candidates) {
+      const info = await stat(candidate).catch(() => undefined);
+      if (!info?.isDirectory()) {
+        continue;
+      }
+      const skillPath = join(candidate, "SKILL.md");
+      const skillInfo = await stat(skillPath).catch(() => undefined);
+      if (skillInfo?.isFile()) {
+        return candidate;
+      }
+    }
+    this.fail(`Skill directory not found or missing SKILL.md: ${input}`);
+  }
+
+  private async readSkillVersion(skillDir: string): Promise<string> {
+    const raw = await readFile(join(skillDir, "SKILL.md"), "utf8");
+    const lines = raw.split(/\r?\n/);
+    if (lines.length < 3 || lines[0].trim() !== "---") {
+      this.fail(`SKILL.md must start with YAML frontmatter: ${join(skillDir, "SKILL.md")}`);
+    }
+    let fmEnd = -1;
+    for (let i = 1; i < lines.length; i += 1) {
+      if (lines[i].trim() === "---") {
+        fmEnd = i;
+        break;
+      }
+    }
+    if (fmEnd < 0) {
+      this.fail(`Invalid frontmatter in ${join(skillDir, "SKILL.md")}: missing closing ---`);
+    }
+
+    let version = "";
+    let metadataIndent = -1;
+    for (const rawLine of lines.slice(1, fmEnd)) {
+      const line = rawLine.trim();
+      const indent = rawLine.length - rawLine.trimStart().length;
+      if (line === "metadata:") {
+        metadataIndent = indent;
+        continue;
+      }
+      if (metadataIndent >= 0) {
+        if (line && indent <= metadataIndent) {
+          metadataIndent = -1;
+          continue;
+        }
+        if (line.startsWith("version:")) {
+          version = this.unquote(line.slice("version:".length).trim());
+          break;
+        }
+      }
+    }
+    if (!version) {
+      this.fail(`metadata.version is required in ${join(skillDir, "SKILL.md")}`);
+    }
+    return version;
+  }
+
+  private async readDepsFile(depPath: string): Promise<BuildDependency[]> {
+    const info = await stat(depPath).catch(() => undefined);
+    if (!info?.isFile()) {
+      return [];
+    }
+    const raw = await readFile(depPath, "utf8");
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      this.fail(`Invalid dependency file: ${depPath}`);
+    }
+    const deps = (parsed as { dependencies?: unknown }).dependencies;
+    if (!deps) {
+      return [];
+    }
+    if (!Array.isArray(deps)) {
+      this.fail(`Invalid dependencies format in ${depPath}: expected array`);
+    }
+    return deps.map((item) => this.parseDepItem(item, depPath));
+  }
+
+  private async readLockFile(lockPath: string): Promise<BuildLockDependency[]> {
+    const info = await stat(lockPath).catch(() => undefined);
+    if (!info?.isFile()) {
+      return [];
+    }
+    const raw = await readFile(lockPath, "utf8");
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      this.fail(`Invalid lock file: ${lockPath}`);
+    }
+    const deps = (parsed as { dependencies?: unknown }).dependencies;
+    if (!deps) {
+      return [];
+    }
+    if (!Array.isArray(deps)) {
+      this.fail(`Invalid dependencies format in ${lockPath}: expected array`);
+    }
+    return deps.map((item) => {
+      const dep = this.parseDepItem(item, lockPath);
+      const resolved = String((item as { resolved?: unknown }).resolved || dep.version).trim() || dep.version;
+      return { ...dep, resolved, alias: dep.alias };
+    });
+  }
+
+  private parseDepItem(item: unknown, filePath: string): BuildDependency {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      this.fail(`Invalid dependency item in ${filePath}`);
+    }
+    const skill = String((item as { skill?: unknown }).skill || "").trim();
+    const version = String((item as { version?: unknown }).version || "").trim();
+    const aliasRaw = (item as { alias?: unknown }).alias;
+    const alias = aliasRaw === undefined ? "" : String(aliasRaw).trim();
+    if (!skill || !version) {
+      this.fail(`Dependency item requires skill/version in ${filePath}`);
+    }
+    if (aliasRaw !== undefined && !alias) {
+      this.fail(`Dependency alias must be non-empty string in ${filePath}`);
+    }
+    return { skill, version, ...(alias ? { alias } : {}) };
+  }
+
+  private depKey(dep: { skill: string; alias?: string }): string {
+    return dep.alias?.trim() || dep.skill;
+  }
+
+  private unquote(v: string): string {
+    if ((v.startsWith("\"") && v.endsWith("\"")) || (v.startsWith("'") && v.endsWith("'"))) {
+      return v.slice(1, -1).trim();
+    }
+    return v.trim();
+  }
+}
+
+type BuildDependency = SkillDependency & {
+  alias?: string;
+};
+
+type BuildLockDependency = BuildDependency & {
+  resolved: string;
+};
+
 /**
  * 删除技能命令
  */

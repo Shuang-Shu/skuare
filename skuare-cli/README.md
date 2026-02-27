@@ -2,7 +2,7 @@
 
 > 文档类型：README
 > 状态：已完成
-> 更新时间：2026-02-26
+> 更新时间：2026-02-28
 > 适用范围：skuare-cli
 
 ## 目标与范围
@@ -27,8 +27,9 @@
   - 配置项：`auth.keyId`、`auth.privateKeyFile`
 - 命令到 API 映射：
   - `health` -> `GET /healthz`
-  - `list [--q]` -> `GET /api/v1/skills`
+  - `list [--q] [--regex]` -> `GET /api/v1/skills`（`--q` 服务端过滤 + `--regex` 客户端正则过滤）
   - `peek <skillID> [version]` -> `GET /api/v1/skills/:skillID[/version]`
+  - `peek --regex <pattern> [version]` -> 先从 `GET /api/v1/skills` 正则筛选唯一 skill，再走 `peek` 详情查询
   - `get <skillID> [version]` -> 按工具目录规则安装（按依赖平铺写入目录与文件内容）
     - `codex` 默认：`<cwd>/skills`
     - `claudecode` 默认：`~/.claudecode/skills`
@@ -37,6 +38,7 @@
   - `create --skill <SKILL.md> [--skill-id] [--version]` -> `POST /api/v1/skills`（显式 `SKILL.md` 模式，版本读取 `metadata.version`）
   - `create --dir <skillDir> [--skill-id] [--version]` -> `POST /api/v1/skills`（显式目录模式，自动探测 `<dir>/SKILL.md` 并读取 `metadata.version`）
   - `create <path...> [--all] [--skill-id] [--version]` -> 自动检测每个 path：`SKILL.md` 文件 -> 目录 -> JSON 回退
+  - `build <skillName> [refSkill...]` -> 本地生成/追加 `<skillName>/skill-deps.json` 与 `<skillName>/skill-deps.lock.json`（版本来自引用 skill 的 `metadata.version`；支持 `alias=refSkill`）
   - `format [skillDir...]` -> 交互式格式化（先选 `All/Each`，写入 `metadata.version` 与 `metadata.author`）
   - `format --all` -> 直接扫描当前目录下所有 skillDir，执行标准格式化流程
   - `delete <skillID> <version>` -> `DELETE /api/v1/skills/:skillID/:version`
@@ -149,6 +151,11 @@ skuare --server http://127.0.0.1:15657 create /tmp/create-skill.json
 
 # 可选：传 --version 做一致性校验（与 frontmatter metadata.version 不一致会报错）
 skuare --server http://127.0.0.1:15657 create --dir ./skills/pdf-reader --version 1.0.0
+
+# 本地构建依赖文件（add 语义，存量依赖会保留并增量更新）
+skuare build report-generator data-normalizer schema-validator
+# 支持别名
+skuare build report-generator normalizer=data-normalizer schema=schema-validator
 ```
 
 `create` 依赖上传行为：
@@ -157,8 +164,22 @@ skuare --server http://127.0.0.1:15657 create --dir ./skills/pdf-reader --versio
 - 依赖目录默认按同级目录解析（例如 `skills/<depSkillID>`）。
 - 当前 skill 若已存在（`409 SKILL_VERSION_ALREADY_EXISTS`），CLI 输出 `WARN` 并返回成功，不再报错退出。
 
+`build` 依赖文件行为：
+- 命令格式：`skuare build <skillName> [refSkill...]`。
+- 若目标 skill 缺少依赖文件，则自动创建 `skill-deps.json` 与 `skill-deps.lock.json`。
+- 若目标 skill 已有依赖文件，则采用 add 语义：保留历史依赖，并对本次 `refSkill` 做追加/同名更新。
+- `skill-deps.lock.json` 固定输出 `lock_version: 1`，并为每个依赖写入 `resolved` 字段。
+- 可选别名：`refSkill` 可写为 `alias=refSkill`，落盘后依赖项会包含 `alias` 字段。
+
 `list` 输出字段：
-- `skr list` 仅展示：`skill_id`、`version`、`name`、`description`。
+- `skr list` 展示：`id`、`name`、`author`、`skill_id`、`version`、`description`。
+- 其中 `id` 格式为：`<author>/<name>@<version>`，并固定先于 `name` 展示。
+- `skr list --regex <pattern>` 会在 `id/skill_id/name/author/description` 上执行正则匹配。
+
+`peek` 输出字段：
+- `skr peek <skillID> <version>` 展示：`id`、`name`、`author` 及该版本详情字段。
+- `skr peek <skillID>` 展示：`id`（latest）、`name`、`author`、`versions` 与 `ids`（每个版本对应的完整 id）。
+- `skr peek --regex <pattern> [version]` 要求正则命中唯一 skill；0 命中或多命中会报错并提示。
 
 写操作示例（携带公钥）：
 ```bash
@@ -189,3 +210,6 @@ skuare --server http://127.0.0.1:15657 \
 - 2026-02-26：CLI 异常治理：统一抛领域错误；HTTP 失败优先透传服务端 `code/message`；终端保持 `[ERROR]` 风格输出。
 - 2026-02-26：`format` 交互增强：改为 `skr format [skillDir...]`，新增 `All/Each` 模式选择；支持 `skr format --all` 扫描当前目录批量格式化并统一写入 `metadata.version`/`metadata.author`。
 - 2026-02-27：`get` 安装目录改为按 LLMTool 规则解析（`codex` -> `./skills`，`claudecode` -> `~/.claudecode/skills`）；`init` 支持为 custom 工具配置 skills 目录映射。
+- 2026-02-27：新增 `build <skillName> [refSkill...]`，用于本地自动创建/追加 `skill-deps.json` 与 `skill-deps.lock.json`。
+- 2026-02-28：优化 `list/peek` 展示：新增 `author`，并统一 `id=<author>/<name>@<version>`，且 `id` 先于 `name` 输出。
+- 2026-02-28：`list/peek` 新增 `--regex` 正则匹配能力（`peek` 需唯一命中）。 
