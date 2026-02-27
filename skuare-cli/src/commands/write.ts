@@ -531,7 +531,7 @@ export class FormatCommand extends BaseCommand {
       if (mode === "all") {
         const defaults = await this.readMetadataDefaults(files[0]);
         const version = await this.askRequired(rl, "Input metadata.version", defaults.version || "1.0.0");
-        const author = await this.askRequired(rl, "Input metadata.author", defaults.author || "ProjectHub");
+        const author = await this.askRequired(rl, "Input metadata.author", defaults.author || "undefined");
 
         for (const path of files) {
           const raw = await readFile(path, "utf8");
@@ -550,7 +550,7 @@ export class FormatCommand extends BaseCommand {
           const author = await this.askRequired(
             rl,
             `Input metadata.author for ${path}`,
-            defaults.author || "ProjectHub"
+            defaults.author || "undefined"
           );
           const raw = await readFile(path, "utf8");
           const next = this.withMetadata(raw, version, author);

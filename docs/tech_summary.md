@@ -34,6 +34,7 @@
   - `skr list` 支持 `--regex <pattern>` 客户端正则过滤（匹配 `id/skill_id/name/author/description`）。
   - `skr peek` 输出对齐 `id/name/author` 展示规范。
   - `skr peek` 支持 `--regex <pattern>` 唯一匹配后查询详情。
+  - `author` 缺失时默认回退为 `undefined`。
   - `skr create` 输出不包含服务端本地路径。
   - `skr format [skillDir...]` 交互式支持 `All/Each`，并统一写入 `metadata.version`/`metadata.author`；`skr format --all` 自动扫描当前目录子技能。
 

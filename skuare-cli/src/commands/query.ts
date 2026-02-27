@@ -105,7 +105,7 @@ function buildDisplayIdentity(input: {
   const skillID = input.skillID.trim();
   const parsed = parseSkillIDParts(skillID);
   const name = (input.name || "").trim() || parsed.nameFromID || skillID || "unknown";
-  const author = (input.author || "").trim() || parsed.authorFromID || "unknown";
+  const author = (input.author || "").trim() || parsed.authorFromID || "undefined";
   const version = (input.version || "").trim();
   const id = version ? `${author}/${name}@${version}` : `${author}/${name}`;
   return { id, name, author };

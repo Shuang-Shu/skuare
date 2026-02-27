@@ -174,6 +174,7 @@ skuare build report-generator normalizer=data-normalizer schema=schema-validator
 `list` 输出字段：
 - `skr list` 展示：`id`、`name`、`author`、`skill_id`、`version`、`description`。
 - 其中 `id` 格式为：`<author>/<name>@<version>`，并固定先于 `name` 展示。
+- 当作者信息缺失时，`author` 回退为 `undefined`。
 - `skr list --regex <pattern>` 会在 `id/skill_id/name/author/description` 上执行正则匹配。
 
 `peek` 输出字段：
@@ -211,5 +212,6 @@ skuare --server http://127.0.0.1:15657 \
 - 2026-02-26：`format` 交互增强：改为 `skr format [skillDir...]`，新增 `All/Each` 模式选择；支持 `skr format --all` 扫描当前目录批量格式化并统一写入 `metadata.version`/`metadata.author`。
 - 2026-02-27：`get` 安装目录改为按 LLMTool 规则解析（`codex` -> `./skills`，`claudecode` -> `~/.claudecode/skills`）；`init` 支持为 custom 工具配置 skills 目录映射。
 - 2026-02-27：新增 `build <skillName> [refSkill...]`，用于本地自动创建/追加 `skill-deps.json` 与 `skill-deps.lock.json`。
+- 2026-02-28：`author` 预填与回退默认值统一为 `undefined`（含 `format` 交互与 `list/peek` 展示）。
 - 2026-02-28：优化 `list/peek` 展示：新增 `author`，并统一 `id=<author>/<name>@<version>`，且 `id` 先于 `name` 输出。
 - 2026-02-28：`list/peek` 新增 `--regex` 正则匹配能力（`peek` 需唯一命中）。 
