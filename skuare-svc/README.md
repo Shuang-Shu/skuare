@@ -142,3 +142,4 @@ curl -X POST "http://127.0.0.1:15657/api/v1/reindex" \
 - 2026-02-23：新增项目级本地开发编排脚本（dev-up/dev-down/dev-status）。
 - 2026-02-23：新增 `--local` / `SKUARE_LOCAL_MODE` 开关，支持本地模式下写接口免签。
 - 2026-02-24：新增 `--auth-max-skew-sec` / `SKUARE_AUTH_MAX_SKEW_SEC`，并增强 `make start-be` 参数透传能力。
+- 2026-03-01：对齐仓库入口风格：`scripts/dev-up.sh` 默认 `SPEC_DIR` 与 `make start-be`、SVC 默认仓库根统一为 `~/.skuare`。
