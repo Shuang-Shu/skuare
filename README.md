@@ -39,6 +39,7 @@ export PATH=/tmp/skuare-bin/bin:$PATH
 
 # 若仓库已自带 skuare-cli/dist，skr 会优先复用预构建产物；
 # 只有在需要重建且本地具备 TypeScript 工具链时才会重新编译。
+# 若当前只能回退到旧 dist，`skr publish ...` 会桥接为旧命令 `create ...` 以保持基础兼容。
 
 # 3) 初始化（可选）
 skr init
@@ -94,3 +95,4 @@ skr delete observability-orchestrator 1.0.0
 - 2026-02-28：`list/peek` 新增 `--regex` 正则匹配能力（`peek` 需唯一命中）。 
 - 2026-02-28：区分远程仓库与本地局部仓库：`publish` 成为主写命令，`get` 新增 `--scope/--repo-dir/--tool`，默认仓库根统一为 `~/.skuare`。
 - 2026-03-01：清理仓库入口风格：`make format` 不再错误要求 `VERSION`，`scripts/dev-up.sh` 默认 `SPEC_DIR` 与主入口保持一致。
+- 2026-03-01：`skr` 在回退旧 `dist/index.js` 时会将 `publish` 兼容桥接为旧命令 `create`，避免无 TypeScript 环境下出现 `Unknown command: publish`。
