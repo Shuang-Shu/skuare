@@ -6,11 +6,17 @@ import type { CommandContext } from "./types";
 import { BaseCommand } from "./base";
 import { callApi } from "../http/client";
 import type { JsonValue } from "./types";
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { resolveToolSkillsDir } from "../config/resolver";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import {
+  getGlobalRepoDirPath,
+  getWorkspaceRepoDirPath,
+  normalizeToolSkillsDir,
+} from "../config/resolver";
 
 type RemoteFile = { path: string; content: string };
+type InstallScope = "global" | "workspace";
+type InstallResult = { skills: string[]; conflictFiles: string[] };
 type NormalizedSkillItem = {
   id: string;
   name: string;
@@ -346,20 +352,58 @@ export class PeekCommand extends BaseCommand {
 
 export class GetCommand extends BaseCommand {
   readonly name = "get";
-  readonly description = "Install skill to local llm tool directory";
+  readonly description = "Install skill to local partial repository";
 
   async execute(context: CommandContext): Promise<void> {
-    const [skillID, versionArg] = context.args;
+    const scopeRaw = this.parseOptionValue(context.args, "--scope");
+    const repoDirRaw = this.parseOptionValue(context.args, "--repo-dir");
+    const toolArg = this.parseOptionValue(context.args, "--tool");
+    const positional = stripOptionsWithValues(context.args, ["--scope", "--repo-dir", "--tool"]);
+    const [skillID, versionArg] = positional;
     if (!skillID) {
-      this.fail("Missing <skillID>. Usage: skuare get <skillID> [version]");
+      this.fail("Missing <skillID>. Usage: skuare get <skillID> [version] [--scope global|workspace] [--repo-dir <path>] [--tool <name>]");
     }
-    const tool = this.resolveTargetTool(context.llmTools);
-    const targetRoot = resolveToolSkillsDir(context.cwd, tool, context.toolSkillDirs[tool]);
-    const installed = await this.installWithDependencies(context, targetRoot, skillID, versionArg);
-    console.log(JSON.stringify({ llm_tool: tool, target: targetRoot, skills: installed.sort((a, b) => a.localeCompare(b)) }, null, 2));
+    if (positional.length > 2) {
+      this.fail("Usage: skuare get <skillID> [version] [--scope global|workspace] [--repo-dir <path>] [--tool <name>]");
+    }
+    const scope = this.resolveScope(scopeRaw);
+    const tool = this.resolveTargetTool(context.llmTools, toolArg);
+    const repositoryRoot = this.resolveRepositoryRoot(context, scope, repoDirRaw);
+    const targetRoot = this.resolveInstallTargetRoot(repositoryRoot, scope, tool);
+    const sharedLocalDir = this.isSharedLocalDir(context, repositoryRoot);
+    const result = await this.installWithDependencies(context, targetRoot, skillID, versionArg, { sharedLocalDir });
+    if (sharedLocalDir && result.conflictFiles.length > 0) {
+      console.log(
+        `${this.yellow("[WARN]")} local mode shared repository detected, overwrite ${result.conflictFiles.length} file(s) during install`
+      );
+    }
+    console.log(JSON.stringify({
+      scope,
+      llm_tool: tool,
+      repository_root: repositoryRoot,
+      target: targetRoot,
+      shared_local_dir: sharedLocalDir,
+      conflicts: result.conflictFiles.sort((a, b) => a.localeCompare(b)),
+      skills: result.skills.sort((a, b) => a.localeCompare(b)),
+    }, null, 2));
   }
 
-  private resolveTargetTool(llmTools: string[]): string {
+  private resolveScope(raw?: string): InstallScope {
+    if (!raw) {
+      return "workspace";
+    }
+    const scope = raw.trim().toLowerCase();
+    if (scope !== "global" && scope !== "workspace") {
+      this.fail(`Invalid --scope value: ${raw}. Expected global|workspace`);
+    }
+    return scope as InstallScope;
+  }
+
+  private resolveTargetTool(llmTools: string[], preferred?: string): string {
+    const fromArg = String(preferred || "").trim();
+    if (fromArg) {
+      return fromArg;
+    }
     const first = (llmTools || []).map((v) => v.trim()).find(Boolean);
     if (!first) {
       this.fail("No llmTools configured. Run `skr init` and select at least one tool");
@@ -367,15 +411,47 @@ export class GetCommand extends BaseCommand {
     return first;
   }
 
+  private resolveRepositoryRoot(context: CommandContext, scope: InstallScope, repoDirArg?: string): string {
+    const fromArg = normalizeToolSkillsDir(context.cwd, repoDirArg || "");
+    if (fromArg) {
+      return fromArg;
+    }
+    return scope === "global" ? getGlobalRepoDirPath() : getWorkspaceRepoDirPath(context.cwd);
+  }
+
+  private resolveInstallTargetRoot(repositoryRoot: string, scope: InstallScope, tool: string): string {
+    return join(repositoryRoot, "repos", scope, tool);
+  }
+
+  private isSharedLocalDir(context: CommandContext, repositoryRoot: string): boolean {
+    if (!context.localMode) {
+      return false;
+    }
+    const remoteRoot = normalizeToolSkillsDir(context.cwd, context.remoteStorageDir);
+    if (!remoteRoot) {
+      return false;
+    }
+    return this.pathsEqual(remoteRoot, repositoryRoot);
+  }
+
+  private pathsEqual(a: string, b: string): boolean {
+    const left = resolve(a);
+    const right = resolve(b);
+    return process.platform === "win32" ? left.toLowerCase() === right.toLowerCase() : left === right;
+  }
+
   private async installWithDependencies(
     context: CommandContext,
     targetRoot: string,
     rootSkill: string,
-    versionArg?: string
-  ): Promise<string[]> {
+    versionArg?: string,
+    options?: { sharedLocalDir: boolean }
+  ): Promise<InstallResult> {
     const queue: string[] = [rootSkill];
     const installed = new Set<string>();
     const visiting = new Set<string>();
+    const conflicts = new Set<string>();
+    const sharedLocalDir = options?.sharedLocalDir === true;
 
     while (queue.length > 0) {
       const skill = queue.shift() as string;
@@ -391,7 +467,10 @@ export class GetCommand extends BaseCommand {
       const files = await this.fetchRemoteFiles(context, skill, version);
       const deps = this.parseDependenciesFromFiles(files);
 
-      await this.writeSkillFiles(targetRoot, skill, files);
+      const changed = await this.writeSkillFiles(targetRoot, skill, files, { sharedLocalDir });
+      for (const path of changed) {
+        conflicts.add(path);
+      }
       installed.add(skill);
       visiting.delete(skill);
 
@@ -402,7 +481,7 @@ export class GetCommand extends BaseCommand {
       }
     }
 
-    return Array.from(installed);
+    return { skills: Array.from(installed), conflictFiles: Array.from(conflicts) };
   }
 
   private async resolveVersion(context: CommandContext, skillID: string, preferred?: string): Promise<string> {
@@ -475,15 +554,36 @@ export class GetCommand extends BaseCommand {
       .filter(Boolean);
   }
 
-  private async writeSkillFiles(targetRoot: string, skillID: string, files: RemoteFile[]): Promise<void> {
+  private async writeSkillFiles(
+    targetRoot: string,
+    skillID: string,
+    files: RemoteFile[],
+    options?: { sharedLocalDir: boolean }
+  ): Promise<string[]> {
     const skillDir = join(targetRoot, skillID);
     await mkdir(skillDir, { recursive: true });
+    const conflicts: string[] = [];
     for (const file of files) {
       const rel = normalizePath(file.path).replace(/^(\.\.\/)+/, "");
       const dest = join(skillDir, rel);
       await mkdir(dirname(dest), { recursive: true });
+      let oldContent: string | undefined;
+      try {
+        oldContent = await readFile(dest, "utf8");
+      } catch (err) {
+        if (!(err && typeof err === "object" && (err as { code?: string }).code === "ENOENT")) {
+          throw err;
+        }
+      }
+      if (oldContent === file.content) {
+        continue;
+      }
+      if (options?.sharedLocalDir && oldContent !== undefined) {
+        conflicts.push(normalizePath(join(skillID, rel)));
+      }
       await writeFile(dest, file.content, "utf8");
     }
+    return conflicts;
   }
 }
 

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SPEC_DIR="${SPEC_DIR:-./spec}"
+SPEC_DIR="${SPEC_DIR:-$HOME/.skuare}"
 GOCACHE_DIR="${GOCACHE:-/tmp/go-cache-skuare}"
 LOCAL_MODE="${LOCAL_MODE:-true}"
 AUTHORIZED_KEYS_FILE="${AUTHORIZED_KEYS_FILE:-}"

@@ -6,7 +6,7 @@ import type { Command, CommandRegistry } from "./types";
 import { HelpCommand, VersionCommand } from "./help";
 import { HealthCommand } from "./admin";
 import { ListCommand, GetCommand, PeekCommand, ValidateCommand } from "./query";
-import { BuildCommand, CreateCommand, DeleteCommand, FormatCommand } from "./write";
+import { BuildCommand, CreateCommand, DeleteCommand, FormatCommand, PublishCommand } from "./write";
 import { InitCommand } from "./init";
 
 /**
@@ -24,6 +24,7 @@ export function createCommandRegistry(): CommandRegistry {
     new PeekCommand(),
     new GetCommand(),
     new ValidateCommand(),
+    new PublishCommand(),
     new CreateCommand(),
     new BuildCommand(),
     new DeleteCommand(),
