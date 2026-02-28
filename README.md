@@ -13,17 +13,17 @@
 - `skuare-svc`：后端服务（Skill 存储与 API）。
 - `skuare-cli`：命令行工具（`skr` / `skuare`）。
 
-默认存储路径：`$HOME/.skuare/skills`
+默认仓库根路径：`$HOME/.skuare`
 
 ## 核心能力：依赖管理
 - 依赖描述文件：`skill-deps.json`
 - 依赖锁定文件：`skill-deps.lock.json`
-- `skr create --dir <skill-dir>`：读取依赖描述并递归上传依赖 Skill。
+- `skr publish --dir <skill-dir>`：读取依赖描述并递归上传依赖 Skill 到远程仓库。
 - `skr build <skillName> [refSkill...]`：为本地 skill 自动创建或追加更新依赖文件（`skill-deps.json` / `skill-deps.lock.json`），支持 `alias=refSkill`。
-- `skr get <skill-id>`：按配置的 `llmTool` 安装目标 Skill，并平铺安装其依赖。
-  - `codex` 默认安装到当前目录 `./skills`
-  - `claudecode` 默认安装到 `~/.claudecode/skills`
-  - custom 默认安装到 `~/.<toolName>/skills`（可在 `skr init` 里覆盖）
+- `skr get <skill-id> [--scope global|workspace]`：从远程仓库拉取 Skill 到本地局部仓库，并平铺安装其依赖。
+  - global 默认仓库根：`~/.skuare`
+  - workspace 默认仓库根：`<cwd>/.skuare`
+  - 实际安装目录：`<repoRoot>/repos/<scope>/<tool>/<skillID>/...`
 
 示例：
 - 若 `a` 依赖 `b` 和 `c`，执行 `skr get a` 后，目标工具目录下会得到 `a`、`b`、`c` 三个技能目录。
@@ -46,11 +46,11 @@ skr init
 # 4) 健康检查
 skr health
 
-# 5) 创建 Skill（会递归处理依赖）
-skr create --dir ./skills/observability-orchestrator
+# 5) 发布 Skill（会递归处理依赖）
+skr publish --dir ./skills/observability-orchestrator
 
-# 6) 安装 Skill（会平铺安装依赖）
-skr get observability-orchestrator
+# 6) 拉取到本地局部仓库（会平铺安装依赖）
+skr get observability-orchestrator --scope workspace
 
 # 7) 查看列表
 skr list
@@ -66,7 +66,9 @@ skr list --q observability
 skr list --regex "report|alert"
 skr peek observability-orchestrator
 skr peek --regex "^skuare/report-generator@"
-skr get observability-orchestrator
+skr get observability-orchestrator --scope workspace
+skr get observability-orchestrator --scope global --repo-dir ~/.skuare
+skr publish --dir ./skills/observability-orchestrator
 skr create --dir ./skills/observability-orchestrator
 skr build observability-orchestrator core-time-utils report-generator
 skr format ./skills/observability-orchestrator
@@ -90,3 +92,4 @@ skr delete observability-orchestrator 1.0.0
 - 2026-02-27：`get` 安装目录按 LLMTool 区分（`codex`/`claudecode`/custom），`init` 支持 custom 工具 skills 目录配置。
 - 2026-02-27：新增 `build <skillName> [refSkill...]`，支持自动创建/追加 `skill-deps.json` 与 `skill-deps.lock.json`。
 - 2026-02-28：`list/peek` 新增 `--regex` 正则匹配能力（`peek` 需唯一命中）。 
+- 2026-02-28：区分远程仓库与本地局部仓库：`publish` 成为主写命令，`get` 新增 `--scope/--repo-dir/--tool`，默认仓库根统一为 `~/.skuare`。

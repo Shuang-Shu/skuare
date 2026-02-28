@@ -7,7 +7,8 @@
 
 ## 目标与范围
 - 提供 SkillHub 后端 HTTP 服务。
-- 基于文件系统存储 Skill 规格，目录模型为 `<specDir>/<skillID>/<version>`。
+- 作为远程存储仓库（Remote Registry）提供 Skill 规格读写能力。
+- 基于文件系统存储 Skill 规格，目录模型为 `<specDir>/<skillID>/<version>`，默认远程仓库根目录为 `~/.skuare`。
 
 ## 架构与 API 设计
 - 技术栈：Go + Hertz。
@@ -17,10 +18,13 @@
   - `store.FileSystem`：文件系统操作接口，`FSStore` 默认使用 `OSFileSystem`，可扩展为其它 FS 实现（如分布式 FS）。
 - 启动参数：
   - `--addr`：监听地址，默认 `:15657`（可由 `SKUARE_SVC_ADDR` 覆盖）
-  - `--spec-dir`：规格根目录，默认 `~/.skuare/skills`（可由 `SKUARE_SPEC_DIR` 覆盖）
+  - `--spec-dir`：远程仓库根目录，默认 `~/.skuare`（可由 `SKUARE_SPEC_DIR` 覆盖）
   - `--authorized-keys-file`：已注册公钥文件路径（可由 `SKUARE_AUTHORIZED_KEYS_FILE` 覆盖），默认 `<specDir>/.skuare/authorized_keys`
   - `--local`：本地模式，启用后写接口跳过签名鉴权（可由 `SKUARE_LOCAL_MODE` 覆盖，默认 `false`）
   - `--auth-max-skew-sec`：签名时间戳允许偏移秒数（可由 `SKUARE_AUTH_MAX_SKEW_SEC` 覆盖，默认 `300`）
+- LOCAL 模式：
+  - 允许服务端目录与 CLI 本地局部仓库共用同一个 `~/.skuare` 根目录。
+  - 建议 CLI 在该场景写入 `repos/<scope>/<tool>/...` 子目录，避免与服务端 `<skillID>/<version>` 结构冲突。
 - API：
   - `GET /healthz`
   - `POST /api/v1/skills`
@@ -74,7 +78,7 @@
 cd skuare-svc
 go test ./...
 go build ./...
-go run ./cmd/skuare-svc --addr :15657 --spec-dir "$HOME/.skuare/skills"
+go run ./cmd/skuare-svc --addr :15657 --spec-dir "$HOME/.skuare"
 ```
 
 项目根目录也提供本地一键启动脚本（后台启动并健康检查）：
@@ -84,7 +88,7 @@ make start-be DAEMON=true
 make start-be ADDR=127.0.0.1:18080
 make start-be DAEMON=true ADDR=127.0.0.1:18080
 make start-be LOCAL_MODE=false
-make start-be SPEC_DIR="$HOME/.skuare/skills" GOCACHE=/tmp/go-cache-skuare
+make start-be SPEC_DIR="$HOME/.skuare" GOCACHE=/tmp/go-cache-skuare
 make start-be AUTHORIZED_KEYS_FILE="$HOME/.skuare/authorized_keys" AUTH_MAX_SKEW_SEC=300
 make start-be BE_ARGS="--auth-max-skew-sec 120"
 make stop-be
