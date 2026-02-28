@@ -44,6 +44,20 @@ export function getWorkspaceConfigPath(cwd: string): string {
 }
 
 /**
+ * 获取全局本地仓库目录
+ */
+export function getGlobalRepoDirPath(): string {
+  return join(homedir(), DEFAULT_CONFIG_DIR_NAME);
+}
+
+/**
+ * 获取工作区本地仓库目录
+ */
+export function getWorkspaceRepoDirPath(cwd: string): string {
+  return join(cwd, DEFAULT_CONFIG_DIR_NAME);
+}
+
+/**
  * 判断目标路径是否在基础路径内
  */
 export function isInsidePath(targetPath: string, basePath: string): boolean {

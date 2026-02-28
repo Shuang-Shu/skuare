@@ -3,7 +3,7 @@ SHELL := /bin/sh
 ADDR ?= 127.0.0.1:15657
 LOCAL_MODE ?= true
 DAEMON ?= false
-SPEC_DIR ?= $(HOME)/.skuare/skills
+SPEC_DIR ?= $(HOME)/.skuare
 GOCACHE ?= /tmp/go-cache-skuare
 AUTHORIZED_KEYS_FILE ?=
 AUTH_MAX_SKEW_SEC ?= 300
@@ -22,12 +22,11 @@ LOCAL_BIN ?= /tmp/skuare-bin/bin
 RELEASE_REPO ?=
 SVC_VERSION ?= latest
 
-.PHONY: help start-be start-cli install-skr install-backend health list peek get create format delete validate
-.PHONY: help start-be stop-be start-cli install-skr install-backend health list peek get create format delete validate
+.PHONY: help start-be stop-be start-cli install-skr install-backend health list peek get publish create format delete validate
 
 help:
 	@echo "Available targets:"
-	@echo "  make start-be [ADDR=host:port] [LOCAL_MODE=true|false] [SPEC_DIR=$(HOME)/.skuare/skills]"
+	@echo "  make start-be [ADDR=host:port] [LOCAL_MODE=true|false] [SPEC_DIR=$(HOME)/.skuare]"
 	@echo "                 [AUTHORIZED_KEYS_FILE=path] [AUTH_MAX_SKEW_SEC=300] [DAEMON=true|false] [BE_ARGS='--xxx ...']"
 	@echo "  make stop-be                   # 停止后台守护的 skuare-svc"
 	@echo "  make start-cli                 # 启动 CLI（默认 help）"
@@ -38,10 +37,11 @@ help:
 	@echo "  make health                    # 健康检查"
 	@echo "  make list Q='kw'               # 查询 skills"
 	@echo "  make peek SKILL_ID=... [VERSION=...]"
-	@echo "  make get SKILL_ID=... [VERSION=...]"
-	@echo "  make create FILE=...                            # 从 JSON 创建"
-	@echo "  make create SKILL_FILE=... [SKILL_ID=...] [VERSION=...] # 从 SKILL.md 创建（version 读 frontmatter）"
-	@echo "  make create SKILL_DIR=... [SKILL_ID=...] [VERSION=...]  # 从目录创建（自动找 SKILL.md）"
+	@echo "  make get SKILL_ID=... [VERSION=...] [CLI_ARGS='--scope workspace']"
+	@echo "  make publish FILE=...                           # 从 JSON 发布"
+	@echo "  make publish SKILL_FILE=... [SKILL_ID=...] [VERSION=...] # 从 SKILL.md 发布（version 读 frontmatter）"
+	@echo "  make publish SKILL_DIR=... [SKILL_ID=...] [VERSION=...]  # 从目录发布（自动找 SKILL.md）"
+	@echo "  make create ...                                 # publish 兼容别名（已弃用）"
 	@echo "  make format FILE='path1 path2' VERSION=...      # 交互式前可直接批量格式化"
 	@echo "  make delete SKILL_ID=... VERSION=..."
 	@echo "  make validate SKILL_ID=... VERSION=..."
@@ -84,17 +84,20 @@ get:
 	@if [ -z "$(SKILL_ID)" ]; then echo "SKILL_ID is required"; exit 2; fi
 	$(MAKE) start-cli CLI_ARGS="get $(SKILL_ID) $(VERSION)"
 
-create:
+publish:
 	@if [ -n "$(FILE)" ]; then \
-		$(MAKE) start-cli CLI_ARGS="create --file $(FILE)"; \
+		$(MAKE) start-cli CLI_ARGS="publish --file $(FILE)"; \
 	elif [ -n "$(SKILL_FILE)" ]; then \
-		$(MAKE) start-cli CLI_ARGS="create --skill $(SKILL_FILE) $(if $(VERSION),--version $(VERSION),) $(if $(SKILL_ID),--skill-id $(SKILL_ID),)"; \
+		$(MAKE) start-cli CLI_ARGS="publish --skill $(SKILL_FILE) $(if $(VERSION),--version $(VERSION),) $(if $(SKILL_ID),--skill-id $(SKILL_ID),)"; \
 	elif [ -n "$(SKILL_DIR)" ]; then \
-		$(MAKE) start-cli CLI_ARGS="create --dir $(SKILL_DIR) $(if $(VERSION),--version $(VERSION),) $(if $(SKILL_ID),--skill-id $(SKILL_ID),)"; \
+		$(MAKE) start-cli CLI_ARGS="publish --dir $(SKILL_DIR) $(if $(VERSION),--version $(VERSION),) $(if $(SKILL_ID),--skill-id $(SKILL_ID),)"; \
 	else \
 		echo "one of FILE / SKILL_FILE / SKILL_DIR is required"; \
 		exit 2; \
 	fi
+
+create:
+	$(MAKE) publish FILE="$(FILE)" SKILL_FILE="$(SKILL_FILE)" SKILL_DIR="$(SKILL_DIR)" SKILL_ID="$(SKILL_ID)" VERSION="$(VERSION)"
 
 delete:
 	@if [ -z "$(SKILL_ID)" ] || [ -z "$(VERSION)" ]; then echo "SKILL_ID and VERSION are required"; exit 2; fi

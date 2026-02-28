@@ -59,6 +59,7 @@ async function main(): Promise<void> {
     const context: CommandContext = {
       server: resolved.server,
       localMode: resolved.localMode,
+      remoteStorageDir: resolved.merged.remote.storageDir,
       cwd,
       llmTools: resolved.merged.llmTools,
       toolSkillDirs: resolved.merged.toolSkillDirs,
@@ -93,15 +94,17 @@ Commands:
   list [--q <keyword>] [--regex <re>]  List skills (GET /api/v1/skills)
   peek <skillID> [version]             Peek skill overview/detail
   peek --regex <re> [version]          Peek by regex (must match exactly one skill)
-  get <skillID> [version]              Install skill to local llm tool directory
+  get <skillID> [version] [--scope global|workspace] [--repo-dir <path>] [--tool <name>]
+                                       Install skill to local partial repository
   validate <skillID> <version>         Validate a version
-  create --file <request.json>         Create from request JSON
-  create --skill <SKILL.md> [--skill-id <id>] [--version <v>]
+  publish --file <request.json>        Publish from request JSON
+  publish --skill <SKILL.md> [--skill-id <id>] [--version <v>]
                                        Explicit SKILL.md mode, version from frontmatter metadata.version
-  create --dir <skillDir> [--skill-id <id>] [--version <v>]
+  publish --dir <skillDir> [--skill-id <id>] [--version <v>]
                                        Explicit dir mode, version from <dir>/SKILL.md frontmatter metadata.version
-  create <path...> [--all] [--skill-id <id>] [--version <v>]
+  publish <path...> [--all] [--skill-id <id>] [--version <v>]
                                        Auto detect each path: SKILL.md -> dir -> JSON fallback
+  create ...                           Deprecated alias of publish
   build <skillName> [refSkill...]      Build skill-deps files, supports alias=refSkill
   delete <skillID> <version>           Delete skill version
   format [skillDir...]                 Interactive format for metadata.version/metadata.author
@@ -121,12 +124,13 @@ Examples:
   skr list --regex "report|alert"
   skr peek pdf-reader 1.0.0
   skr peek --regex "^skuare/report-generator@"
-  skr get pdf-reader
-  skr create --file /tmp/create-skill.json
-  skr create --skill ./skills/pdf-reader/SKILL.md
-  skr create --dir ./skills/pdf-reader
+  skr get pdf-reader --scope workspace
+  skr get pdf-reader --scope global --repo-dir ~/.skuare
+  skr publish --file /tmp/create-skill.json
+  skr publish --skill ./skills/pdf-reader/SKILL.md
+  skr publish --dir ./skills/pdf-reader
+  skr publish ./skills/pdf-reader
   skr create ./skills/pdf-reader
-  skr create /tmp/create-skill.json
   skr build report-generator data-normalizer schema-validator
   skr build report-generator normalizer=data-normalizer schema=schema-validator`);
 }
