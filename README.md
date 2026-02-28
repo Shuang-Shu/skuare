@@ -37,6 +37,9 @@ make start-be LOCAL_MODE=true DAEMON=true
 make install-skr
 export PATH=/tmp/skuare-bin/bin:$PATH
 
+# 若仓库已自带 skuare-cli/dist，skr 会优先复用预构建产物；
+# 只有在需要重建且本地具备 TypeScript 工具链时才会重新编译。
+
 # 3) 初始化（可选）
 skr init
 
