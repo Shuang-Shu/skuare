@@ -31,14 +31,14 @@ func Load() Config {
 	if defaultSpecDir == "" {
 		home, homeErr := os.UserHomeDir()
 		if homeErr == nil && home != "" {
-			defaultSpecDir = filepath.Join(home, ".skuare", "skills")
+			defaultSpecDir = filepath.Join(home, ".skuare")
 		} else {
-			defaultSpecDir = filepath.Join(wd, "spec")
+			defaultSpecDir = filepath.Join(wd, ".skuare")
 		}
 	}
 
 	flag.StringVar(&cfg.Addr, "addr", defaultAddr, "HTTP listen address")
-	flag.StringVar(&cfg.SpecDir, "spec-dir", defaultSpecDir, "Skill spec root directory")
+	flag.StringVar(&cfg.SpecDir, "spec-dir", defaultSpecDir, "Remote repository root directory")
 	defaultAuthorizedKeys := os.Getenv("SKUARE_AUTHORIZED_KEYS_FILE")
 	flag.StringVar(&cfg.AuthorizedKeysFile, "authorized-keys-file", defaultAuthorizedKeys, "Registered public keys file path")
 	defaultLocalMode := envBool(os.Getenv("SKUARE_LOCAL_MODE"))

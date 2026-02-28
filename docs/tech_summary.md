@@ -13,13 +13,14 @@
 ## 现状与事实依据
 - 模块：
   - `skuare-svc`：文件系统存储模型 `<specDir>/<skillID>/<version>`。
-  - `skuare-cli`：命令式前端，支持 `init/health/list/peek/get/create/build/format/delete/validate`。
+  - `skuare-cli`：命令式前端，支持 `init/health/list/peek/get/publish/create/build/format/delete/validate`。
 - 关键配置：
-  - 后端默认 `spec-dir`：`$HOME/.skuare/skills`（可由 `SKUARE_SPEC_DIR` 或 `--spec-dir` 覆盖）。
+  - 后端默认 `spec-dir`：`$HOME/.skuare`（可由 `SKUARE_SPEC_DIR` 或 `--spec-dir` 覆盖）。
   - 启动参数：`--addr`、`--spec-dir`、`--authorized-keys-file`、`--local`、`--auth-max-skew-sec`。
   - CLI 配置优先级：`CLI 参数 > workspace > global > defaults`。
   - CLI `remote.mode`：`local`（写免签）/`remote`（写需签名）。
-  - CLI `toolSkillDirs`：可配置 custom 工具 skills 目录映射；`get` 未配置时按工具默认目录回退（`codex`=`<cwd>/skills`，`claudecode`=`~/.claudecode/skills`，其他=`~/.<tool>/skills`）。
+  - CLI 本地局部仓库根：global=`$HOME/.skuare`，workspace=`<cwd>/.skuare`；`get` 默认 `--scope workspace`，可通过 `--repo-dir` 覆盖根目录。
+  - CLI 最终安装目录：`<repoRoot>/repos/<scope>/<tool>/<skillID>/...`；local 模式下若与服务端 `remote.storageDir` 相同，会启用共享目录兼容逻辑。
 - 鉴权：
   - 写接口在 remote 模式要求 Ed25519 签名头。
   - `local=true` 时后端直接放行写请求。
@@ -28,14 +29,14 @@
   - 使用 `skill-deps.json` + `skill-deps.lock.json`。
   - `skill-deps*.json` 字段结构以 `@examples` 目录样例为准。
   - `SKILL.md` 正文跨 Skill 引用格式统一为 `{{ <author>/<name>@<version> }}`。
-  - `skr create` 会递归上传依赖，已存在版本返回 `WARN`。
+  - `skr publish` 会递归上传依赖，已存在版本返回 `WARN`；`skr create` 保留为兼容别名并输出弃用提示。
 - 输出约束：
   - `skr list` 输出包含 `id/name/author/skill_id/version/description`，其中 `id=<author>/<name>@<version>` 且先于 `name`。
   - `skr list` 支持 `--regex <pattern>` 客户端正则过滤（匹配 `id/skill_id/name/author/description`）。
   - `skr peek` 输出对齐 `id/name/author` 展示规范。
   - `skr peek` 支持 `--regex <pattern>` 唯一匹配后查询详情。
   - `author` 缺失时默认回退为 `undefined`。
-  - `skr create` 输出不包含服务端本地路径。
+  - `skr publish` 输出不包含服务端本地路径。
   - `skr format [skillDir...]` 交互式支持 `All/Each`，并统一写入 `metadata.version`/`metadata.author`；`skr format --all` 自动扫描当前目录子技能。
 
 ## 差距分析
@@ -54,7 +55,7 @@
 - 依赖能力：
   - 支持可配置依赖解析根目录与远端依赖拉取策略。
 - 稳定性：
-  - 为 `create/list` 输出格式补充快照测试，避免字段回退。
+  - 为 `publish/list` 输出格式补充快照测试，避免字段回退。
 
 ## 风险与边界
 - 本地模式风险：

@@ -16,6 +16,10 @@
   - 工作区：`<workspace>/.skuare/config.json`
   - 其中 `<workspace>` 为执行 `skuare/skr` 命令时的当前目录（`cwd`）
   - 覆盖优先级：`CLI 参数 > 工作区配置 > 全局配置 > 默认值`
+- 仓库角色：
+  - `skuare-svc`：远程存储仓库（Remote Registry）
+  - `skuare-cli`：本地局部仓库（Local Partial Repository）消费者
+  - CLI 本地仓库默认根目录：global=`~/.skuare`，workspace=`<cwd>/.skuare`
 - 后端地址：
   - 默认由配置项 `remote.address + remote.port` 组合得到
   - CLI 参数 `--server <url>` 优先级最高
@@ -30,14 +34,17 @@
   - `list [--q] [--regex]` -> `GET /api/v1/skills`（`--q` 服务端过滤 + `--regex` 客户端正则过滤）
   - `peek <skillID> [version]` -> `GET /api/v1/skills/:skillID[/version]`
   - `peek --regex <pattern> [version]` -> 先从 `GET /api/v1/skills` 正则筛选唯一 skill，再走 `peek` 详情查询
-  - `get <skillID> [version]` -> 按工具目录规则安装（按依赖平铺写入目录与文件内容）
-    - `codex` 默认：`<cwd>/skills`
-    - `claudecode` 默认：`~/.claudecode/skills`
-    - custom 默认：`~/.<toolName>/skills`（可在 `skr init` 中配置覆盖）
-  - `create --file <json>` -> `POST /api/v1/skills`
-  - `create --skill <SKILL.md> [--skill-id] [--version]` -> `POST /api/v1/skills`（显式 `SKILL.md` 模式，版本读取 `metadata.version`）
-  - `create --dir <skillDir> [--skill-id] [--version]` -> `POST /api/v1/skills`（显式目录模式，自动探测 `<dir>/SKILL.md` 并读取 `metadata.version`）
-  - `create <path...> [--all] [--skill-id] [--version]` -> 自动检测每个 path：`SKILL.md` 文件 -> 目录 -> JSON 回退
+  - `get <skillID> [version] [--scope] [--repo-dir] [--tool]` -> 从远程仓库拉取到本地局部仓库
+    - 默认 scope=`workspace`
+    - global 默认仓库根：`~/.skuare`
+    - workspace 默认仓库根：`<cwd>/.skuare`
+    - 实际安装目标：`<repoRoot>/repos/<scope>/<tool>/<skillID>/...`
+    - LOCAL 模式下若 CLI 仓库根与服务端 `remote.storageDir` 相同，会启用共享目录兼容逻辑
+  - `publish --file <json>` -> `POST /api/v1/skills`
+  - `publish --skill <SKILL.md> [--skill-id] [--version]` -> `POST /api/v1/skills`（显式 `SKILL.md` 模式，版本读取 `metadata.version`）
+  - `publish --dir <skillDir> [--skill-id] [--version]` -> `POST /api/v1/skills`（显式目录模式，自动探测 `<dir>/SKILL.md` 并读取 `metadata.version`）
+  - `publish <path...> [--all] [--skill-id] [--version]` -> 自动检测每个 path：`SKILL.md` 文件 -> 目录 -> JSON 回退
+  - `create ...` -> `publish` 的兼容别名，保留但标记弃用
   - `build <skillName> [refSkill...]` -> 本地生成/追加 `<skillName>/skill-deps.json` 与 `<skillName>/skill-deps.lock.json`（版本来自引用 skill 的 `metadata.version`；支持 `alias=refSkill`）
   - `format [skillDir...]` -> 交互式格式化（先选 `All/Each`，写入 `metadata.version` 与 `metadata.author`）
   - `format --all` -> 直接扫描当前目录下所有 skillDir，执行标准格式化流程
@@ -45,7 +52,7 @@
   - `validate <skillID> <version>` -> `POST /api/v1/skills/:skillID/:version/validate`
 
 ## 鉴权机制说明
-- 写操作（`create`、`delete`）会进行数字签名。
+- 写操作（`publish/create`、`delete`）会进行数字签名。
 - 当 `remote.mode=local` 时，CLI 会跳过写操作签名。
 - CLI 签名参数：
   - 参数：`--key-id <id>`、`--privkey-file <path>`
@@ -126,7 +133,7 @@ npm install
   - 支持输入绝对路径、相对路径或 `~/`，保存时会规范化
 - 所有字段编辑与 LLM Tool 选择完成后，最后一步会再次确认 `Save config now (Y/n)`，确认后才真正写入配置文件
 
-创建 Skill 示例：
+发布 Skill 示例：
 ```bash
 cat > /tmp/create-skill.json <<'EOF'
 {
@@ -139,21 +146,25 @@ cat > /tmp/create-skill.json <<'EOF'
 }
 EOF
 
-skuare --server http://127.0.0.1:15657 create --file /tmp/create-skill.json
+skuare --server http://127.0.0.1:15657 publish --file /tmp/create-skill.json
 
-# 从 SKILL.md 创建（自动解析 frontmatter 的 name/description + metadata.version + 正文）
-skuare --server http://127.0.0.1:15657 create --skill ./skills/pdf-reader/SKILL.md
+# 从 SKILL.md 发布（自动解析 frontmatter 的 name/description + metadata.version + 正文）
+skuare --server http://127.0.0.1:15657 publish --skill ./skills/pdf-reader/SKILL.md
 
-# 从目录创建（自动查找 <dir>/SKILL.md，并打包目录下其他文件到 files）
-skuare --server http://127.0.0.1:15657 create --dir ./skills/pdf-reader
+# 从目录发布（自动查找 <dir>/SKILL.md，并打包目录下其他文件到 files）
+skuare --server http://127.0.0.1:15657 publish --dir ./skills/pdf-reader
 
 # 自动检测多个 source 路径；可叠加 --all 扫描当前目录所有子目录
-skuare --server http://127.0.0.1:15657 create ./skills/pdf-reader ./skills/api-debugger
-skuare --server http://127.0.0.1:15657 create --all
-skuare --server http://127.0.0.1:15657 create /tmp/create-skill.json
+skuare --server http://127.0.0.1:15657 publish ./skills/pdf-reader ./skills/api-debugger
+skuare --server http://127.0.0.1:15657 publish --all
+skuare --server http://127.0.0.1:15657 publish /tmp/create-skill.json
 
 # 可选：传 --version 做一致性校验（与 frontmatter metadata.version 不一致会报错）
-skuare --server http://127.0.0.1:15657 create --dir ./skills/pdf-reader --version 1.0.0
+skuare --server http://127.0.0.1:15657 publish --dir ./skills/pdf-reader --version 1.0.0
+
+# 拉取到本地局部仓库
+skuare get pdf-reader --scope workspace
+skuare get pdf-reader --scope global --repo-dir ~/.skuare
 
 # 本地构建依赖文件（add 语义，存量依赖会保留并增量更新）
 skuare build report-generator data-normalizer schema-validator
@@ -161,7 +172,7 @@ skuare build report-generator data-normalizer schema-validator
 skuare build report-generator normalizer=data-normalizer schema=schema-validator
 ```
 
-`create` 依赖上传行为：
+`publish` 依赖上传行为：
 - 若来源是 `--skill`/`--dir`/`<path>` 且解析到技能目录，CLI 会读取 `skill-deps.json` 并递归上传依赖技能。
 - 依赖已存在（`409 SKILL_VERSION_ALREADY_EXISTS`）会自动跳过。
 - 依赖目录默认按同级目录解析（例如 `skills/<depSkillID>`）。
@@ -190,7 +201,7 @@ skuare build report-generator normalizer=data-normalizer schema=schema-validator
 skuare --server http://127.0.0.1:15657 \
   --key-id writer-a \
   --privkey-file ~/.skuare/keys/writer-a.pem \
-  create --dir ./skills/pdf-reader
+  publish --dir ./skills/pdf-reader
 ```
 
 ## 验收标准与风险
@@ -219,3 +230,4 @@ skuare --server http://127.0.0.1:15657 \
 - 2026-02-28：优化 `list/peek` 展示：新增 `author`，并统一 `id=<author>/<name>@<version>`，且 `id` 先于 `name` 输出。
 - 2026-02-28：`list/peek` 新增 `--regex` 正则匹配能力（`peek` 需唯一命中）。 
 - 2026-02-28：根目录 `skr` 增加预构建回退逻辑；当本地缺少 TypeScript 工具链但已有 `dist/index.js` 时，`health` 等命令可继续运行。 
+- 2026-02-28：`create` 迁移为 `publish`（保留兼容别名）；`get` 新增 `--scope/--repo-dir/--tool`，安装目标改为本地局部仓库 `repos/<scope>/<tool>/...`，并兼容 LOCAL 同目录共享场景。

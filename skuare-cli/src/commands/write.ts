@@ -22,11 +22,11 @@ type SkillDependency = {
 };
 
 /**
- * 创建技能命令
+ * 发布技能命令
  */
-export class CreateCommand extends BaseCommand {
-  readonly name = "create";
-  readonly description = "Create skill version";
+export class PublishCommand extends BaseCommand {
+  readonly name: string = "publish";
+  readonly description: string = "Publish skill version";
 
   async execute(context: CommandContext): Promise<void> {
     const sources = await this.resolveCreateSources(context.args, context.cwd);
@@ -253,7 +253,7 @@ export class CreateCommand extends BaseCommand {
       : positional;
     const unique = Array.from(new Set(allPositional.map((v) => v.trim()).filter(Boolean)));
     if (unique.length === 0) {
-      this.fail("Usage: skuare create --skill <SKILL.md> | --dir <skillDir> | --file <request.json> | create <path...> [--all]");
+      this.fail("Usage: skuare publish --skill <SKILL.md> | --dir <skillDir> | --file <request.json> | publish <path...> [--all]");
     }
 
     const out: CreateSource[] = [];
@@ -504,6 +504,19 @@ export class CreateCommand extends BaseCommand {
     await walk(root);
     out.sort((a, b) => a.path.localeCompare(b.path));
     return out;
+  }
+}
+
+/**
+ * 兼容命令：create（已弃用，建议迁移为 publish）
+ */
+export class CreateCommand extends PublishCommand {
+  readonly name: string = "create";
+  readonly description: string = "Create skill version (deprecated, use publish)";
+
+  async execute(context: CommandContext): Promise<void> {
+    console.log(`${this.yellow("[WARN]")} command 'create' is deprecated, use 'publish' instead`);
+    await super.execute(context);
   }
 }
 
