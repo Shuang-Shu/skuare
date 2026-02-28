@@ -73,6 +73,9 @@ skuare --server http://127.0.0.1:15657 health
 skr help
 ```
 
+- 根目录 `skr` 会优先执行自动重建；若本地缺少 TypeScript 工具链但仓库中已存在 `skuare-cli/dist/index.js`，则会输出 `WARN` 并回退到现有预构建产物继续运行。
+- 若 `dist/index.js` 不存在，`skr` 仍会因无法完成构建而直接失败；此时需要先在 `skuare-cli` 目录执行 `npm install && npm run build`。
+
 后端二进制自动安装（GitHub Releases）：
 - `postinstall` 默认不下载后端，避免开发环境无网络时阻塞。
 - 设置 `SKUARE_AUTO_INSTALL_BACKEND=1` 后，安装 CLI 时会尝试下载后端二进制。
@@ -215,3 +218,4 @@ skuare --server http://127.0.0.1:15657 \
 - 2026-02-28：`author` 预填与回退默认值统一为 `undefined`（含 `format` 交互与 `list/peek` 展示）。
 - 2026-02-28：优化 `list/peek` 展示：新增 `author`，并统一 `id=<author>/<name>@<version>`，且 `id` 先于 `name` 输出。
 - 2026-02-28：`list/peek` 新增 `--regex` 正则匹配能力（`peek` 需唯一命中）。 
+- 2026-02-28：根目录 `skr` 增加预构建回退逻辑；当本地缺少 TypeScript 工具链但已有 `dist/index.js` 时，`health` 等命令可继续运行。 
