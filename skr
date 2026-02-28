@@ -13,6 +13,30 @@ CLI_DIR="${ROOT_DIR}/skuare-cli"
 DIST_ENTRY="${CLI_DIR}/dist/index.js"
 BUILD_STAMP="${CLI_DIR}/dist/.build-stamp"
 BUILD_LOG=""
+USED_FALLBACK_DIST=0
+
+dist_supports_publish() {
+  if [ ! -d "${CLI_DIR}/dist" ]; then
+    return 1
+  fi
+  if rg -q "publish --file|command 'create' is deprecated, use 'publish' instead" "${CLI_DIR}/dist" 2>/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
+rewrite_legacy_command() {
+  if [ "$#" -gt 0 ] && [ "$1" = "publish" ] && ! dist_supports_publish; then
+    if [ "${USED_FALLBACK_DIST}" -eq 1 ]; then
+      echo "[WARN] Legacy dist detected during fallback; mapping 'publish' to 'create' for compatibility." >&2
+    else
+      echo "[WARN] Current dist does not support 'publish'; mapping to 'create' for compatibility." >&2
+    fi
+    shift
+    set -- create "$@"
+  fi
+  LEGACY_ARGS=("$@")
+}
 
 cleanup() {
   if [ -n "${BUILD_LOG}" ] && [ -f "${BUILD_LOG}" ]; then
@@ -44,6 +68,7 @@ if needs_build; then
   else
     if [ -f "${DIST_ENTRY}" ] && grep -Eiq "(tsc: not found|typescript[^[:alnum:]]|command not found)" "${BUILD_LOG}"; then
       echo "[WARN] CLI rebuild skipped because local TypeScript tooling is unavailable; using existing dist/index.js." >&2
+      USED_FALLBACK_DIST=1
     else
       cat "${BUILD_LOG}" >&2
       exit 1
@@ -51,4 +76,7 @@ if needs_build; then
   fi
 fi
 
-node "${DIST_ENTRY}" "$@"
+LEGACY_ARGS=("$@")
+rewrite_legacy_command "$@"
+
+node "${DIST_ENTRY}" "${LEGACY_ARGS[@]}"

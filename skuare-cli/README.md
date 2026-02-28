@@ -81,6 +81,7 @@ skr help
 ```
 
 - 根目录 `skr` 会优先执行自动重建；若本地缺少 TypeScript 工具链但仓库中已存在 `skuare-cli/dist/index.js`，则会输出 `WARN` 并回退到现有预构建产物继续运行。
+- 若该回退产物仍停留在旧命令集，`skr publish ...` 会在包装脚本层桥接为 `create ...` 以保持基础兼容；桥接发生时会额外输出 `WARN`。
 - 若 `dist/index.js` 不存在，`skr` 仍会因无法完成构建而直接失败；此时需要先在 `skuare-cli` 目录执行 `npm install && npm run build`。
 
 后端二进制自动安装（GitHub Releases）：
@@ -230,4 +231,5 @@ skuare --server http://127.0.0.1:15657 \
 - 2026-02-28：优化 `list/peek` 展示：新增 `author`，并统一 `id=<author>/<name>@<version>`，且 `id` 先于 `name` 输出。
 - 2026-02-28：`list/peek` 新增 `--regex` 正则匹配能力（`peek` 需唯一命中）。 
 - 2026-02-28：根目录 `skr` 增加预构建回退逻辑；当本地缺少 TypeScript 工具链但已有 `dist/index.js` 时，`health` 等命令可继续运行。 
+- 2026-03-01：根目录 `skr` 在回退旧 `dist/index.js` 且用户调用 `publish` 时，会桥接为旧命令 `create`，避免旧 dist 报 `Unknown command`。
 - 2026-02-28：`create` 迁移为 `publish`（保留兼容别名）；`get` 新增 `--scope/--repo-dir/--tool`，安装目标改为本地局部仓库 `repos/<scope>/<tool>/...`，并兼容 LOCAL 同目录共享场景。
