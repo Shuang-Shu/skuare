@@ -16,6 +16,7 @@
   - `skuare-cli`：命令式前端，支持 `init/health/list/peek/get/publish/create/build/format/delete/validate`。
 - 关键配置：
   - 后端默认 `spec-dir`：`$HOME/.skuare`（可由 `SKUARE_SPEC_DIR` 或 `--spec-dir` 覆盖）。
+  - `scripts/dev-up.sh` 与 `make start-be` 默认 `SPEC_DIR` 已统一为 `$HOME/.skuare`。
   - 启动参数：`--addr`、`--spec-dir`、`--authorized-keys-file`、`--local`、`--auth-max-skew-sec`。
   - CLI 配置优先级：`CLI 参数 > workspace > global > defaults`。
   - CLI `remote.mode`：`local`（写免签）/`remote`（写需签名）。
@@ -38,6 +39,7 @@
   - `author` 缺失时默认回退为 `undefined`。
   - `skr publish` 输出不包含服务端本地路径。
   - `skr format [skillDir...]` 交互式支持 `All/Each`，并统一写入 `metadata.version`/`metadata.author`；`skr format --all` 自动扫描当前目录子技能。
+  - `make format` 仅透传 CLI `format` 命令，不再错误要求额外 `VERSION` 参数。
 
 ## 差距分析
 - 文档层面：

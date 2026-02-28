@@ -93,3 +93,4 @@ skr delete observability-orchestrator 1.0.0
 - 2026-02-27：新增 `build <skillName> [refSkill...]`，支持自动创建/追加 `skill-deps.json` 与 `skill-deps.lock.json`。
 - 2026-02-28：`list/peek` 新增 `--regex` 正则匹配能力（`peek` 需唯一命中）。 
 - 2026-02-28：区分远程仓库与本地局部仓库：`publish` 成为主写命令，`get` 新增 `--scope/--repo-dir/--tool`，默认仓库根统一为 `~/.skuare`。
+- 2026-03-01：清理仓库入口风格：`make format` 不再错误要求 `VERSION`，`scripts/dev-up.sh` 默认 `SPEC_DIR` 与主入口保持一致。

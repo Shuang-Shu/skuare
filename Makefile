@@ -42,7 +42,8 @@ help:
 	@echo "  make publish SKILL_FILE=... [SKILL_ID=...] [VERSION=...] # 从 SKILL.md 发布（version 读 frontmatter）"
 	@echo "  make publish SKILL_DIR=... [SKILL_ID=...] [VERSION=...]  # 从目录发布（自动找 SKILL.md）"
 	@echo "  make create ...                                 # publish 兼容别名（已弃用）"
-	@echo "  make format FILE='path1 path2' VERSION=...      # 交互式前可直接批量格式化"
+	@echo "  make format FILE='path1 path2'                  # 交互式格式化指定技能目录"
+	@echo "  make format                                     # 交互式格式化当前目录下技能"
 	@echo "  make delete SKILL_ID=... VERSION=..."
 	@echo "  make validate SKILL_ID=... VERSION=..."
 
@@ -107,5 +108,4 @@ validate:
 	@if [ -z "$(SKILL_ID)" ] || [ -z "$(VERSION)" ]; then echo "SKILL_ID and VERSION are required"; exit 2; fi
 	$(MAKE) start-cli CLI_ARGS="validate $(SKILL_ID) $(VERSION)"
 format:
-	@if [ -z "$(VERSION)" ]; then echo "VERSION is required"; exit 2; fi
-	$(MAKE) start-cli CLI_ARGS="format $(FILE) $(VERSION)"
+	$(MAKE) start-cli CLI_ARGS="format $(FILE)"
