@@ -66,7 +66,7 @@ Config Precedence:
   CLI flags > workspace config > global config > defaults
 
 Write Operations:
-  publish / create / delete            Backend write, non-local mode requires --key-id and --privkey-file
+  publish / create / delete            Backend write; if credentials are provided CLI signs, final acceptance is decided by server
   build                                Local dependency file write, no backend request
 
 Examples:

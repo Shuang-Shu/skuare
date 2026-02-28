@@ -44,7 +44,6 @@ export class PublishCommand extends BaseCommand {
           path: "/api/v1/skills",
           body,
           server: context.server,
-          localMode: context.localMode,
           auth: context.auth,
           silent: true,
         });
@@ -107,7 +106,6 @@ export class PublishCommand extends BaseCommand {
         path: "/api/v1/skills",
         body: depBody,
         server: context.server,
-        localMode: context.localMode,
         auth: context.auth,
         silent: true,
       });
@@ -1056,7 +1054,6 @@ export class DeleteCommand extends BaseCommand {
       method: "DELETE",
       path: `/api/v1/skills/${encodeURIComponent(skillID)}/${encodeURIComponent(version)}`,
       server: context.server,
-      localMode: context.localMode,
       auth: context.auth,
     });
   }

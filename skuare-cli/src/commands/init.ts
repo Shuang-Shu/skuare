@@ -220,7 +220,9 @@ async function runInitTUI(cwd: string): Promise<void> {
       );
     }
     if (remoteMode === "local") {
-      console.log(`${yellow("[INFO]")} local mode enabled: write operations do not require signing`);
+      console.log(
+        `${yellow("[INFO]")} local mode is enforced by server; client-side request signing is still decided by provided credentials.`
+      );
     }
 
     if (modifyLLMTools) {
