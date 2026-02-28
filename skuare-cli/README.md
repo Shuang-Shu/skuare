@@ -52,8 +52,8 @@
   - `validate <skillID> <version>` -> `POST /api/v1/skills/:skillID/:version/validate`
 
 ## 鉴权机制说明
-- 写操作（`publish/create`、`delete`）会进行数字签名。
-- 当 `remote.mode=local` 时，CLI 会跳过写操作签名。
+- 写操作（`publish/create`、`delete`）若提供 `--key-id` 与 `--privkey-file` 会附加数字签名；是否允许免签写入由服务端决定。
+- `remote.mode` 仅用于 CLI 保存服务端连接配置；是否允许免签写操作由服务端自身模式决定。
 - CLI 签名参数：
   - 参数：`--key-id <id>`、`--privkey-file <path>`
   - 环境变量：`SKUARE_KEY_ID`、`SKUARE_PRIVKEY_FILE`

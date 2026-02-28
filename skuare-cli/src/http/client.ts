@@ -15,7 +15,6 @@ export type ApiRequestOptions = {
   body?: JsonValue;
   auth?: { keyId: string; privateKeyFile: string };
   server: string;
-  localMode?: boolean;
   silent?: boolean;
 };
 
@@ -60,7 +59,7 @@ export async function checkServerConnectivity(
  * @param options 请求选项
  */
 export async function callApi(options: ApiRequestOptions): Promise<ApiResponse> {
-  const { method, path, body, auth, server, localMode, silent } = options;
+  const { method, path, body, auth, server, silent } = options;
   const url = buildUrl(path, server);
   const bodyText = body ? JSON.stringify(body) : "";
   const headers: Record<string, string> = {};
@@ -69,10 +68,7 @@ export async function callApi(options: ApiRequestOptions): Promise<ApiResponse> 
     headers["content-type"] = "application/json";
   }
 
-  if (needsSignature(method, path, !!localMode)) {
-    if (!auth) {
-      throw new DomainError("CLI_SIGNING_CREDENTIALS_MISSING", "Missing signing credentials for write operation");
-    }
+  if (needsSignature(method, path) && hasSigningCredentials(auth)) {
     const signed = await signWriteRequest(method, path, bodyText, auth);
     Object.assign(headers, signed);
   }
@@ -121,14 +117,17 @@ function toHttpDomainError(status: number, statusText: string, data: JsonValue |
 /**
  * 判断请求是否需要签名
  */
-function needsSignature(method: HttpMethod, path: string, localMode: boolean): boolean {
-  if (localMode) {
-    return false;
-  }
+function needsSignature(method: HttpMethod, path: string): boolean {
   return (
     method === "DELETE" ||
     (method === "POST" && path === "/api/v1/skills")
   );
+}
+
+function hasSigningCredentials(
+  auth?: { keyId: string; privateKeyFile: string }
+): auth is { keyId: string; privateKeyFile: string } {
+  return Boolean(auth?.keyId && auth?.privateKeyFile);
 }
 
 /**
