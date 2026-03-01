@@ -9,6 +9,16 @@
 - 提供 Skuare 命令行入口，作为前端控制层调用 `skuare-svc`。
 - 通过统一 `--server` 参数对接后端 HTTP API，实现基础 Skill 管理链路。
 
+## 命令分组总览
+- 纯本地命令：`help`、`version`、`init`、`build`、`format`
+  - 不依赖 server，可直接修改本地配置、Skill 文件和依赖文件。
+- server 只读命令：`health`、`list`、`peek`、`validate`
+  - 会访问 server，但不会写远程仓库。
+- 混合命令：`get`
+  - 先访问 server 拉取 Skill，再写入本地局部仓库。
+- server 写命令：`publish`、`create`、`delete`
+  - 会写远程仓库；CLI 仅在提供签名凭证时附加签名，最终是否接受无签名写入由服务端决定。
+
 ## 架构与 API 设计
 - 运行时：Node.js（>=20），入口文件 `src/index.ts`。
 - 配置文件：
@@ -24,32 +34,39 @@
   - 默认由配置项 `remote.address + remote.port` 组合得到
   - CLI 参数 `--server <url>` 优先级最高
 - 远端模式：
-  - `remote.mode=local`：本地模式，CLI 写操作不附加签名头
-  - `remote.mode=remote`：远端模式，CLI 写操作要求签名参数
+  - `remote.mode=local`：表示目标服务端处于本地模式，是否允许无签名写操作由服务端自己决定
+  - `remote.mode=remote`：表示目标服务端处于远端模式，通常要求签名写请求
 - 签名参数（写操作）：
   - CLI 参数：`--key-id <id>`、`--privkey-file <path>`
   - 配置项：`auth.keyId`、`auth.privateKeyFile`
-- 命令到 API 映射：
+
+## 命令分组与行为
+- 纯本地命令：
+  - `help`、`version`
+  - `init`：写本地配置文件
+  - `build <skillName> [refSkill...]`：本地生成/追加 `<skillName>/skill-deps.json` 与 `<skillName>/skill-deps.lock.json`
+  - `format [skillDir...]` / `format --all`：本地格式化 `SKILL.md`
+- server 只读命令：
   - `health` -> `GET /healthz`
-  - `list [--q] [--regex]` -> `GET /api/v1/skills`（`--q` 服务端过滤 + `--regex` 客户端正则过滤）
+  - `list [--q] [--regex]` -> `GET /api/v1/skills`
   - `peek <skillID> [version]` -> `GET /api/v1/skills/:skillID[/version]`
-  - `peek --regex <pattern> [version]` -> 先从 `GET /api/v1/skills` 正则筛选唯一 skill，再走 `peek` 详情查询
-  - `get <skillID> [version] [--scope] [--repo-dir] [--tool]` -> 从远程仓库拉取到本地局部仓库
-    - 默认 scope=`workspace`
-    - global 默认仓库根：`~/.skuare`
-    - workspace 默认仓库根：`<cwd>/.skuare`
-    - 实际安装目标：`<repoRoot>/repos/<scope>/<tool>/<skillID>/...`
-    - LOCAL 模式下若 CLI 仓库根与服务端 `remote.storageDir` 相同，会启用共享目录兼容逻辑
+  - `peek --regex <pattern> [version]` -> 先查询列表，再正则筛选唯一 skill
+  - `validate <skillID> <version>` -> `POST /api/v1/skills/:skillID/:version/validate`
+- 混合命令：
+  - `get <skillID> [version] [--scope] [--repo-dir] [--tool]`
+  - 行为：先从远程仓库拉取，再安装到本地局部仓库
+  - 默认 scope=`workspace`
+  - global 默认仓库根：`~/.skuare`
+  - workspace 默认仓库根：`<cwd>/.skuare`
+  - 实际安装目标：`<repoRoot>/repos/<scope>/<tool>/<skillID>/...`
+  - LOCAL 模式下若 CLI 仓库根与服务端 `remote.storageDir` 相同，会启用共享目录兼容逻辑
+- server 写命令：
   - `publish --file <json>` -> `POST /api/v1/skills`
-  - `publish --skill <SKILL.md> [--skill-id] [--version]` -> `POST /api/v1/skills`（显式 `SKILL.md` 模式，版本读取 `metadata.version`）
-  - `publish --dir <skillDir> [--skill-id] [--version]` -> `POST /api/v1/skills`（显式目录模式，自动探测 `<dir>/SKILL.md` 并读取 `metadata.version`）
+  - `publish --skill <SKILL.md> [--skill-id] [--version]` -> `POST /api/v1/skills`
+  - `publish --dir <skillDir> [--skill-id] [--version]` -> `POST /api/v1/skills`
   - `publish <path...> [--all] [--skill-id] [--version]` -> 自动检测每个 path：`SKILL.md` 文件 -> 目录 -> JSON 回退
   - `create ...` -> `publish` 的兼容别名，保留但标记弃用
-  - `build <skillName> [refSkill...]` -> 本地生成/追加 `<skillName>/skill-deps.json` 与 `<skillName>/skill-deps.lock.json`（版本来自引用 skill 的 `metadata.version`；支持 `alias=refSkill`）
-  - `format [skillDir...]` -> 交互式格式化（先选 `All/Each`，写入 `metadata.version` 与 `metadata.author`）
-  - `format --all` -> 直接扫描当前目录下所有 skillDir，执行标准格式化流程
   - `delete <skillID> <version>` -> `DELETE /api/v1/skills/:skillID/:version`
-  - `validate <skillID> <version>` -> `POST /api/v1/skills/:skillID/:version/validate`
 
 ## 鉴权机制说明
 - 写操作（`publish/create`、`delete`）若提供 `--key-id` 与 `--privkey-file` 会附加数字签名；是否允许免签写入由服务端决定。
@@ -79,6 +96,13 @@ skuare --server http://127.0.0.1:15657 health
 # 或
 skr help
 ```
+
+推荐阅读顺序：
+- 先看根 README 的 Quick Start，理解 server、本地仓库与 `skr` 的关系。
+- 只想改本地 Skill 文件时，优先使用 `build`、`format`，不需要先启动 server。
+- 只读查询时，使用 `health/list/peek/validate`。
+- 涉及远程发布或删除时，使用 `publish/create/delete`；是否要求签名由服务端决定。
+- 需要把远程 Skill 安装到本地局部仓库时，使用 `get`。
 
 - 根目录 `skr` 会优先执行自动重建；若本地缺少 TypeScript 工具链但仓库中已存在 `skuare-cli/dist/index.js`，则会输出 `WARN` 并回退到现有预构建产物继续运行。
 - 若该回退产物仍停留在旧命令集，`skr publish ...` 会在包装脚本层桥接为 `create ...` 以保持基础兼容；桥接发生时会额外输出 `WARN`。
@@ -221,7 +245,7 @@ skuare --server http://127.0.0.1:15657 \
 - 2026-02-23：CLI 命令入口简化为 `skuare` 与 `skr`，并保留 `skuare-cli` 兼容别名。
 - 2026-02-23：升级写操作鉴权为数字签名：新增 `--key-id`、`--privkey-file` 与对应环境变量。
 - 2026-02-24：`create` 新增 `--skill/--dir` 显式模式与 `create <path>` 自动检测（`SKILL.md`/目录优先，失败后 JSON 回退）；`SKILL.md` 模式强制从 frontmatter 读取 `version`，无 version 禁止上传。
-- 2026-02-24：`init` 新增 `remote.mode(local/remote)` 配置；`local` 模式下写操作免签名。
+- 2026-02-24：`init` 新增 `remote.mode(local/remote)` 配置；是否允许无签名写操作由服务端模式决定。
 - 2026-02-26：命令语义调整：`peek` 承接原查询语义，`get` 改为安装语义；`create` 支持多输入与 `--all`，并强制 `metadata.version`；新增 `format`；客户端移除 `reindex`。
 - 2026-02-26：CLI 异常治理：统一抛领域错误；HTTP 失败优先透传服务端 `code/message`；终端保持 `[ERROR]` 风格输出。
 - 2026-02-26：`format` 交互增强：改为 `skr format [skillDir...]`，新增 `All/Each` 模式选择；支持 `skr format --all` 扫描当前目录批量格式化并统一写入 `metadata.version`/`metadata.author`。
@@ -232,4 +256,5 @@ skuare --server http://127.0.0.1:15657 \
 - 2026-02-28：`list/peek` 新增 `--regex` 正则匹配能力（`peek` 需唯一命中）。 
 - 2026-02-28：根目录 `skr` 增加预构建回退逻辑；当本地缺少 TypeScript 工具链但已有 `dist/index.js` 时，`health` 等命令可继续运行。 
 - 2026-03-01：根目录 `skr` 在回退旧 `dist/index.js` 且用户调用 `publish` 时，会桥接为旧命令 `create`，避免旧 dist 报 `Unknown command`。
+- 2026-03-01：文档按“纯本地 / server 只读 / 混合 / server 写”重组命令说明，并明确默认本地仓库目录与服务端裁决签名关系。
 - 2026-02-28：`create` 迁移为 `publish`（保留兼容别名）；`get` 新增 `--scope/--repo-dir/--tool`，安装目标改为本地局部仓库 `repos/<scope>/<tool>/...`，并兼容 LOCAL 同目录共享场景。
