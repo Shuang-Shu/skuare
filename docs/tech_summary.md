@@ -9,6 +9,7 @@
 - 汇总 `skuare` 当前技术实现、接口约束、配置机制、依赖模型与运维参数。
 - 作为 README 的技术补充，面向开发/维护人员。
 - 依赖文件精确格式见：`docs/skill_deps_format.md`。
+- 分级存储专题说明见：`docs/storage_hierarchy.md`。
 
 ## 现状与事实依据
 - 模块：
@@ -19,9 +20,9 @@
   - `scripts/dev-up.sh` 与 `make start-be` 默认 `SPEC_DIR` 已统一为 `$HOME/.skuare`。
   - 启动参数：`--addr`、`--spec-dir`、`--authorized-keys-file`、`--local`、`--auth-max-skew-sec`。
   - CLI 配置优先级：`CLI 参数 > workspace > global > defaults`。
-  - CLI `remote.mode`：`local`（写免签）/`remote`（写需签名）。
+  - CLI `remote.mode`：`local` / `remote`，仅描述目标服务端模式，不负责声明服务端存储目录。
   - CLI 本地局部仓库根：global=`$HOME/.skuare`，workspace=`<cwd>/.skuare`；`get` 默认 `--scope workspace`，可通过 `--repo-dir` 覆盖根目录。
-  - CLI 最终安装目录：`<repoRoot>/repos/<scope>/<tool>/<skillID>/...`；local 模式下若与服务端 `remote.storageDir` 相同，会启用共享目录兼容逻辑。
+  - CLI 最终安装目录：`<repoRoot>/repos/<scope>/<tool>/<skillID>/...`；不再根据客户端配置推断服务端存储目录。
 - 鉴权：
   - 写接口在 remote 模式要求 Ed25519 签名头。
   - `local=true` 时后端直接放行写请求。

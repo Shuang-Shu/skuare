@@ -57,7 +57,6 @@ function printConfigSnapshot(cfg: SkuareConfig): void {
   console.log(`  remote.mode: ${cfg.remote.mode}`);
   console.log(`  remote.address: ${cfg.remote.address}`);
   console.log(`  remote.port: ${cfg.remote.port}`);
-  console.log(`  remote.storageDir: ${cfg.remote.storageDir}`);
   console.log(`  auth.keyId: ${cfg.auth.keyId || "(empty)"}`);
   console.log(`  auth.privateKeyFile: ${cfg.auth.privateKeyFile || "(empty)"}`);
   console.log(`  llmTools: ${cfg.llmTools.join(", ")}`);
@@ -137,7 +136,6 @@ async function runInitTUI(cwd: string): Promise<void> {
     let remoteMode: RemoteMode = baseCfg.remote.mode;
     let address = baseCfg.remote.address;
     let port = baseCfg.remote.port;
-    let storageDir = baseCfg.remote.storageDir;
     let keyId = baseCfg.auth.keyId;
     let privateKeyFile = baseCfg.auth.privateKeyFile;
     let llmTools = baseCfg.llmTools;
@@ -172,9 +170,6 @@ async function runInitTUI(cwd: string): Promise<void> {
           console.log(`${yellow("[INFO]")} local mode uses default local port ${port}`);
         }
       }
-      if (selectedFields.has("storageDir")) {
-        storageDir = await askWithDefault(rl, "Remote registry storage directory", storageDir);
-      }
       if (selectedFields.has("keyId")) {
         keyId = await askWithDefault(rl, "Default signing key id (optional)", keyId);
       }
@@ -196,7 +191,6 @@ async function runInitTUI(cwd: string): Promise<void> {
         address = defaultCfg.remote.address;
         port = defaultCfg.remote.port;
       }
-      storageDir = await askWithDefault(rl, "Remote registry storage directory", storageDir);
       keyId = await askWithDefault(rl, "Default signing key id (optional)", keyId);
       privateKeyFile = await askWithDefault(
         rl,
@@ -261,7 +255,6 @@ async function runInitTUI(cwd: string): Promise<void> {
         mode: remoteMode,
         address: normalizeAddress(address),
         port,
-        storageDir,
       },
       auth: {
         keyId,

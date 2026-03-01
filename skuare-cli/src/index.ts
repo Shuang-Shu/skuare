@@ -59,7 +59,6 @@ async function main(): Promise<void> {
     const context: CommandContext = {
       server: resolved.server,
       localMode: resolved.localMode,
-      remoteStorageDir: resolved.merged.remote.storageDir,
       cwd,
       llmTools: resolved.merged.llmTools,
       toolSkillDirs: resolved.merged.toolSkillDirs,
@@ -105,7 +104,8 @@ Commands:
   publish <path...> [--all] [--skill-id <id>] [--version <v>]
                                        Auto detect each path: SKILL.md -> dir -> JSON fallback
   create ...                           Deprecated alias of publish
-  build <skillName> [refSkill...]      Build skill-deps files, supports alias=refSkill
+  build <skillName> [refSkill...] [--all]
+                                       Build skill-deps files; --all scans current directory skill dirs
   delete <skillID> <version>           Delete skill version
   format [skillDir...]                 Interactive format for metadata.version/metadata.author
   format --all                         Format all skill dirs under current directory
@@ -133,6 +133,7 @@ Examples:
   skr publish ./skills/pdf-reader
   skr create ./skills/pdf-reader
   skr build report-generator data-normalizer schema-validator
+  skr build report-generator --all
   skr build report-generator normalizer=data-normalizer schema=schema-validator`);
 }
 

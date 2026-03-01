@@ -30,10 +30,6 @@ export function mergeConfig(...items: Array<Partial<SkuareConfig> | undefined>):
       result.remote.port = item.remote.port;
     }
 
-    if (item.remote?.storageDir) {
-      result.remote.storageDir = item.remote.storageDir;
-    }
-
     if (typeof item.auth?.keyId === "string") {
       result.auth.keyId = item.auth.keyId;
     }
