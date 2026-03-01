@@ -44,7 +44,7 @@
 - 纯本地命令：
   - `help`、`version`
   - `init`：写本地配置文件
-  - `build <skillName> [refSkill...]`：本地生成/追加 `<skillName>/skill-deps.json` 与 `<skillName>/skill-deps.lock.json`
+  - `build <skillName> [refSkill...] [--all]`：本地生成/追加 `<skillName>/skill-deps.json` 与 `<skillName>/skill-deps.lock.json`
   - `format [skillDir...]` / `format --all`：本地格式化 `SKILL.md`
 - server 只读命令：
   - `health` -> `GET /healthz`
@@ -203,9 +203,11 @@ skuare build report-generator normalizer=data-normalizer schema=schema-validator
 - 当前 skill 若已存在（`409 SKILL_VERSION_ALREADY_EXISTS`），CLI 输出 `WARN` 并返回成功，不再报错退出。
 
 `build` 依赖文件行为：
-- 命令格式：`skuare build <skillName> [refSkill...]`。
+- 命令格式：`skuare build <skillName> [refSkill...] [--all]`。
 - 若目标 skill 缺少依赖文件，则自动创建 `skill-deps.json` 与 `skill-deps.lock.json`。
 - 若目标 skill 已有依赖文件，则采用 add 语义：保留历史依赖，并对本次 `refSkill` 做追加/同名更新。
+- `--all` 会扫描命令执行目录下所有包含 `SKILL.md` 的直接子目录，并将其作为引用 skill；目标 skill 自身会自动排除。
+- `--all` 不能与显式 `refSkill...` 混用。
 - `skill-deps.lock.json` 固定输出 `lock_version: 1`，并为每个依赖写入 `resolved` 字段。
 - 可选别名：`refSkill` 可写为 `alias=refSkill`，落盘后依赖项会包含 `alias` 字段。
 
@@ -251,6 +253,7 @@ skuare --server http://127.0.0.1:15657 \
 - 2026-02-26：`format` 交互增强：改为 `skr format [skillDir...]`，新增 `All/Each` 模式选择；支持 `skr format --all` 扫描当前目录批量格式化并统一写入 `metadata.version`/`metadata.author`。
 - 2026-02-27：`get` 安装目录改为按 LLMTool 规则解析（`codex` -> `./skills`，`claudecode` -> `~/.claudecode/skills`）；`init` 支持为 custom 工具配置 skills 目录映射。
 - 2026-02-27：新增 `build <skillName> [refSkill...]`，用于本地自动创建/追加 `skill-deps.json` 与 `skill-deps.lock.json`。
+- 2026-03-01：`build` 新增 `--all`，用于扫描当前目录下全部合法 skillDir 并批量写入依赖；与显式 `refSkill...` 不可混用。
 - 2026-02-28：`author` 预填与回退默认值统一为 `undefined`（含 `format` 交互与 `list/peek` 展示）。
 - 2026-02-28：优化 `list/peek` 展示：新增 `author`，并统一 `id=<author>/<name>@<version>`，且 `id` 先于 `name` 输出。
 - 2026-03-01：`get` 新增 `--rgx` 正则选 skill；`list/peek` 对外参数名统一为 `--rgx`（兼容旧 `--regex`）。
