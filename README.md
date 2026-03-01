@@ -35,10 +35,10 @@
 - 依赖锁定文件：`skill-deps.lock.json`
 - `skr publish --dir <skill-dir>`：读取依赖描述并递归上传依赖 Skill 到远程仓库。
 - `skr build <skillName> [refSkill...] [--all]`：为本地 skill 自动创建或追加更新依赖文件（`skill-deps.json` / `skill-deps.lock.json`），当目标 skill 不存在时会先交互式创建最小 `SKILL.md` 模板，支持 `alias=refSkill`；`--all` 会将当前目录下全部合法 skillDir 作为引用 skill。
-- `skr get <skill-id> [--scope global|workspace]`：从远程仓库拉取 Skill 到本地局部仓库，并平铺安装其依赖。
-  - global 默认仓库根：`~/.skuare`
-  - workspace 默认仓库根：`<cwd>/.skuare`
-  - 实际安装目录：`<repoRoot>/repos/<scope>/<tool>/<skillID>/...`
+- `skr get <skill-id> [--global]`：从远程仓库拉取 Skill 并平铺安装其依赖。
+  - 不带 `--global`：安装到 `<cwd>/.{llmTool}/skills/<skillID>/`
+  - 带 `--global`：安装到 `~/.{llmTool}/skills/<skillID>/`
+  - `llmTool` 取值为配置文件中第一个工具（codex/claudecode/custom）
 
 示例：
 - 若 `a` 依赖 `b` 和 `c`，执行 `skr get a` 后，目标工具目录下会得到 `a`、`b`、`c` 三个技能目录。
@@ -75,8 +75,8 @@ skr peek observability-orchestrator
 # 7) server 写命令：发布 Skill（会递归处理依赖）
 skr publish --dir ./skills/observability-orchestrator
 
-# 8) 混合命令：拉取到本地局部仓库（会平铺安装依赖）
-skr get observability-orchestrator --scope workspace
+# 8) 混合命令：拉取并安装（会平铺安装依赖）
+skr get observability-orchestrator
 
 # 9) 停止后端守护进程
 make stop-be
@@ -103,8 +103,8 @@ skr validate observability-orchestrator 1.0.0
 - 混合命令：
 ```bash
 skr get --rgx "observability"
-skr get observability-orchestrator --scope workspace
-skr get observability-orchestrator --scope global --repo-dir ~/.skuare
+skr get observability-orchestrator
+skr get observability-orchestrator --global
 ```
 
 - server 写命令：
@@ -133,4 +133,5 @@ skr delete observability-orchestrator 1.0.0
 - 2026-03-01：`get` 新增 `--rgx` 正则选 skill；`list/peek` 对外参数名统一为 `--rgx`（兼容旧 `--regex`）。
 - 2026-02-28：区分远程仓库与本地局部仓库：`publish` 成为主写命令，`get` 新增 `--scope/--repo-dir/--tool`，默认仓库根统一为 `~/.skuare`。
 - 2026-03-01：清理仓库入口风格：`make format` 不再错误要求 `VERSION`，`scripts/dev-up.sh` 默认 `SPEC_DIR` 与主入口保持一致。
+- 2026-03-02：`get` 简化参数：移除 `--scope/--repo-dir/--tool`，改用 `--global` 标志位；不带 `--global` 安装到 `<cwd>/.{llmTool}/skills/`，带 `--global` 安装到 `~/.{llmTool}/skills/`。
 - 2026-03-01：`skr` 在回退旧 `dist/index.js` 时会将 `publish` 兼容桥接为旧命令 `create`，避免无 TypeScript 环境下出现 `Unknown command: publish`。
