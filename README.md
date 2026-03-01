@@ -15,6 +15,21 @@
 
 默认仓库根路径：`$HOME/.skuare`
 
+## 命令分组
+- 纯本地命令：`help`、`version`、`init`、`build`、`format`
+  - 主要作用：生成或修改本地配置、Skill 文件、依赖文件
+  - 默认不访问 server
+- server 只读命令：`health`、`list`、`peek`、`validate`
+  - 主要作用：检查服务状态、查询远程仓库内容、触发服务端校验
+  - 会访问 server，但不写远程仓库
+- 混合命令：`get`
+  - 主要作用：从 server 拉取 Skill，并安装到本地局部仓库
+  - 同时访问 server 和写本地仓库
+  - 默认安装根目录：`~/.skuare`
+- server 写命令：`publish`、`create`、`delete`
+  - 主要作用：写远程仓库
+  - 是否允许无签名写入由服务端决定；CLI 只有在提供签名凭证时才附加签名
+
 ## 核心能力：依赖管理
 - 依赖描述文件：`skill-deps.json`
 - 依赖锁定文件：`skill-deps.lock.json`
@@ -47,40 +62,60 @@ skr init
 # 4) 健康检查
 skr health
 
-# 5) 发布 Skill（会递归处理依赖）
+# 5) 纯本地命令：初始化/构建/格式化
+skr build observability-orchestrator core-time-utils report-generator
+skr format ./skills/observability-orchestrator
+
+# 6) server 只读命令：健康检查/查询
+skr health
+skr list
+skr peek observability-orchestrator
+
+# 7) server 写命令：发布 Skill（会递归处理依赖）
 skr publish --dir ./skills/observability-orchestrator
 
-# 6) 拉取到本地局部仓库（会平铺安装依赖）
+# 8) 混合命令：拉取到本地局部仓库（会平铺安装依赖）
 skr get observability-orchestrator --scope workspace
 
-# 7) 查看列表
-skr list
-
-# 8) 停止后端守护进程
+# 9) 停止后端守护进程
 make stop-be
 ```
 
 ## 常用命令
+- 纯本地命令：
+```bash
+skr build observability-orchestrator core-time-utils report-generator
+skr format ./skills/observability-orchestrator
+skr format --all
+```
+
+- server 只读命令：
 ```bash
 skr health
 skr list --q observability
 skr list --regex "report|alert"
 skr peek observability-orchestrator
 skr peek --regex "^skuare/report-generator@"
+skr validate observability-orchestrator 1.0.0
+```
+
+- 混合命令：
+```bash
 skr get observability-orchestrator --scope workspace
 skr get observability-orchestrator --scope global --repo-dir ~/.skuare
+```
+
+- server 写命令：
+```bash
 skr publish --dir ./skills/observability-orchestrator
 skr create --dir ./skills/observability-orchestrator
-skr build observability-orchestrator core-time-utils report-generator
-skr format ./skills/observability-orchestrator
-skr format --all
-skr validate observability-orchestrator 1.0.0
 skr delete observability-orchestrator 1.0.0
 ```
 
 ## 运行模式
-- `local`：开发优先，写操作免签名。
-- `remote`：生产优先，写操作需签名。
+- `local`：服务端本地模式，服务端可放行无签名写请求。
+- `remote`：服务端远端模式，通常要求签名写请求。
+- CLI 是否附加签名只取决于是否提供 `--key-id` 与 `--privkey-file`。
 
 ## 文档导航
 - 技术综述：`docs/tech_summary.md`
