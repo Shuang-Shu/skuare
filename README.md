@@ -93,14 +93,15 @@ skr format --all
 ```bash
 skr health
 skr list --q observability
-skr list --regex "report|alert"
+skr list --rgx "report|alert"
 skr peek observability-orchestrator
-skr peek --regex "^skuare/report-generator@"
+skr peek --rgx "^skuare/report-generator@"
 skr validate observability-orchestrator 1.0.0
 ```
 
 - 混合命令：
 ```bash
+skr get --rgx "observability"
 skr get observability-orchestrator --scope workspace
 skr get observability-orchestrator --scope global --repo-dir ~/.skuare
 ```
@@ -127,7 +128,7 @@ skr delete observability-orchestrator 1.0.0
 - 2026-02-26：命令语义调整：`peek` 查询、`get` 安装、`format` 格式化，`create` 支持多路径与 `--all`。
 - 2026-02-27：`get` 安装目录按 LLMTool 区分（`codex`/`claudecode`/custom），`init` 支持 custom 工具 skills 目录配置。
 - 2026-02-27：新增 `build <skillName> [refSkill...]`，支持自动创建/追加 `skill-deps.json` 与 `skill-deps.lock.json`。
-- 2026-02-28：`list/peek` 新增 `--regex` 正则匹配能力（`peek` 需唯一命中）。 
+- 2026-03-01：`get` 新增 `--rgx` 正则选 skill；`list/peek` 对外参数名统一为 `--rgx`（兼容旧 `--regex`）。
 - 2026-02-28：区分远程仓库与本地局部仓库：`publish` 成为主写命令，`get` 新增 `--scope/--repo-dir/--tool`，默认仓库根统一为 `~/.skuare`。
 - 2026-03-01：清理仓库入口风格：`make format` 不再错误要求 `VERSION`，`scripts/dev-up.sh` 默认 `SPEC_DIR` 与主入口保持一致。
 - 2026-03-01：`skr` 在回退旧 `dist/index.js` 时会将 `publish` 兼容桥接为旧命令 `create`，避免无 TypeScript 环境下出现 `Unknown command: publish`。
