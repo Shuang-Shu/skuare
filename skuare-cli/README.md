@@ -48,12 +48,12 @@
   - `format [skillDir...]` / `format --all`：本地格式化 `SKILL.md`
 - server 只读命令：
   - `health` -> `GET /healthz`
-  - `list [--q] [--regex]` -> `GET /api/v1/skills`
+  - `list [--q] [--rgx]` -> `GET /api/v1/skills`
   - `peek <skillID> [version]` -> `GET /api/v1/skills/:skillID[/version]`
-  - `peek --regex <pattern> [version]` -> 先查询列表，再正则筛选唯一 skill
+  - `peek --rgx <pattern> [version]` -> 先查询列表，再正则筛选唯一 skill
   - `validate <skillID> <version>` -> `POST /api/v1/skills/:skillID/:version/validate`
 - 混合命令：
-  - `get <skillID> [version] [--scope] [--repo-dir] [--tool]`
+  - `get <skillID> [version] [--rgx] [--scope] [--repo-dir] [--tool]`
   - 行为：先从远程仓库拉取，再安装到本地局部仓库
   - 默认 scope=`workspace`
   - global 默认仓库根：`~/.skuare`
@@ -214,12 +214,13 @@ skuare build report-generator normalizer=data-normalizer schema=schema-validator
 - `skr list` 展示：`id`、`name`、`author`、`skill_id`、`version`、`description`。
 - 其中 `id` 格式为：`<author>/<name>@<version>`，并固定先于 `name` 展示。
 - 当作者信息缺失时，`author` 回退为 `undefined`。
-- `skr list --regex <pattern>` 会在 `id/skill_id/name/author/description` 上执行正则匹配。
+- `skr list --rgx <pattern>` 会在 `id/skill_id/name/author/description` 上执行正则匹配。
 
 `peek` 输出字段：
 - `skr peek <skillID> <version>` 展示：`id`、`name`、`author` 及该版本详情字段。
 - `skr peek <skillID>` 展示：`id`（latest）、`name`、`author`、`versions` 与 `ids`（每个版本对应的完整 id）。
-- `skr peek --regex <pattern> [version]` 要求正则命中唯一 skill；0 命中或多命中会报错并提示。
+- `skr peek --rgx <pattern> [version]` 要求正则命中唯一 skill；0 命中或多命中会报错并提示。
+- `skr get --rgx <pattern> [version]` 会先正则筛选唯一 skill，再执行既有安装流程。
 
 写操作示例（携带公钥）：
 ```bash
@@ -253,7 +254,7 @@ skuare --server http://127.0.0.1:15657 \
 - 2026-02-27：新增 `build <skillName> [refSkill...]`，用于本地自动创建/追加 `skill-deps.json` 与 `skill-deps.lock.json`。
 - 2026-02-28：`author` 预填与回退默认值统一为 `undefined`（含 `format` 交互与 `list/peek` 展示）。
 - 2026-02-28：优化 `list/peek` 展示：新增 `author`，并统一 `id=<author>/<name>@<version>`，且 `id` 先于 `name` 输出。
-- 2026-02-28：`list/peek` 新增 `--regex` 正则匹配能力（`peek` 需唯一命中）。 
+- 2026-03-01：`get` 新增 `--rgx` 正则选 skill；`list/peek` 对外参数名统一为 `--rgx`（兼容旧 `--regex`）。
 - 2026-02-28：根目录 `skr` 增加预构建回退逻辑；当本地缺少 TypeScript 工具链但已有 `dist/index.js` 时，`health` 等命令可继续运行。 
 - 2026-03-01：根目录 `skr` 在回退旧 `dist/index.js` 且用户调用 `publish` 时，会桥接为旧命令 `create`，避免旧 dist 报 `Unknown command`。
 - 2026-03-01：文档按“纯本地 / server 只读 / 混合 / server 写”重组命令说明，并明确默认本地仓库目录与服务端裁决签名关系。

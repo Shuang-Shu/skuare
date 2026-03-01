@@ -38,10 +38,10 @@ Commands:
   version                              Show version
   init                                 Interactive init for global/workspace config
   health                               Health check (GET /healthz)
-  list [--q <keyword>] [--regex <re>]  List skills (GET /api/v1/skills)
+  list [--q <keyword>] [--rgx <re>]    List skills (GET /api/v1/skills)
   peek <skillID> [version]             Peek skill overview/detail
-  peek --regex <re> [version]          Peek by regex (must match exactly one skill)
-  get <skillID> [version] [--scope global|workspace] [--repo-dir <path>] [--tool <name>]
+  peek --rgx <re> [version]            Peek by regex (must match exactly one skill)
+  get <skillID> [version] [--rgx <re>] [--scope global|workspace] [--repo-dir <path>] [--tool <name>]
                                        Install skill to local partial repository
   validate <skillID> <version>         Validate a version
   publish --file <request.json>        Publish from request JSON
@@ -72,9 +72,10 @@ Write Operations:
 Examples:
   skr health
   skr list --q pdf
-  skr list --regex "report|alert"
+  skr list --rgx "report|alert"
   skr peek pdf-reader 1.0.0
-  skr peek --regex "^skuare/report-generator@"
+  skr peek --rgx "^skuare/report-generator@"
+  skr get --rgx ".*ppt.*"
   skr get pdf-reader --scope workspace
   skr get pdf-reader --scope global --repo-dir ~/.skuare
   skr publish --file /tmp/create-skill.json
