@@ -34,7 +34,7 @@
 - 依赖描述文件：`skill-deps.json`
 - 依赖锁定文件：`skill-deps.lock.json`
 - `skr publish --dir <skill-dir>`：读取依赖描述并递归上传依赖 Skill 到远程仓库。
-- `skr build <skillName> [refSkill...]`：为本地 skill 自动创建或追加更新依赖文件（`skill-deps.json` / `skill-deps.lock.json`），支持 `alias=refSkill`。
+- `skr build <skillName> [refSkill...] [--all]`：为本地 skill 自动创建或追加更新依赖文件（`skill-deps.json` / `skill-deps.lock.json`），当目标 skill 不存在时会先交互式创建最小 `SKILL.md` 模板，支持 `alias=refSkill`；`--all` 会将当前目录下全部合法 skillDir 作为引用 skill。
 - `skr get <skill-id> [--scope global|workspace]`：从远程仓库拉取 Skill 到本地局部仓库，并平铺安装其依赖。
   - global 默认仓库根：`~/.skuare`
   - workspace 默认仓库根：`<cwd>/.skuare`
@@ -64,6 +64,7 @@ skr health
 
 # 5) 纯本地命令：初始化/构建/格式化
 skr build observability-orchestrator core-time-utils report-generator
+skr build observability-orchestrator --all
 skr format ./skills/observability-orchestrator
 
 # 6) server 只读命令：健康检查/查询
@@ -128,6 +129,7 @@ skr delete observability-orchestrator 1.0.0
 - 2026-02-26：命令语义调整：`peek` 查询、`get` 安装、`format` 格式化，`create` 支持多路径与 `--all`。
 - 2026-02-27：`get` 安装目录按 LLMTool 区分（`codex`/`claudecode`/custom），`init` 支持 custom 工具 skills 目录配置。
 - 2026-02-27：新增 `build <skillName> [refSkill...]`，支持自动创建/追加 `skill-deps.json` 与 `skill-deps.lock.json`。
+- 2026-03-01：`build` 在目标 skill 缺失时可交互式初始化最小 `SKILL.md` 模板，并兼容 `--all` 批量扫描当前目录 skillDir。
 - 2026-03-01：`get` 新增 `--rgx` 正则选 skill；`list/peek` 对外参数名统一为 `--rgx`（兼容旧 `--regex`）。
 - 2026-02-28：区分远程仓库与本地局部仓库：`publish` 成为主写命令，`get` 新增 `--scope/--repo-dir/--tool`，默认仓库根统一为 `~/.skuare`。
 - 2026-03-01：清理仓库入口风格：`make format` 不再错误要求 `VERSION`，`scripts/dev-up.sh` 默认 `SPEC_DIR` 与主入口保持一致。

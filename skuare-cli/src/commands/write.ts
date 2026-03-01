@@ -5,7 +5,7 @@
 import type { CommandContext, JsonValue } from "./types";
 import { BaseCommand } from "./base";
 import { callApi } from "../http/client";
-import { readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, posix, relative, resolve } from "node:path";
 import * as readlinePromises from "node:readline/promises";
 
@@ -819,18 +819,25 @@ export class FormatCommand extends BaseCommand {
 
 export class BuildCommand extends BaseCommand {
   readonly name = "build";
-  readonly description = "Build skill dependency files";
+  readonly description = "Build or initialize skill dependency files";
 
   async execute(context: CommandContext): Promise<void> {
-    const [skillName, ...rawRefs] = context.args.map((v) => v.trim()).filter(Boolean);
+    const args = context.args.map((v) => v.trim()).filter(Boolean);
+    const includeAll = args.includes("--all");
+    const positional = args.filter((v) => v !== "--all");
+    const [skillName, ...rawRefs] = positional;
     if (!skillName) {
-      this.fail("Usage: skuare build <skillName> [refSkill...]");
+      this.fail("Usage: skuare build <skillName> [refSkill...] [--all]");
+    }
+    if (includeAll && rawRefs.length > 0) {
+      this.fail("--all cannot be used with explicit refSkill arguments");
     }
 
-    const targetDir = await this.resolveSkillDir(skillName, context.cwd, context.cwd);
+    const targetDir = await this.resolveTargetSkillDir(skillName, context.cwd, context.cwd);
+    const refs = includeAll
+      ? await this.resolveAllRefSkills(context.cwd, targetDir)
+      : Array.from(new Set(rawRefs));
     const skillDirRoot = dirname(targetDir);
-
-    const refs = Array.from(new Set(rawRefs));
     const resolvedRefs: Array<{ skill: string; version: string; dir: string; alias?: string }> = [];
     for (const ref of refs) {
       const parsed = this.parseRefArg(ref);
@@ -879,6 +886,7 @@ export class BuildCommand extends BaseCommand {
     console.log(JSON.stringify({
       skill: basename(targetDir),
       target_dir: targetDir,
+      all: includeAll,
       added: resolvedRefs.map((v) => ({ skill: v.skill, version: v.version, ...(v.alias ? { alias: v.alias } : {}) })),
       dependency_count: dependencies.length,
       files: [depPath, lockPath],
@@ -893,7 +901,42 @@ export class BuildCommand extends BaseCommand {
     return { alias: m[1], refSkill: m[2] };
   }
 
-  private async resolveSkillDir(input: string, baseDir: string, fallbackDir: string): Promise<string> {
+  private async resolveAllRefSkills(cwd: string, targetDir: string): Promise<string[]> {
+    const entries = await readdir(cwd, { withFileTypes: true });
+    const refs: string[] = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      const candidate = join(cwd, entry.name);
+      const skillPath = join(candidate, "SKILL.md");
+      const skillInfo = await stat(skillPath).catch(() => undefined);
+      if (!skillInfo?.isFile()) {
+        continue;
+      }
+      if (resolve(candidate) === resolve(targetDir)) {
+        continue;
+      }
+      refs.push(entry.name);
+    }
+    return refs.sort((a, b) => a.localeCompare(b));
+  }
+
+  private async resolveTargetSkillDir(input: string, baseDir: string, fallbackDir: string): Promise<string> {
+    const existing = await this.findSkillDir(input, baseDir, fallbackDir);
+    if (existing) {
+      return existing;
+    }
+
+    const direct = resolve(input);
+    const inBase = resolve(baseDir, input);
+    const inFallback = resolve(fallbackDir, input);
+    const targetDir = direct === inBase ? direct : inBase;
+    await this.ensureSkillTemplate(targetDir);
+    return targetDir;
+  }
+
+  private async findSkillDir(input: string, baseDir: string, fallbackDir: string): Promise<string | undefined> {
     const direct = resolve(input);
     const inBase = resolve(baseDir, input);
     const inFallback = resolve(fallbackDir, input);
@@ -909,7 +952,108 @@ export class BuildCommand extends BaseCommand {
         return candidate;
       }
     }
+    return undefined;
+  }
+
+  private async ensureSkillTemplate(targetDir: string): Promise<void> {
+    const targetInfo = await stat(targetDir).catch(() => undefined);
+    if (targetInfo?.isFile()) {
+      this.fail(`Target path is a file, cannot initialize skill directory: ${targetDir}`);
+    }
+    if (!this.isInteractiveTerminal()) {
+      this.fail(`Target skill not found and interactive initialization requires a TTY: ${targetDir}`);
+    }
+
+    const rl = this.createReadlineInterface();
+    try {
+      const skillID = basename(targetDir);
+      const defaults = {
+        description: `Describe when to use ${skillID} and what outcome it should provide.`,
+        author: "undefined",
+        version: "0.0.1",
+      };
+
+      console.log(`${this.yellow("[INFO]")} Skill not found. Initializing template at ${targetDir}`);
+      console.log("Provide minimal metadata for the new skill template:");
+
+      const description = await this.askRequired(
+        rl,
+        `Description for ${skillID}`,
+        defaults.description
+      );
+      const author = await this.askRequired(rl, `metadata.author for ${skillID}`, defaults.author);
+      const version = await this.askRequired(rl, `metadata.version for ${skillID}`, defaults.version);
+
+      await mkdir(targetDir, { recursive: true });
+      const skillPath = join(targetDir, "SKILL.md");
+      await writeFile(skillPath, this.renderSkillTemplate(skillID, description, author, version), "utf8");
+    } finally {
+      rl.close();
+    }
+  }
+
+  private async resolveSkillDir(input: string, baseDir: string, fallbackDir: string): Promise<string> {
+    const found = await this.findSkillDir(input, baseDir, fallbackDir);
+    if (found) {
+      return found;
+    }
     this.fail(`Skill directory not found or missing SKILL.md: ${input}`);
+  }
+
+  protected createReadlineInterface(): ReadlineInterface {
+    return readlinePromises.createInterface({ input: process.stdin, output: process.stdout });
+  }
+
+  protected isInteractiveTerminal(): boolean {
+    return !!process.stdin.isTTY && !!process.stdout.isTTY;
+  }
+
+  private async askRequired(rl: ReadlineInterface, label: string, defaultValue: string): Promise<string> {
+    const raw = (await rl.question(`${label} [${defaultValue}]: `)).trim();
+    const value = raw || defaultValue;
+    if (!value) {
+      this.fail(`${label} is required`);
+    }
+    return value;
+  }
+
+  private renderSkillTemplate(skillID: string, description: string, author: string, version: string): string {
+    const safeSkillID = this.toYamlString(skillID);
+    const safeDescription = this.toYamlString(description);
+    const safeAuthor = this.toYamlString(author);
+    const safeVersion = this.toYamlString(version);
+    return [
+      "---",
+      `name: ${safeSkillID}`,
+      "metadata:",
+      `  version: ${safeVersion}`,
+      `  author: ${safeAuthor}`,
+      `description: ${safeDescription}`,
+      "---",
+      "",
+      `# ${skillID}`,
+      "",
+      "## Overview",
+      `Use this skill when you need ${skillID} to deliver its intended workflow.`,
+      "",
+      "## Inputs Needed",
+      "- Clarify the user goal and expected output.",
+      "- Gather any required context, files, or constraints before execution.",
+      "",
+      "## Workflow",
+      "1. Confirm the task scope and success criteria.",
+      "2. Execute the core workflow for this skill.",
+      "3. Return the result with any important caveats or next steps.",
+      "",
+      "## Output Contract",
+      "- Return the requested result directly.",
+      "- Call out assumptions, risks, or follow-up actions when relevant.",
+      "",
+    ].join("\n");
+  }
+
+  private toYamlString(input: string): string {
+    return `"${input.replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`;
   }
 
   private async readSkillVersion(skillDir: string): Promise<string> {
