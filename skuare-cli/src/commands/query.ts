@@ -130,6 +130,26 @@ function stripOptionsWithValues(args: string[], options: string[]): string[] {
   return out;
 }
 
+function parseOptionValue(args: string[], option: string): string | undefined {
+  const idx = args.indexOf(option);
+  if (idx < 0) {
+    return undefined;
+  }
+  const value = args[idx + 1];
+  if (!value) {
+    throw new Error(`Missing value for ${option}`);
+  }
+  return value;
+}
+
+function parseRegexOption(args: string[]): string | undefined {
+  return parseOptionValue(args, "--rgx") || parseOptionValue(args, "--regex");
+}
+
+function stripRegexOptions(args: string[]): string[] {
+  return stripOptionsWithValues(args, ["--rgx", "--regex"]);
+}
+
 function normalizeListItems(items: JsonValue[]): NormalizedSkillItem[] {
   return items
     .filter((x): x is Record<string, JsonValue> => !!x && typeof x === "object" && !Array.isArray(x))
@@ -179,7 +199,7 @@ export class ListCommand extends BaseCommand {
 
   async execute(context: CommandContext): Promise<void> {
     const q = this.parseOptionValue(context.args, "--q");
-    const regexPattern = this.parseOptionValue(context.args, "--regex");
+    const regexPattern = parseRegexOption(context.args);
     const regex = regexPattern ? this.compileRegex(regexPattern) : undefined;
     const path = q ? `/api/v1/skills?q=${encodeURIComponent(q)}` : "/api/v1/skills";
 
@@ -217,20 +237,20 @@ export class PeekCommand extends BaseCommand {
   readonly description = "Peek skill overview/detail";
 
   async execute(context: CommandContext): Promise<void> {
-    const regexPattern = this.parseOptionValue(context.args, "--regex");
-    const positional = stripOptionsWithValues(context.args, ["--regex"]);
+    const regexPattern = parseRegexOption(context.args);
+    const positional = stripRegexOptions(context.args);
     let [skillID, version] = positional;
 
     if (regexPattern) {
       if (positional.length > 1) {
-        this.fail("Usage: skuare peek --regex <pattern> [version]");
+        this.fail("Usage: skuare peek --rgx <pattern> [version]");
       }
       skillID = await this.resolveSkillIDByRegex(context, regexPattern);
       version = positional[0];
     }
 
     if (!skillID) {
-      this.fail("Missing <skillID>. Usage: skuare peek <skillID> [version] | skuare peek --regex <pattern> [version]");
+      this.fail("Missing <skillID>. Usage: skuare peek <skillID> [version] | skuare peek --rgx <pattern> [version]");
     }
 
     if (version) {
@@ -358,13 +378,21 @@ export class GetCommand extends BaseCommand {
     const scopeRaw = this.parseOptionValue(context.args, "--scope");
     const repoDirRaw = this.parseOptionValue(context.args, "--repo-dir");
     const toolArg = this.parseOptionValue(context.args, "--tool");
-    const positional = stripOptionsWithValues(context.args, ["--scope", "--repo-dir", "--tool"]);
-    const [skillID, versionArg] = positional;
+    const regexPattern = parseRegexOption(context.args);
+    const positional = stripOptionsWithValues(stripRegexOptions(context.args), ["--scope", "--repo-dir", "--tool"]);
+    let [skillID, versionArg] = positional;
+    if (regexPattern) {
+      if (positional.length > 1) {
+        this.fail("Usage: skuare get --rgx <pattern> [version] [--scope global|workspace] [--repo-dir <path>] [--tool <name>]");
+      }
+      skillID = await this.resolveSkillIDByRegex(context, regexPattern);
+      versionArg = positional[0];
+    }
     if (!skillID) {
-      this.fail("Missing <skillID>. Usage: skuare get <skillID> [version] [--scope global|workspace] [--repo-dir <path>] [--tool <name>]");
+      this.fail("Missing <skillID>. Usage: skuare get <skillID> [version] [--rgx <pattern>] [--scope global|workspace] [--repo-dir <path>] [--tool <name>]");
     }
     if (positional.length > 2) {
-      this.fail("Usage: skuare get <skillID> [version] [--scope global|workspace] [--repo-dir <path>] [--tool <name>]");
+      this.fail("Usage: skuare get <skillID> [version] [--rgx <pattern>] [--scope global|workspace] [--repo-dir <path>] [--tool <name>]");
     }
     const scope = this.resolveScope(scopeRaw);
     const tool = this.resolveTargetTool(context.llmTools, toolArg);
@@ -386,6 +414,45 @@ export class GetCommand extends BaseCommand {
       conflicts: result.conflictFiles.sort((a, b) => a.localeCompare(b)),
       skills: result.skills.sort((a, b) => a.localeCompare(b)),
     }, null, 2));
+  }
+
+  private compileRegex(pattern: string): RegExp {
+    try {
+      return new RegExp(pattern);
+    } catch {
+      this.fail(`Invalid regex pattern: ${pattern}`);
+    }
+  }
+
+  private async resolveSkillIDByRegex(context: CommandContext, pattern: string): Promise<string> {
+    const regex = this.compileRegex(pattern);
+    const resp = await callApi({
+      method: "GET",
+      path: "/api/v1/skills",
+      server: context.server,
+      silent: true,
+    });
+    const itemsRaw = (resp.data && typeof resp.data === "object" && !Array.isArray(resp.data))
+      ? (resp.data as { items?: JsonValue }).items
+      : undefined;
+    const items = Array.isArray(itemsRaw) ? itemsRaw : [];
+    const matched = normalizeListItems(items).filter((item) => matchesSkill(regex, item));
+    if (matched.length === 0) {
+      this.fail(`No skill matched regex: ${pattern}`);
+    }
+    if (matched.length > 1) {
+      const choices = matched
+        .slice(0, 10)
+        .map((item) => String(item.id || item.skill_id || "unknown"))
+        .join(", ");
+      const suffix = matched.length > 10 ? ", ..." : "";
+      this.fail(`Regex matched multiple skills (${matched.length}): ${choices}${suffix}`);
+    }
+    const resolvedSkillID = String(matched[0].skill_id || "").trim();
+    if (!resolvedSkillID) {
+      this.fail(`Matched skill has empty skill_id for regex: ${pattern}`);
+    }
+    return resolvedSkillID;
   }
 
   private resolveScope(raw?: string): InstallScope {
