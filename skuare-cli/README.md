@@ -224,6 +224,11 @@ skuare build report-generator normalizer=data-normalizer schema=schema-validator
 - `skr peek --rgx <pattern> [version]` 要求正则命中唯一 skill；0 命中或多命中会报错并提示。
 - `skr get --rgx <pattern> [version]` 会先正则筛选唯一 skill，再执行既有安装流程。
 
+`get` 安装路径：
+- 不带 `--global`：安装到 `<cwd>/.{llmTool}/skills/<skillID>/`
+- 带 `--global`：安装到 `~/.{llmTool}/skills/<skillID>/`
+- `llmTool` 取值为配置文件中第一个工具（codex/claudecode/custom）
+
 写操作示例（携带公钥）：
 ```bash
 skuare --server http://127.0.0.1:15657 \
@@ -262,3 +267,4 @@ skuare --server http://127.0.0.1:15657 \
 - 2026-03-01：根目录 `skr` 在回退旧 `dist/index.js` 且用户调用 `publish` 时，会桥接为旧命令 `create`，避免旧 dist 报 `Unknown command`。
 - 2026-03-01：文档按“纯本地 / server 只读 / 混合 / server 写”重组命令说明，并明确默认本地仓库目录与服务端裁决签名关系。
 - 2026-02-28：`create` 迁移为 `publish`（保留兼容别名）；`get` 新增 `--scope/--repo-dir/--tool`，安装目标改为本地局部仓库 `repos/<scope>/<tool>/...`，并兼容 LOCAL 同目录共享场景。
+- 2026-03-02：`get` 简化参数：移除 `--scope/--repo-dir/--tool`，改用 `--global` 标志位；不带 `--global` 安装到 `<cwd>/.{llmTool}/skills/`，带 `--global` 安装到 `~/.{llmTool}/skills/`。

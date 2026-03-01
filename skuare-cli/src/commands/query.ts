@@ -8,14 +8,9 @@ import { callApi } from "../http/client";
 import type { JsonValue } from "./types";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import {
-  getGlobalRepoDirPath,
-  getWorkspaceRepoDirPath,
-  normalizeToolSkillsDir,
-} from "../config/resolver";
+import { homedir } from "node:os";
 
 type RemoteFile = { path: string; content: string };
-type InstallScope = "global" | "workspace";
 type InstallResult = { skills: string[]; conflictFiles: string[] };
 type NormalizedSkillItem = {
   id: string;
@@ -375,29 +370,25 @@ export class GetCommand extends BaseCommand {
   readonly description = "Install skill to local partial repository";
 
   async execute(context: CommandContext): Promise<void> {
-    const scopeRaw = this.parseOptionValue(context.args, "--scope");
-    const repoDirRaw = this.parseOptionValue(context.args, "--repo-dir");
-    const toolArg = this.parseOptionValue(context.args, "--tool");
+    const isGlobal = context.args.includes("--global");
     const regexPattern = parseRegexOption(context.args);
-    const positional = stripOptionsWithValues(stripRegexOptions(context.args), ["--scope", "--repo-dir", "--tool"]);
+    const positional = stripOptionsWithValues(stripRegexOptions(context.args), []).filter(arg => arg !== "--global");
     let [skillID, versionArg] = positional;
     if (regexPattern) {
       if (positional.length > 1) {
-        this.fail("Usage: skuare get --rgx <pattern> [version] [--scope global|workspace] [--repo-dir <path>] [--tool <name>]");
+        this.fail("Usage: skuare get --rgx <pattern> [version] [--global]");
       }
       skillID = await this.resolveSkillIDByRegex(context, regexPattern);
       versionArg = positional[0];
     }
     if (!skillID) {
-      this.fail("Missing <skillID>. Usage: skuare get <skillID> [version] [--rgx <pattern>] [--scope global|workspace] [--repo-dir <path>] [--tool <name>]");
+      this.fail("Missing <skillID>. Usage: skuare get <skillID> [version] [--rgx <pattern>] [--global]");
     }
     if (positional.length > 2) {
-      this.fail("Usage: skuare get <skillID> [version] [--rgx <pattern>] [--scope global|workspace] [--repo-dir <path>] [--tool <name>]");
+      this.fail("Usage: skuare get <skillID> [version] [--rgx <pattern>] [--global]");
     }
-    const scope = this.resolveScope(scopeRaw);
-    const tool = this.resolveTargetTool(context.llmTools, toolArg);
-    const repositoryRoot = this.resolveRepositoryRoot(context, scope, repoDirRaw);
-    const targetRoot = this.resolveInstallTargetRoot(repositoryRoot, scope, tool);
+    const tool = this.resolveTargetTool(context.llmTools);
+    const targetRoot = this.resolveInstallTargetRoot(context.cwd, tool, isGlobal);
     const sharedLocalDir = false;
     const result = await this.installWithDependencies(context, targetRoot, skillID, versionArg, { sharedLocalDir });
     if (sharedLocalDir && result.conflictFiles.length > 0) {
@@ -406,9 +397,8 @@ export class GetCommand extends BaseCommand {
       );
     }
     console.log(JSON.stringify({
-      scope,
+      global: isGlobal,
       llm_tool: tool,
-      repository_root: repositoryRoot,
       target: targetRoot,
       shared_local_dir: sharedLocalDir,
       conflicts: result.conflictFiles.sort((a, b) => a.localeCompare(b)),
@@ -455,22 +445,7 @@ export class GetCommand extends BaseCommand {
     return resolvedSkillID;
   }
 
-  private resolveScope(raw?: string): InstallScope {
-    if (!raw) {
-      return "workspace";
-    }
-    const scope = raw.trim().toLowerCase();
-    if (scope !== "global" && scope !== "workspace") {
-      this.fail(`Invalid --scope value: ${raw}. Expected global|workspace`);
-    }
-    return scope as InstallScope;
-  }
-
-  private resolveTargetTool(llmTools: string[], preferred?: string): string {
-    const fromArg = String(preferred || "").trim();
-    if (fromArg) {
-      return fromArg;
-    }
+  private resolveTargetTool(llmTools: string[]): string {
     const first = (llmTools || []).map((v) => v.trim()).find(Boolean);
     if (!first) {
       this.fail("No llmTools configured. Run `skr init` and select at least one tool");
@@ -478,16 +453,10 @@ export class GetCommand extends BaseCommand {
     return first;
   }
 
-  private resolveRepositoryRoot(context: CommandContext, scope: InstallScope, repoDirArg?: string): string {
-    const fromArg = normalizeToolSkillsDir(context.cwd, repoDirArg || "");
-    if (fromArg) {
-      return fromArg;
-    }
-    return scope === "global" ? getGlobalRepoDirPath() : getWorkspaceRepoDirPath(context.cwd);
-  }
-
-  private resolveInstallTargetRoot(repositoryRoot: string, scope: InstallScope, tool: string): string {
-    return join(repositoryRoot, "repos", scope, tool);
+  private resolveInstallTargetRoot(cwd: string, tool: string, isGlobal: boolean): string {
+    return isGlobal 
+      ? join(homedir(), `.${tool}`, "skills")
+      : join(cwd, `.${tool}`, "skills");
   }
 
   private async installWithDependencies(
