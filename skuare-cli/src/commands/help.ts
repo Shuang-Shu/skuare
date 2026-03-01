@@ -41,8 +41,8 @@ Commands:
   list [--q <keyword>] [--rgx <re>]    List skills (GET /api/v1/skills)
   peek <skillID> [version]             Peek skill overview/detail
   peek --rgx <re> [version]            Peek by regex (must match exactly one skill)
-  get <skillID> [version] [--rgx <re>] [--scope global|workspace] [--repo-dir <path>] [--tool <name>]
-                                       Install skill to local partial repository
+  get <skillID> [version] [--rgx <re>] [--global]
+                                       Install skill and dependencies (default: <cwd>/.{tool}/skills/, --global: ~/.{tool}/skills/)
   validate <skillID> <version>         Validate a version
   publish --file <request.json>        Publish from request JSON
   publish --skill <SKILL.md> [--skill-id <id>] [--version <v>]
@@ -77,8 +77,8 @@ Examples:
   skr peek pdf-reader 1.0.0
   skr peek --rgx "^skuare/report-generator@"
   skr get --rgx ".*ppt.*"
-  skr get pdf-reader --scope workspace
-  skr get pdf-reader --scope global --repo-dir ~/.skuare
+  skr get pdf-reader
+  skr get pdf-reader --global
   skr publish --file /tmp/create-skill.json
   skr publish --skill ./skills/pdf-reader/SKILL.md
   skr publish --dir ./skills/pdf-reader
