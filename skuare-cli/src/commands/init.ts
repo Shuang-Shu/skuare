@@ -170,15 +170,17 @@ async function runInitTUI(cwd: string): Promise<void> {
           console.log(`${yellow("[INFO]")} local mode uses default local port ${port}`);
         }
       }
-      if (selectedFields.has("keyId")) {
-        keyId = await askWithDefault(rl, "Default signing key id (optional)", keyId);
-      }
-      if (selectedFields.has("privateKeyFile")) {
-        privateKeyFile = await askWithDefault(
-          rl,
-          "Default private key file path (optional)",
-          privateKeyFile
-        );
+      if (remoteMode === "remote") {
+        if (selectedFields.has("keyId")) {
+          keyId = await askWithDefault(rl, "Default signing key id (optional)", keyId);
+        }
+        if (selectedFields.has("privateKeyFile")) {
+          privateKeyFile = await askWithDefault(
+            rl,
+            "Default private key file path (optional)",
+            privateKeyFile
+          );
+        }
       }
       modifyLLMTools = selectedFields.has("llmTools");
     } else {
@@ -187,16 +189,17 @@ async function runInitTUI(cwd: string): Promise<void> {
         address = await askWithDefault(rl, "Remote registry address", address);
         const portRaw = await askWithDefault(rl, "Remote registry port", String(port));
         port = parsePort(portRaw);
+        keyId = await askWithDefault(rl, "Default signing key id (optional)", keyId);
+        privateKeyFile = await askWithDefault(
+          rl,
+          "Default private key file path (optional)",
+          privateKeyFile
+        );
       } else {
         address = defaultCfg.remote.address;
         port = defaultCfg.remote.port;
+        console.log(`${yellow("[INFO]")} local mode does not require signing keys`);
       }
-      keyId = await askWithDefault(rl, "Default signing key id (optional)", keyId);
-      privateKeyFile = await askWithDefault(
-        rl,
-        "Default private key file path (optional)",
-        privateKeyFile
-      );
     }
 
     // 连通性检查
@@ -215,7 +218,7 @@ async function runInitTUI(cwd: string): Promise<void> {
     }
     if (remoteMode === "local") {
       console.log(
-        `${yellow("[INFO]")} local mode is enforced by server; client-side request signing is still decided by provided credentials.`
+        `${yellow("[INFO]")} local mode enabled: write operations do not require signing`
       );
     }
 
