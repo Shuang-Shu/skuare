@@ -67,7 +67,7 @@ export async function promptCustomToolName(): Promise<string> {
  * 选择 LLM 工具（支持自定义添加）
  */
 export async function selectLLMTools(defaultTools: string[]): Promise<string[]> {
-  const baseTools = ["codex", "claudecode"];
+  const baseTools = ["codex", "claudecode", "qwen", "trae", "cursor-cli", "kiro"];
   const stdin = process.stdin as {
     isTTY?: boolean;
     isRaw?: boolean;

@@ -87,7 +87,7 @@ export function normalizeAddress(address: string): string {
  */
 export function isBuiltinLLMTool(tool: string): boolean {
   const t = tool.trim().toLowerCase();
-  return t === "codex" || t === "claudecode";
+  return t === "codex" || t === "claudecode" || t === "qwen" || t === "trae" || t === "cursor-cli" || t === "kiro";
 }
 
 /**
