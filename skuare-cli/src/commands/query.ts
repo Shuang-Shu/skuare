@@ -7,7 +7,7 @@ import { BaseCommand } from "./base";
 import { callApi } from "../http/client";
 import type { JsonValue } from "./types";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import {
   getGlobalRepoDirPath,
   getWorkspaceRepoDirPath,
@@ -398,7 +398,7 @@ export class GetCommand extends BaseCommand {
     const tool = this.resolveTargetTool(context.llmTools, toolArg);
     const repositoryRoot = this.resolveRepositoryRoot(context, scope, repoDirRaw);
     const targetRoot = this.resolveInstallTargetRoot(repositoryRoot, scope, tool);
-    const sharedLocalDir = this.isSharedLocalDir(context, repositoryRoot);
+    const sharedLocalDir = false;
     const result = await this.installWithDependencies(context, targetRoot, skillID, versionArg, { sharedLocalDir });
     if (sharedLocalDir && result.conflictFiles.length > 0) {
       console.log(
@@ -488,23 +488,6 @@ export class GetCommand extends BaseCommand {
 
   private resolveInstallTargetRoot(repositoryRoot: string, scope: InstallScope, tool: string): string {
     return join(repositoryRoot, "repos", scope, tool);
-  }
-
-  private isSharedLocalDir(context: CommandContext, repositoryRoot: string): boolean {
-    if (!context.localMode) {
-      return false;
-    }
-    const remoteRoot = normalizeToolSkillsDir(context.cwd, context.remoteStorageDir);
-    if (!remoteRoot) {
-      return false;
-    }
-    return this.pathsEqual(remoteRoot, repositoryRoot);
-  }
-
-  private pathsEqual(a: string, b: string): boolean {
-    const left = resolve(a);
-    const right = resolve(b);
-    return process.platform === "win32" ? left.toLowerCase() === right.toLowerCase() : left === right;
   }
 
   private async installWithDependencies(

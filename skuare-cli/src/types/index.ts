@@ -2,7 +2,7 @@
  * Skuare CLI 类型定义
  */
 
-import { DEFAULT_REMOTE_ADDRESS, DEFAULT_REMOTE_PORT, DEFAULT_REMOTE_STORAGE_DIR } from "../defaults";
+import { DEFAULT_REMOTE_ADDRESS, DEFAULT_REMOTE_PORT } from "../defaults";
 
 // ============================================================================
 // 配置相关类型
@@ -11,13 +11,13 @@ import { DEFAULT_REMOTE_ADDRESS, DEFAULT_REMOTE_PORT, DEFAULT_REMOTE_STORAGE_DIR
 export type ConfigScope = "global" | "workspace";
 export type WorkspaceInitMode = "reuse-global" | "modify" | "new";
 export type RemoteMode = "local" | "remote";
-export type ModifyField = "mode" | "address" | "port" | "storageDir" | "keyId" | "privateKeyFile" | "llmTools";
+export type ModifyField = "mode" | "address" | "port" | "keyId" | "privateKeyFile" | "llmTools";
 
 export type RemoteConfig = {
   mode: RemoteMode;
   address: string;
   port: number;
-  storageDir: string;
+  storageDir?: string;
 };
 
 export type WriteAuth = {
@@ -89,7 +89,6 @@ export function createDefaultConfig(): SkuareConfig {
       mode: "remote",
       address: DEFAULT_REMOTE_ADDRESS,
       port: DEFAULT_REMOTE_PORT,
-      storageDir: DEFAULT_REMOTE_STORAGE_DIR,
     },
     auth: {
       keyId: "",

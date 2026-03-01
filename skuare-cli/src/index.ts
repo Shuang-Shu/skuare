@@ -59,7 +59,6 @@ async function main(): Promise<void> {
     const context: CommandContext = {
       server: resolved.server,
       localMode: resolved.localMode,
-      remoteStorageDir: resolved.merged.remote.storageDir,
       cwd,
       llmTools: resolved.merged.llmTools,
       toolSkillDirs: resolved.merged.toolSkillDirs,

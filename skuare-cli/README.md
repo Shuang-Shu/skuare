@@ -59,7 +59,7 @@
   - global 默认仓库根：`~/.skuare`
   - workspace 默认仓库根：`<cwd>/.skuare`
   - 实际安装目标：`<repoRoot>/repos/<scope>/<tool>/<skillID>/...`
-  - LOCAL 模式下若 CLI 仓库根与服务端 `remote.storageDir` 相同，会启用共享目录兼容逻辑
+  - CLI 不根据本地配置推断服务端存储目录；服务端仓库根仅由服务端启动参数决定
 - server 写命令：
   - `publish --file <json>` -> `POST /api/v1/skills`
   - `publish --skill <SKILL.md> [--skill-id] [--version]` -> `POST /api/v1/skills`
@@ -144,7 +144,6 @@ npm install
 - `modify` 模式会先展示 global 配置快照，再进入字段多选框（↑/↓、Space、Enter），仅对勾选字段进行修改
 - 远端仓库地址（`remote.address`）
 - 远端仓库端口（`remote.port`）
-- 远端仓库存储目录（`remote.storageDir`，默认 `~/.skuare`）
 - 输入地址与端口后会执行连通性检测（默认 10s 超时，目标 `http://<addr>:<port>/healthz`）
 - 连通性检测失败仅告警，不会在中途触发保存确认；是否落盘统一在最后一步 `Save config now (Y/n)` 决定
 - 默认签名 key id（`auth.keyId`）
