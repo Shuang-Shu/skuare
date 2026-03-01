@@ -13,7 +13,6 @@ export type JsonValue = null | boolean | number | string | JsonValue[] | { [k: s
 export type CommandContext = {
   server: string;
   localMode: boolean;
-  remoteStorageDir: string;
   cwd: string;
   llmTools: string[];
   toolSkillDirs: Record<string, string>;

@@ -197,12 +197,11 @@ export async function selectWorkspaceMode(
 /**
  * 选择要修改的配置字段
  */
-export async function selectModifyFields(): Promise<Set<"mode" | "address" | "port" | "storageDir" | "keyId" | "privateKeyFile" | "llmTools">> {
+export async function selectModifyFields(): Promise<Set<"mode" | "address" | "port" | "keyId" | "privateKeyFile" | "llmTools">> {
   const fields = [
     { key: "mode", label: "remote mode (local / remote)" },
     { key: "address", label: "remote registry address" },
     { key: "port", label: "remote registry port" },
-    { key: "storageDir", label: "remote storage directory" },
     { key: "keyId", label: "default signing key id" },
     { key: "privateKeyFile", label: "default private key file path" },
     { key: "llmTools", label: "LLM tools selection" },
@@ -217,5 +216,5 @@ export async function selectModifyFields(): Promise<Set<"mode" | "address" | "po
     minSelected: 1,
   });
 
-  return result as Set<"mode" | "address" | "port" | "storageDir" | "keyId" | "privateKeyFile" | "llmTools">;
+  return result as Set<"mode" | "address" | "port" | "keyId" | "privateKeyFile" | "llmTools">;
 }
