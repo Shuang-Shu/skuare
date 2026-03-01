@@ -822,15 +822,22 @@ export class BuildCommand extends BaseCommand {
   readonly description = "Build skill dependency files";
 
   async execute(context: CommandContext): Promise<void> {
-    const [skillName, ...rawRefs] = context.args.map((v) => v.trim()).filter(Boolean);
+    const args = context.args.map((v) => v.trim()).filter(Boolean);
+    const includeAll = args.includes("--all");
+    const positional = args.filter((v) => v !== "--all");
+    const [skillName, ...rawRefs] = positional;
     if (!skillName) {
-      this.fail("Usage: skuare build <skillName> [refSkill...]");
+      this.fail("Usage: skuare build <skillName> [refSkill...] [--all]");
+    }
+    if (includeAll && rawRefs.length > 0) {
+      this.fail("--all cannot be used with explicit refSkill arguments");
     }
 
     const targetDir = await this.resolveSkillDir(skillName, context.cwd, context.cwd);
+    const refs = includeAll
+      ? await this.resolveAllRefSkills(context.cwd, targetDir)
+      : Array.from(new Set(rawRefs));
     const skillDirRoot = dirname(targetDir);
-
-    const refs = Array.from(new Set(rawRefs));
     const resolvedRefs: Array<{ skill: string; version: string; dir: string; alias?: string }> = [];
     for (const ref of refs) {
       const parsed = this.parseRefArg(ref);
@@ -879,6 +886,7 @@ export class BuildCommand extends BaseCommand {
     console.log(JSON.stringify({
       skill: basename(targetDir),
       target_dir: targetDir,
+      all: includeAll,
       added: resolvedRefs.map((v) => ({ skill: v.skill, version: v.version, ...(v.alias ? { alias: v.alias } : {}) })),
       dependency_count: dependencies.length,
       files: [depPath, lockPath],
@@ -891,6 +899,27 @@ export class BuildCommand extends BaseCommand {
       return { refSkill: input };
     }
     return { alias: m[1], refSkill: m[2] };
+  }
+
+  private async resolveAllRefSkills(cwd: string, targetDir: string): Promise<string[]> {
+    const entries = await readdir(cwd, { withFileTypes: true });
+    const refs: string[] = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      const candidate = join(cwd, entry.name);
+      const skillPath = join(candidate, "SKILL.md");
+      const skillInfo = await stat(skillPath).catch(() => undefined);
+      if (!skillInfo?.isFile()) {
+        continue;
+      }
+      if (resolve(candidate) === resolve(targetDir)) {
+        continue;
+      }
+      refs.push(entry.name);
+    }
+    return refs.sort((a, b) => a.localeCompare(b));
   }
 
   private async resolveSkillDir(input: string, baseDir: string, fallbackDir: string): Promise<string> {
