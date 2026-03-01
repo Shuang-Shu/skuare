@@ -105,7 +105,7 @@ Commands:
                                        Auto detect each path: SKILL.md -> dir -> JSON fallback
   create ...                           Deprecated alias of publish
   build <skillName> [refSkill...] [--all]
-                                       Build skill-deps files; --all scans current directory skill dirs
+                                       Build deps files, scans current skill dirs with --all, initializes missing target interactively
   delete <skillID> <version>           Delete skill version
   format [skillDir...]                 Interactive format for metadata.version/metadata.author
   format --all                         Format all skill dirs under current directory
