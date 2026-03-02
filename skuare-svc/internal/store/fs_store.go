@@ -77,7 +77,7 @@ func (s *FSStore) Create(req model.CreateSkillVersionRequest) (model.SkillEntry,
 		skillMD = validator.RenderSkillMD(req.SkillID, req.Skill)
 	}
 
-	name, desc, err := validator.ValidateSkillMD(req.SkillID, skillMD)
+	name, desc, author, err := validator.ValidateSkillMD(req.SkillID, skillMD)
 	if err != nil {
 		return model.SkillEntry{}, err
 	}
@@ -131,6 +131,7 @@ func (s *FSStore) Create(req model.CreateSkillVersionRequest) (model.SkillEntry,
 		SkillID:     req.SkillID,
 		Version:     req.Version,
 		Name:        name,
+		Author:      author,
 		Description: desc,
 		Path:        targetDir,
 		UpdatedAt:   time.Now().UTC().Format(time.RFC3339),
@@ -180,7 +181,13 @@ func (s *FSStore) GetSkill(skillID string) (model.SkillOverview, error) {
 		return model.SkillOverview{}, ErrNotFound
 	}
 	sort.Strings(versions)
-	return model.SkillOverview{SkillID: skillID, Versions: versions}, nil
+	author := ""
+	for _, e := range entries {
+		if e.SkillID == skillID && strings.TrimSpace(e.Author) != "" {
+			author = e.Author
+		}
+	}
+	return model.SkillOverview{SkillID: skillID, Author: author, Versions: versions}, nil
 }
 
 func (s *FSStore) GetVersion(skillID string, version string) (model.SkillDetail, error) {
@@ -287,7 +294,7 @@ func (s *FSStore) Validate(skillID string, version string) (model.SkillEntry, er
 		}
 		return model.SkillEntry{}, err
 	}
-	name, desc, err := validator.ValidateSkillMD(skillID, string(b))
+	name, desc, author, err := validator.ValidateSkillMD(skillID, string(b))
 	if err != nil {
 		return model.SkillEntry{}, err
 	}
@@ -295,6 +302,7 @@ func (s *FSStore) Validate(skillID string, version string) (model.SkillEntry, er
 		SkillID:     skillID,
 		Version:     version,
 		Name:        name,
+		Author:      author,
 		Description: desc,
 		Path:        s.versionDir(skillID, version),
 		UpdatedAt:   time.Now().UTC().Format(time.RFC3339),

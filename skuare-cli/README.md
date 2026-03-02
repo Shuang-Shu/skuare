@@ -201,6 +201,7 @@ skuare build report-generator normalizer=data-normalizer schema=schema-validator
 - 依赖已存在（`409 SKILL_VERSION_ALREADY_EXISTS`）会自动跳过。
 - 依赖目录默认按同级目录解析（例如 `skills/<depSkillID>`）。
 - 当前 skill 若已存在（`409 SKILL_VERSION_ALREADY_EXISTS`），CLI 输出 `WARN` 并返回成功，不再报错退出。
+- 当 `SKILL.md metadata.author` 存在时，`skr publish` 成功返回会包含 `author`，后续 `list/peek` 也会直接展示该值。
 
 `build` 依赖文件行为：
 - 命令格式：`skuare build <skillName> [refSkill...] [--all]`。
@@ -268,3 +269,4 @@ skuare --server http://127.0.0.1:15657 \
 - 2026-03-01：文档按“纯本地 / server 只读 / 混合 / server 写”重组命令说明，并明确默认本地仓库目录与服务端裁决签名关系。
 - 2026-02-28：`create` 迁移为 `publish`（保留兼容别名）；`get` 新增 `--scope/--repo-dir/--tool`，安装目标改为本地局部仓库 `repos/<scope>/<tool>/...`，并兼容 LOCAL 同目录共享场景。
 - 2026-03-02：`get` 简化参数：移除 `--scope/--repo-dir/--tool`，改用 `--global` 标志位；不带 `--global` 安装到 `<cwd>/.{llmTool}/skills/`，带 `--global` 安装到 `~/.{llmTool}/skills/`。
+- 2026-03-02：修复发布后作者字段丢失问题；当 `metadata.author` 存在时，服务端索引、`publish` 返回及 `list/peek` 展示都会保留 `author`。

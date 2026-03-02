@@ -2,7 +2,7 @@
 
 > 文档类型：README
 > 状态：已完成
-> 更新时间：2026-02-24
+> 更新时间：2026-03-02
 > 适用范围：skuare-svc
 
 ## 目标与范围
@@ -32,9 +32,10 @@
   - `GET /api/v1/skills/:skillID`
   - `GET /api/v1/skills/:skillID/:version`
   - `DELETE /api/v1/skills/:skillID/:version`
-  - `POST /api/v1/skills/:skillID/:version/validate`
-  - `POST /api/v1/reindex`
+- `POST /api/v1/skills/:skillID/:version/validate`
+- `POST /api/v1/reindex`
 - OpenAPI：`skuare-svc/docs/openapi.yaml`
+- 查询/创建返回：当上传的 `SKILL.md` 含 `metadata.author` 时，`POST/GET /api/v1/skills*` 返回体会包含 `author` 字段。
 - 错误响应：统一为 `{ "code": "...", "message": "..." }`
 - 错误码定义：统一收敛到 `internal/util/errcode.go`
 - 写操作鉴权：`POST /api/v1/skills`、`DELETE /api/v1/skills/:skillID/:version`、`POST /api/v1/reindex` 需要数字签名请求头（`X-Skuare-Key-Id`/`X-Skuare-Timestamp`/`X-Skuare-Nonce`/`X-Skuare-Signature`）。
@@ -143,3 +144,4 @@ curl -X POST "http://127.0.0.1:15657/api/v1/reindex" \
 - 2026-02-23：新增 `--local` / `SKUARE_LOCAL_MODE` 开关，支持本地模式下写接口免签。
 - 2026-02-24：新增 `--auth-max-skew-sec` / `SKUARE_AUTH_MAX_SKEW_SEC`，并增强 `make start-be` 参数透传能力。
 - 2026-03-01：对齐仓库入口风格：`scripts/dev-up.sh` 默认 `SPEC_DIR` 与 `make start-be`、SVC 默认仓库根统一为 `~/.skuare`。
+- 2026-03-02：发布链路开始解析并持久化 `SKILL.md metadata.author`，`create/list/get/validate/reindex` 返回体补充 `author` 字段。

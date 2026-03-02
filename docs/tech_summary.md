@@ -39,6 +39,7 @@
   - `skr list` supports `--regex <pattern>` for client-side regex filtering (matches `id/skill_id/name/author/description`).
   - `skr peek` output aligns with `id/name/author` display conventions.
   - `skr peek` supports `--regex <pattern>` for unique match then query details.
+  - When `SKILL.md metadata.author` exists, the server returns `author` directly in `publish/list/peek` related responses.
   - When `author` is missing, defaults to `undefined`.
   - `skr publish` output does not include server local paths.
   - `skr format [skillDir...]` interactively supports `All/Each`, and uniformly writes `metadata.version`/`metadata.author`; `skr format --all` automatically scans current directory sub-skills.
