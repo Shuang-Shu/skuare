@@ -265,6 +265,8 @@ components:
           type: string
         name:
           type: string
+        author:
+          type: string
         description:
           type: string
         path:
@@ -275,6 +277,8 @@ components:
       type: object
       properties:
         skill_id:
+          type: string
+        author:
           type: string
         versions:
           type: array

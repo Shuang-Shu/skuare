@@ -176,6 +176,9 @@ export class PublishCommand extends BaseCommand {
         name: row.name,
         description: row.description,
       };
+      if (row.author !== undefined) {
+        out.author = row.author;
+      }
       console.log(JSON.stringify(out, null, 2));
       return;
     }

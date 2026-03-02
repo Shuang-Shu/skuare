@@ -27,6 +27,7 @@ type SkillEntry struct {
 	SkillID     string `json:"skill_id"`
 	Version     string `json:"version"`
 	Name        string `json:"name"`
+	Author      string `json:"author"`
 	Description string `json:"description"`
 	Path        string `json:"path"`
 	UpdatedAt   string `json:"updated_at"`
@@ -39,6 +40,7 @@ type SkillDetail struct {
 
 type SkillOverview struct {
 	SkillID  string   `json:"skill_id"`
+	Author   string   `json:"author"`
 	Versions []string `json:"versions"`
 }
 

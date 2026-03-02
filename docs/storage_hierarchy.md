@@ -1,34 +1,36 @@
-# skuare 分级存储机制说明
+# skuare Tiered Storage Mechanism
 
-> 文档类型：TECH
-> 状态：已完成
-> 更新时间：2026-03-01
-> 适用范围：project-wide
+> [中文版 / Chinese Version](./storage_hierarchy_zh.md)
 
-## 目标与范围
-- 说明 `skuare` 当前“分级存储机制”的真实实现，而不是历史概念或过时配置。
-- 拆开描述三类容易混淆的层级：
-  - 服务端远程仓库层级
-  - CLI 配置层级
-  - CLI 本地局部仓库层级
-- 补充 `publish` / `get` 的主要数据流，明确边界与常见误区。
+> Document Type: TECH  
+> Status: Completed  
+> Last Updated: 2026-03-01  
+> Scope: project-wide
 
-## 一句话结论
-- 服务端存哪里：只由 `skuare-svc` 启动参数决定。
-- CLI 怎么连服务端：由 CLI 参数、workspace 配置、global 配置和默认值共同决定。
-- CLI 把 skill 装到本地哪里：由 `scope`、本地仓库根和 `tool` 决定。
-- CLI 不再维护或推断服务端的真实存储目录。
+## Objectives and Scope
+- Explain `skuare`'s current "tiered storage mechanism" actual implementation, not historical concepts or outdated configurations.
+- Separately describe three easily confused tiers:
+  - Server-side remote repository tier
+  - CLI configuration tier
+  - CLI local partial repository tier
+- Supplement main data flows for `publish` / `get`, clarify boundaries and common misconceptions.
 
-## 1. 服务端远程仓库层级
+## One-Sentence Summary
+- Where server stores: determined only by `skuare-svc` startup parameters.
+- How CLI connects to server: jointly determined by CLI args, workspace config, global config, and defaults.
+- Where CLI installs skills locally: determined by `scope`, local repository root, and `tool`.
+- CLI no longer maintains or infers server's actual storage directory.
 
-### 1.1 仓库根目录
-- `skuare-svc` 启动时会解析远程仓库根目录 `SpecDir`。
-- 默认值是 `$HOME/.skuare`。
-- 可由环境变量 `SKUARE_SPEC_DIR` 或启动参数 `--spec-dir` 覆盖。
-- 相关实现：`skuare-svc/internal/config/config.go`。
+## 1. Server-Side Remote Repository Tier
 
-### 1.2 目录结构
-远程仓库根目录下的实际文件结构如下：
+### 1.1 Repository Root Directory
+- `skuare-svc` parses remote repository root directory `SpecDir` at startup.
+- Default value is `$HOME/.skuare`.
+- Can be overridden by environment variable `SKUARE_SPEC_DIR` or startup parameter `--spec-dir`.
+- Related implementation: `skuare-svc/internal/config/config.go`.
+
+### 1.2 Directory Structure
+Actual file structure under remote repository root directory:
 
 ```text
 <specDir>/
@@ -42,42 +44,42 @@
       <other files...>
 ```
 
-- `<skillID>/<version>/` 是 skill 版本的真实存储目录。
-- `.system/index.json` 是服务端索引文件。
-- `.system/locks/` 保存按 `skillID` 维度的文件锁。
-- 相关实现：`skuare-svc/internal/store/fs_store.go`。
+- `<skillID>/<version>/` is the actual storage directory for skill versions.
+- `.system/index.json` is the server-side index file.
+- `.system/locks/` stores file locks by `skillID` dimension.
+- Related implementation: `skuare-svc/internal/store/fs_store.go`.
 
-### 1.3 服务端写入行为
-- `publish/create` 最终写入 `<specDir>/<skillID>/<version>/`。
-- 创建版本时会先写临时目录，再 rename 为正式目录，降低半写入状态暴露风险。
-- `delete` 删除的是某个 `<skillID>/<version>` 目录。
-- `list/get/peek/validate` 都基于该远程仓库读取。
+### 1.3 Server Write Behavior
+- `publish/create` ultimately writes to `<specDir>/<skillID>/<version>/`.
+- When creating versions, first writes to temporary directory, then renames to official directory, reducing half-written state exposure risk.
+- `delete` removes a specific `<skillID>/<version>` directory.
+- `list/get/peek/validate` all read from this remote repository.
 
-## 2. CLI 配置层级
+## 2. CLI Configuration Tier
 
-### 2.1 配置文件位置
-CLI 有两层本地配置：
+### 2.1 Configuration File Locations
+CLI has two local configuration layers:
 
-- global 配置：`~/.skuare/config.json`
-- workspace 配置：`<cwd>/.skuare/config.json`
+- global config: `~/.skuare/config.json`
+- workspace config: `<cwd>/.skuare/config.json`
 
-这里的 `cwd` 是执行 `skuare` / `skr` 命令时的当前目录。
+Here `cwd` is the current directory when executing `skuare` / `skr` commands.
 
-### 2.2 配置合并优先级
-CLI 最终配置优先级为：
+### 2.2 Configuration Merge Priority
+CLI final configuration priority:
 
 ```text
 CLI flags > workspace config > global config > defaults
 ```
 
-含义是：
-- 命令行参数优先级最高，例如 `--server`、`--key-id`、`--privkey-file`。
-- 没有命令行覆盖时，优先读 workspace 配置。
-- workspace 缺失时再回退到 global 配置。
-- 最后使用内置默认值。
+Meaning:
+- Command-line arguments have highest priority, e.g., `--server`, `--key-id`, `--privkey-file`.
+- Without command-line override, prioritize workspace config.
+- When workspace is missing, fall back to global config.
+- Finally use built-in defaults.
 
-### 2.3 当前配置内容
-当前 CLI 默认配置主要包含：
+### 2.3 Current Configuration Content
+Current CLI default configuration mainly includes:
 
 ```json
 {
@@ -95,139 +97,139 @@ CLI flags > workspace config > global config > defaults
 }
 ```
 
-说明：
-- `remote.mode` 只表示“目标服务端模式认知”，不表示客户端本地仓库存储模式。
-- `remote.address + remote.port` 用于拼接默认 server URL。
-- `auth.*` 是写请求签名凭证默认值。
-- `llmTools` 和 `toolSkillDirs` 用于本地工具目录选择。
+Explanation:
+- `remote.mode` only indicates "target server mode awareness", not client local repository storage mode.
+- `remote.address + remote.port` used to construct default server URL.
+- `auth.*` are default values for write request signing credentials.
+- `llmTools` and `toolSkillDirs` used for local tool directory selection.
 
-### 2.4 关于 `remote.storageDir`
-- 该字段曾被错误暴露在 CLI 初始化流程中。
-- 当前实现中，`skr init` 已不再展示、编辑或默认写入 `remote.storageDir`。
-- 服务端远程仓库根目录只由服务端启动参数决定，CLI 不再声明该值。
-- 历史配置里若残留此字段，当前 CLI 也不会再依赖它推断服务端目录。
+### 2.4 About `remote.storageDir`
+- This field was incorrectly exposed in CLI initialization flow.
+- In current implementation, `skr init` no longer displays, edits, or writes `remote.storageDir` by default.
+- Server-side remote repository root directory is determined only by server startup parameters, CLI no longer declares this value.
+- If this field remains in historical configs, current CLI no longer depends on it to infer server directory.
 
-## 3. CLI 本地局部仓库层级
+## 3. CLI Local Partial Repository Tier
 
-### 3.1 本地仓库根
-CLI 拉取 skill 到本地时，也有两套仓库根：
+### 3.1 Local Repository Root
+When CLI fetches skills locally, it also has two repository roots:
 
-- global 本地仓库根：`~/.skuare`
-- workspace 本地仓库根：`<cwd>/.skuare`
+- global local repository root: `~/.skuare`
+- workspace local repository root: `<cwd>/.skuare`
 
-默认情况下：
-- `skr get` 的 `scope` 是 `workspace`
-- 可通过 `--scope global` 切到 global
-- 可通过 `--repo-dir <path>` 显式覆盖本地仓库根
+By default:
+- `skr get`'s `scope` is `workspace`
+- Can switch to global via `--scope global`
+- Can explicitly override local repository root via `--repo-dir <path>`
 
-### 3.2 最终安装目录
-`skr get` 最终安装目标是：
+### 3.2 Final Installation Directory
+`skr get` final installation target is:
 
 ```text
 <repoRoot>/repos/<scope>/<tool>/<skillID>/
 ```
 
-例如：
+For example:
 
 ```text
 ~/.skuare/repos/global/codex/pdf-reader/
 <project>/.skuare/repos/workspace/codex/pdf-reader/
 ```
 
-这四层分别表示：
-- `repoRoot`：本地仓库根
-- `scope`：`global` 或 `workspace`
-- `tool`：目标 LLM tool，例如 `codex`
-- `skillID`：具体技能 ID
+These four tiers represent:
+- `repoRoot`: local repository root
+- `scope`: `global` or `workspace`
+- `tool`: target LLM tool, e.g., `codex`
+- `skillID`: specific skill ID
 
-### 3.3 为什么还要分 `tool`
-同一台机器可能同时服务多个 LLM 工具，因此本地局部仓库还要继续按 `tool` 分层，避免不同工具的安装结果相互污染。
+### 3.3 Why Still Separate by `tool`
+The same machine may serve multiple LLM tools simultaneously, so local partial repository needs to continue tiering by `tool` to avoid installation result pollution between different tools.
 
-## 4. tool 目录层级
+## 4. tool Directory Tier
 
-除了 `skr get` 使用的局部仓库外，CLI 还维护“工具自己的 skills 目录”概念。
+Besides the partial repository used by `skr get`, CLI also maintains the concept of "tool's own skills directory".
 
-默认规则是：
+Default rules:
 - `codex` -> `<cwd>/skills`
 - `claudecode` -> `~/.claudecode/skills`
-- 自定义工具 -> `~/.<tool>/skills`
+- custom tool -> `~/.<tool>/skills`
 
-若配置里提供了 `toolSkillDirs[tool]`，则优先使用显式配置值。
+If `toolSkillDirs[tool]` is provided in config, prioritize explicit config value.
 
-这条线的作用是告诉 CLI 某个工具默认从哪里读取或放置本地 skill 工作目录，它和 `skr get` 的局部仓库不是一个概念。
+This line's purpose is to tell CLI where a tool defaults to read or place local skill working directory, it's not the same concept as `skr get`'s partial repository.
 
-## 5. 主要数据流
+## 5. Main Data Flows
 
 ### 5.1 `skr publish`
-`skr publish` 的核心路径是：
+`skr publish` core path:
 
 ```text
-本地 skill 目录 / SKILL.md / request.json
-  -> CLI 解析与打包
-  -> HTTP 写请求
+local skill directory / SKILL.md / request.json
+  -> CLI parse and package
+  -> HTTP write request
   -> skuare-svc
   -> <specDir>/<skillID>/<version>/
 ```
 
-关键点：
-- CLI 负责读取本地文件、构造请求、按需附加签名。
-- 服务端负责最终鉴权、落盘和索引维护。
-- 写入的真实目标目录只存在于服务端。
+Key points:
+- CLI responsible for reading local files, constructing requests, attaching signatures as needed.
+- Server responsible for final authentication, persistence, and index maintenance.
+- Actual target directory for writes exists only on server side.
 
 ### 5.2 `skr get`
-`skr get` 的核心路径是：
+`skr get` core path:
 
 ```text
-skuare-svc 远程版本文件
-  -> CLI 拉取 files
-  -> 解析依赖
-  -> 写入 <repoRoot>/repos/<scope>/<tool>/<skillID>/
+skuare-svc remote version files
+  -> CLI fetch files
+  -> parse dependencies
+  -> write to <repoRoot>/repos/<scope>/<tool>/<skillID>/
 ```
 
-关键点：
-- `get` 写的是 CLI 本地局部仓库，不是服务端远程仓库。
-- 若 skill 带依赖，CLI 会继续递归下载依赖并一起写入本地。
-- 当前实现不再根据客户端配置猜测服务端是否与本地共享同一目录。
+Key points:
+- `get` writes to CLI local partial repository, not server-side remote repository.
+- If skill has dependencies, CLI continues to recursively download dependencies and write them locally together.
+- Current implementation no longer guesses whether server shares same directory with local based on client config.
 
-## 6. 边界与常见误区
+## 6. Boundaries and Common Misconceptions
 
-### 6.1 常见误区 1：CLI 配置决定服务端存储目录
-错误。
+### 6.1 Common Misconception 1: CLI Config Determines Server Storage Directory
+False.
 
-真实规则是：
-- CLI 只决定“连接哪里”和“本地怎么组织配置/局部仓库”。
-- 服务端存储目录只由 `skuare-svc --spec-dir` 或 `SKUARE_SPEC_DIR` 决定。
+Actual rule:
+- CLI only determines "where to connect" and "how to organize local config/partial repository".
+- Server storage directory is determined only by `skuare-svc --spec-dir` or `SKUARE_SPEC_DIR`.
 
-### 6.2 常见误区 2：global/workspace 只是一套配置开关
-不完整。
+### 6.2 Common Misconception 2: global/workspace Is Just a Config Switch
+Incomplete.
 
-`global/workspace` 同时影响两类东西：
-- CLI 配置来源
-- `skr get` 本地局部仓库的安装位置
+`global/workspace` simultaneously affects two things:
+- CLI config source
+- `skr get` local partial repository installation location
 
-但它不影响服务端远程仓库根目录。
+But it doesn't affect server-side remote repository root directory.
 
-### 6.3 常见误区 3：tool 目录和局部仓库是同一个东西
-错误。
+### 6.3 Common Misconception 3: tool Directory and Partial Repository Are the Same Thing
+False.
 
-它们分别解决不同问题：
-- `toolSkillDirs`：工具自己的技能工作目录
-- `<repoRoot>/repos/<scope>/<tool>/<skillID>/...`：`skr get` 安装后的局部仓库
+They solve different problems:
+- `toolSkillDirs`: tool's own skill working directory
+- `<repoRoot>/repos/<scope>/<tool>/<skillID>/...`: partial repository after `skr get` installation
 
-### 6.4 常见误区 4：local 模式等于客户端本地写盘模式
-错误。
+### 6.4 Common Misconception 4: local Mode Equals Client Local Write Mode
+False.
 
-`remote.mode=local` 表示目标服务端处于 local 模式，是否放行无签名写请求仍由服务端决定。
-它不代表 CLI 自己拥有某种“本地共享服务端仓库”的特权目录。
+`remote.mode=local` indicates target server is in local mode, whether to allow unsigned write requests is still determined by server.
+It doesn't mean CLI itself has some "local shared server repository" privileged directory.
 
-## 7. 当前实现依据
-- CLI 配置与路径解析：`skuare-cli/src/config/resolver.ts`
-- CLI 配置结构：`skuare-cli/src/types/index.ts`
-- CLI 本地安装路径：`skuare-cli/src/commands/query.ts`
-- 服务端启动配置：`skuare-svc/internal/config/config.go`
-- 服务端文件系统存储：`skuare-svc/internal/store/fs_store.go`
+## 7. Current Implementation References
+- CLI config and path resolution: `skuare-cli/src/config/resolver.ts`
+- CLI config structure: `skuare-cli/src/types/index.ts`
+- CLI local installation path: `skuare-cli/src/commands/query.ts`
+- Server startup config: `skuare-svc/internal/config/config.go`
+- Server filesystem storage: `skuare-svc/internal/store/fs_store.go`
 
-## 8. 维护建议
-- 若以后新增服务端能力发现接口，应把“服务端运行参数摘要”与本文同步更新。
-- 若以后调整 `get` 的本地目录结构，应同时更新本文第 3 节和第 5 节。
-- 若重新引入任何服务端目录相关字段，必须先明确它是“服务端事实回显”还是“客户端配置声明”，不能混用。
+## 8. Maintenance Recommendations
+- If adding server capability discovery endpoint in the future, should synchronize "server runtime parameter summary" with this document.
+- If adjusting `get`'s local directory structure in the future, should update sections 3 and 5 of this document simultaneously.
+- If reintroducing any server directory related fields, must first clarify whether it's "server fact echo" or "client config declaration", cannot mix.

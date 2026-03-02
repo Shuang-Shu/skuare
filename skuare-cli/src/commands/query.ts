@@ -309,9 +309,11 @@ export class PeekCommand extends BaseCommand {
     const skillIDRaw = String(row.skill_id || skillID).trim();
     const versionsRaw = Array.isArray(row.versions) ? row.versions.map((v) => String(v).trim()).filter(Boolean) : [];
     const latestVersion = versionsRaw.length > 0 ? versionsRaw[versionsRaw.length - 1] : "";
+    const authorRaw = String(row.author || "").trim();
     const display = buildDisplayIdentity({
       skillID: skillIDRaw,
       version: latestVersion,
+      author: authorRaw,
     });
     const ids = versionsRaw.map((v) => buildDisplayIdentity({ skillID: skillIDRaw, version: v, name: display.name, author: display.author }).id);
     console.log(JSON.stringify({
