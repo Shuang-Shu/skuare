@@ -35,7 +35,7 @@
 - 依赖锁定文件：`skill-deps.lock.json`
 - `skr publish --dir <skill-dir>`：读取依赖描述并递归上传依赖 Skill 到远程仓库。
 - `skr build <skillName> [refSkill...] [--all]`：为本地 skill 自动创建或追加更新依赖文件（`skill-deps.json` / `skill-deps.lock.json`），当目标 skill 不存在时会先交互式创建最小 `SKILL.md` 模板，支持 `alias=refSkill`；`--all` 会将当前目录下全部合法 skillDir 作为引用 skill。
-- `skr detail [skillRelativePath...]`：展示本地 skill 文件内容；不传参数时默认输出 `SKILL.md`。
+- `skr detail <skillName|skillID> [relativePath...]`：展示本地已安装 skill 下的文件内容；不传文件路径时默认输出目标 skill 的 `SKILL.md`。
 - `skr get <skill-id> [--global]`：从远程仓库拉取 Skill 并平铺安装其依赖。
   - 不带 `--global`：安装到 `<cwd>/.{llmTool}/skills/<skillID>/`
   - 带 `--global`：安装到 `~/.{llmTool}/skills/<skillID>/`
@@ -67,7 +67,7 @@ skr health
 skr build observability-orchestrator core-time-utils report-generator
 skr build observability-orchestrator --all
 skr format ./skills/observability-orchestrator
-skr detail
+skr detail observability-orchestrator
 
 # 6) server 只读命令：健康检查/查询
 skr health
@@ -90,8 +90,8 @@ make stop-be
 skr build observability-orchestrator core-time-utils report-generator
 skr format ./skills/observability-orchestrator
 skr format --all
-skr detail
-skr detail references/details.md notes.txt
+skr detail observability-orchestrator
+skr detail skuare/observability-orchestrator references/details.md notes.txt
 ```
 
 - server 只读命令：
@@ -138,5 +138,5 @@ skr delete observability-orchestrator 1.0.0
 - 2026-02-28：区分远程仓库与本地局部仓库：`publish` 成为主写命令，`get` 新增 `--scope/--repo-dir/--tool`，默认仓库根统一为 `~/.skuare`。
 - 2026-03-01：清理仓库入口风格：`make format` 不再错误要求 `VERSION`，`scripts/dev-up.sh` 默认 `SPEC_DIR` 与主入口保持一致。
 - 2026-03-02：`get` 简化参数：移除 `--scope/--repo-dir/--tool`，改用 `--global` 标志位；不带 `--global` 安装到 `<cwd>/.{llmTool}/skills/`，带 `--global` 安装到 `~/.{llmTool}/skills/`。
-- 2026-03-02：新增 `skr detail [skillRelativePath...]`，用于查看当前 skill 目录内文件内容；默认展示 `SKILL.md`，并拒绝越界路径。
+- 2026-03-02：将 `skr detail` 修正为 `skr detail <skillName|skillID> [relativePath...]`；会先定位本地已安装 skill，再默认展示其 `SKILL.md`，并拒绝越界路径。
 - 2026-03-01：`skr` 在回退旧 `dist/index.js` 时会将 `publish` 兼容桥接为旧命令 `create`，避免无 TypeScript 环境下出现 `Unknown command: publish`。

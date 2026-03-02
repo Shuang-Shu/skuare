@@ -37,7 +37,7 @@ Default repository root path: `$HOME/.skuare`
 - Dependency lock file: `skill-deps.lock.json`
 - `skr publish --dir <skill-dir>`: read dependency description and recursively upload dependent Skills to remote repository.
 - `skr build <skillName> [refSkill...] [--all]`: automatically create or append dependency files (`skill-deps.json` / `skill-deps.lock.json`) for local skill. When target skill doesn't exist, it will interactively create a minimal `SKILL.md` template first. Supports `alias=refSkill`; `--all` will use all valid skillDirs in current directory as reference skills.
-- `skr detail [skillRelativePath...]`: show local skill file contents. Defaults to `SKILL.md` when no path is provided.
+- `skr detail <skillName|skillID> [relativePath...]`: show files under a local installed skill. Defaults to the target skill's `SKILL.md` when no path is provided.
 - `skr get <skill-id> [--global]`: fetch Skill from remote repository and install its dependencies flatly.
   - Without `--global`: install to `<cwd>/.{llmTool}/skills/<skillID>/`
   - With `--global`: install to `~/.{llmTool}/skills/<skillID>/`
@@ -69,7 +69,7 @@ skr health
 skr build observability-orchestrator core-time-utils report-generator
 skr build observability-orchestrator --all
 skr format ./skills/observability-orchestrator
-skr detail
+skr detail observability-orchestrator
 
 # 6) Server read-only commands: health check/query
 skr health
@@ -92,8 +92,8 @@ make stop-be
 skr build observability-orchestrator core-time-utils report-generator
 skr format ./skills/observability-orchestrator
 skr format --all
-skr detail
-skr detail references/details.md notes.txt
+skr detail observability-orchestrator
+skr detail skuare/observability-orchestrator references/details.md notes.txt
 ```
 
 - Server read-only commands:
@@ -140,6 +140,6 @@ skr delete observability-orchestrator 1.0.0
 - 2026-02-28: Distinguished remote repository and local partial repository: `publish` became main write command, `get` added `--scope/--repo-dir/--tool`, default repository root unified to `~/.skuare`.
 - 2026-03-01: Cleaned up repository entry style: `make format` no longer incorrectly requires `VERSION`, `scripts/dev-up.sh` default `SPEC_DIR` consistent with main entry.
 - 2026-03-02: `get` simplified parameters: removed `--scope/--repo-dir/--tool`, changed to `--global` flag; without `--global` installs to `<cwd>/.{llmTool}/skills/`, with `--global` installs to `~/.{llmTool}/skills/`.
-- 2026-03-02: Added `skr detail [skillRelativePath...]` for local file viewing; defaults to `SKILL.md` and rejects paths outside the current skill directory.
+- 2026-03-02: Updated `skr detail` to `skr detail <skillName|skillID> [relativePath...]`; it resolves a local installed skill first, defaults to that skill's `SKILL.md`, and rejects paths outside the target skill directory.
 - 2026-03-01: `skr` bridges `publish` to old command `create` when falling back to old `dist/index.js`, avoiding `Unknown command: publish` in environments without TypeScript.
 - 2026-03-02: Documentation translated to English with Chinese version references.
