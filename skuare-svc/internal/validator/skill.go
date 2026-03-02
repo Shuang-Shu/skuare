@@ -28,10 +28,10 @@ func ValidateVersion(version string) error {
 	return nil
 }
 
-func ParseFrontMatter(skillMD string) (name, description string, err error) {
+func ParseFrontMatter(skillMD string) (name, description, author string, err error) {
 	lines := strings.Split(skillMD, "\n")
 	if len(lines) < 4 || strings.TrimSpace(lines[0]) != "---" {
-		return "", "", errors.New("SKILL.md must start with YAML frontmatter")
+		return "", "", "", errors.New("SKILL.md must start with YAML frontmatter")
 	}
 
 	end := -1
@@ -42,23 +42,40 @@ func ParseFrontMatter(skillMD string) (name, description string, err error) {
 		}
 	}
 	if end < 0 {
-		return "", "", errors.New("frontmatter end marker not found")
+		return "", "", "", errors.New("frontmatter end marker not found")
 	}
 
+	metadataIndent := -1
 	for _, line := range lines[1:end] {
 		trimmed := strings.TrimSpace(line)
+		indent := len(line) - len(strings.TrimLeft(line, " \t"))
+		if trimmed == "metadata:" {
+			metadataIndent = indent
+			continue
+		}
+		if metadataIndent >= 0 {
+			if trimmed != "" && indent <= metadataIndent {
+				metadataIndent = -1
+			} else if strings.HasPrefix(trimmed, "author:") && author == "" {
+				author = strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "author:")), "\"'")
+				continue
+			}
+		}
 		if strings.HasPrefix(trimmed, "name:") {
 			name = strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "name:")), "\"'")
 		}
 		if strings.HasPrefix(trimmed, "description:") {
 			description = strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "description:")), "\"'")
 		}
+		if strings.HasPrefix(trimmed, "author:") && author == "" {
+			author = strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "author:")), "\"'")
+		}
 	}
 
 	if name == "" || description == "" {
-		return "", "", errors.New("frontmatter requires name and description")
+		return "", "", "", errors.New("frontmatter requires name and description")
 	}
-	return name, description, nil
+	return name, description, author, nil
 }
 
 func ValidateSkillSpec(skill model.SkillSpec) error {
@@ -102,18 +119,18 @@ func RenderSkillMD(skillID string, skill model.SkillSpec) string {
 	return b.String()
 }
 
-func ValidateSkillMD(skillID string, skillMD string) (name string, description string, err error) {
+func ValidateSkillMD(skillID string, skillMD string) (name string, description string, author string, err error) {
 	if strings.TrimSpace(skillMD) == "" {
-		return "", "", errors.New("SKILL.md content is required")
+		return "", "", "", errors.New("SKILL.md content is required")
 	}
-	name, description, err = ParseFrontMatter(skillMD)
+	name, description, author, err = ParseFrontMatter(skillMD)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	if name != skillID {
-		return "", "", fmt.Errorf("frontmatter name(%s) must equal skill_id(%s)", name, skillID)
+		return "", "", "", fmt.Errorf("frontmatter name(%s) must equal skill_id(%s)", name, skillID)
 	}
-	return name, description, nil
+	return name, description, author, nil
 }
 
 func ValidateRelativeFilePath(p string) error {

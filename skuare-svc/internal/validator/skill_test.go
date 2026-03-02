@@ -16,16 +16,16 @@ func TestValidateSkillID(t *testing.T) {
 }
 
 func TestValidateSkillMD(t *testing.T) {
-	skillMD := "---\nname: pdf-reader\ndescription: desc\n---\n\n# Title\n"
-	name, desc, err := ValidateSkillMD("pdf-reader", skillMD)
+	skillMD := "---\nname: pdf-reader\nmetadata:\n  author: tester\ndescription: desc\n---\n\n# Title\n"
+	name, desc, author, err := ValidateSkillMD("pdf-reader", skillMD)
 	if err != nil {
 		t.Fatalf("expected valid skill md, got %v", err)
 	}
-	if name != "pdf-reader" || desc != "desc" {
-		t.Fatalf("unexpected parse result: %s %s", name, desc)
+	if name != "pdf-reader" || desc != "desc" || author != "tester" {
+		t.Fatalf("unexpected parse result: %s %s %s", name, desc, author)
 	}
 
-	if _, _, err := ValidateSkillMD("other", skillMD); err == nil {
+	if _, _, _, err := ValidateSkillMD("other", skillMD); err == nil {
 		t.Fatalf("expected mismatched name error")
 	}
 }
@@ -41,12 +41,12 @@ func TestValidateAndRenderSkillSpec(t *testing.T) {
 		t.Fatalf("expected valid skill spec, got %v", err)
 	}
 	md := RenderSkillMD("pdf-reader", spec)
-	name, desc, err := ValidateSkillMD("pdf-reader", md)
+	name, desc, author, err := ValidateSkillMD("pdf-reader", md)
 	if err != nil {
 		t.Fatalf("expected rendered markdown valid, got %v", err)
 	}
-	if name != "pdf-reader" || desc != "read pdf skill" {
-		t.Fatalf("unexpected parse result: %s %s", name, desc)
+	if name != "pdf-reader" || desc != "read pdf skill" || author != "" {
+		t.Fatalf("unexpected parse result: %s %s %s", name, desc, author)
 	}
 }
 
