@@ -7,7 +7,7 @@ import { BaseCommand } from "./base";
 import { callApi } from "../http/client";
 import type { JsonValue } from "./types";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { homedir } from "node:os";
 
 type RemoteFile = { path: string; content: string };
@@ -183,6 +183,26 @@ function matchesSkill(regex: RegExp, item: NormalizedSkillItem): boolean {
     String(item.author || ""),
     String(item.description || ""),
   ].some((v) => isRegexMatch(regex, v));
+}
+
+function resolveDetailTarget(rootDir: string, input: string): { absolutePath: string; displayPath: string } {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    throw new Error("detail path cannot be empty");
+  }
+  if (isAbsolute(trimmed)) {
+    throw new Error(`detail only accepts skill-relative paths: ${input}`);
+  }
+  const absoluteRoot = resolve(rootDir);
+  const absolutePath = resolve(absoluteRoot, trimmed);
+  const rel = relative(absoluteRoot, absolutePath);
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) {
+    throw new Error(`detail path escapes current skill directory: ${input}`);
+  }
+  return {
+    absolutePath,
+    displayPath: normalizePath(rel),
+  };
 }
 
 /**
@@ -605,6 +625,36 @@ export class GetCommand extends BaseCommand {
       await writeFile(dest, file.content, "utf8");
     }
     return conflicts;
+  }
+}
+
+export class DetailCommand extends BaseCommand {
+  readonly name = "detail";
+  readonly description = "Show local skill file contents";
+
+  async execute(context: CommandContext): Promise<void> {
+    const inputs = context.args.length > 0 ? context.args : ["SKILL.md"];
+    const outputs: string[] = [];
+    for (const input of inputs) {
+      let target: { absolutePath: string; displayPath: string };
+      try {
+        target = resolveDetailTarget(context.cwd, input);
+      } catch (err) {
+        this.fail(err instanceof Error ? err.message : `Invalid detail path: ${input}`);
+      }
+      let content: string;
+      try {
+        content = await readFile(target.absolutePath, "utf8");
+      } catch (err) {
+        const code = err && typeof err === "object" ? (err as { code?: string }).code : undefined;
+        if (code === "ENOENT") {
+          this.fail(`detail file not found: ${target.displayPath}`);
+        }
+        this.fail(`detail cannot read file: ${target.displayPath}`);
+      }
+      outputs.push(inputs.length === 1 ? content : `===== ${target.displayPath} =====\n${content}`);
+    }
+    process.stdout.write(outputs.join("\n\n"));
   }
 }
 
