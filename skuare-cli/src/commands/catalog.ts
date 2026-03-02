@@ -1,7 +1,7 @@
 import type { Command } from "./types";
 import { HealthCommand } from "./admin";
 import { InitCommand } from "./init";
-import { GetCommand, ListCommand, PeekCommand, ValidateCommand } from "./query";
+import { DetailCommand, GetCommand, ListCommand, PeekCommand, ValidateCommand } from "./query";
 import { BuildCommand, CreateCommand, DeleteCommand, FormatCommand, PublishCommand } from "./write";
 
 export type HelpEntry = {
@@ -27,6 +27,10 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
   {
     create: () => new HealthCommand(),
     help: { usage: ["health", "Health check (GET /healthz)"] },
+  },
+  {
+    create: () => new DetailCommand(),
+    help: { usage: ["detail [skillRelativePath...]", "Show local skill file contents"] },
   },
   {
     create: () => new ListCommand(),
