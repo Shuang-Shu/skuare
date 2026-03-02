@@ -1,17 +1,19 @@
-# Skill 依赖文件格式规范
+# Skill Dependency File Format Specification
 
-> 文档类型：TECH
-> 状态：已完成
-> 更新时间：2026-02-28
-> 适用范围：project-wide
+> [中文版 / Chinese Version](./skill_deps_format_zh.md)
 
-## 目标
-- 定义 `skill-deps.json` 与 `skill-deps.lock.json` 的权威格式。
-- 约束 `build` 命令可写入的字段范围（含别名 `alias`）。
+> Document Type: TECH  
+> Status: Completed  
+> Last Updated: 2026-02-28  
+> Scope: project-wide
 
-## 规范优先级
-- 本文中的 JSON Schema 是权威规范。
-- `examples/*/skill-deps.json` 与 `examples/*/skill-deps.lock.json` 只是示例数据，必须遵循本文 Schema，而不是反向定义规范。
+## Objectives
+- Define the authoritative format for `skill-deps.json` and `skill-deps.lock.json`.
+- Constrain the field scope that the `build` command can write (including `alias`).
+
+## Specification Priority
+- The JSON Schema in this document is the authoritative specification.
+- `examples/*/skill-deps.json` and `examples/*/skill-deps.lock.json` are only sample data and must comply with the Schema in this document, not define the specification inversely.
 
 ## skill-deps.json Schema
 ```json
@@ -95,10 +97,10 @@
 }
 ```
 
-## build 命令与别名
-- 命令格式：`skuare build <skillName> [refSkill...]`
-- 别名语法：`<alias>=<refSkill>`
-- 示例：`skuare build report-generator normalizer=data-normalizer schema=schema-validator`
-- 输出规则：
-  - 若传入别名，`dependencies[]` 中写入 `alias`。
-  - 若未传别名，则仅写入 `skill/version`。
+## build Command and Aliases
+- Command format: `skuare build <skillName> [refSkill...]`
+- Alias syntax: `<alias>=<refSkill>`
+- Example: `skuare build report-generator normalizer=data-normalizer schema=schema-validator`
+- Output rules:
+  - If an alias is provided, write `alias` in `dependencies[]`.
+  - If no alias is provided, only write `skill/version`.

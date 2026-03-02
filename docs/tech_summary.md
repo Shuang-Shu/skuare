@@ -1,69 +1,71 @@
-# skuare 技术综述
+# skuare Technical Summary
 
-> 文档类型：TECH
-> 状态：已完成
-> 更新时间：2026-02-28
-> 适用范围：project-wide
+> [中文版 / Chinese Version](./tech_summary_zh.md)
 
-## 目标与范围
-- 汇总 `skuare` 当前技术实现、接口约束、配置机制、依赖模型与运维参数。
-- 作为 README 的技术补充，面向开发/维护人员。
-- 依赖文件精确格式见：`docs/skill_deps_format.md`。
-- 分级存储专题说明见：`docs/storage_hierarchy.md`。
+> Document Type: TECH  
+> Status: Completed  
+> Last Updated: 2026-02-28  
+> Scope: project-wide
 
-## 现状与事实依据
-- 模块：
-  - `skuare-svc`：文件系统存储模型 `<specDir>/<skillID>/<version>`。
-  - `skuare-cli`：命令式前端，支持 `init/health/list/peek/get/publish/create/build/format/delete/validate`。
-- 关键配置：
-  - 后端默认 `spec-dir`：`$HOME/.skuare`（可由 `SKUARE_SPEC_DIR` 或 `--spec-dir` 覆盖）。
-  - `scripts/dev-up.sh` 与 `make start-be` 默认 `SPEC_DIR` 已统一为 `$HOME/.skuare`。
-  - 启动参数：`--addr`、`--spec-dir`、`--authorized-keys-file`、`--local`、`--auth-max-skew-sec`。
-  - CLI 配置优先级：`CLI 参数 > workspace > global > defaults`。
-  - CLI `remote.mode`：`local` / `remote`，仅描述目标服务端模式，不负责声明服务端存储目录。
-  - CLI 本地局部仓库根：global=`$HOME/.skuare`，workspace=`<cwd>/.skuare`；`get` 默认 `--scope workspace`，可通过 `--repo-dir` 覆盖根目录。
-  - CLI 最终安装目录：`<repoRoot>/repos/<scope>/<tool>/<skillID>/...`；不再根据客户端配置推断服务端存储目录。
-- 鉴权：
-  - 写接口在 remote 模式要求 Ed25519 签名头。
-  - `local=true` 时后端直接放行写请求。
-- 依赖模型：
-  - 依赖不在 `SKILL.md` frontmatter 声明。
-  - 使用 `skill-deps.json` + `skill-deps.lock.json`。
-  - `skill-deps*.json` 字段结构以 `@examples` 目录样例为准。
-  - `SKILL.md` 正文跨 Skill 引用格式统一为 `{{ <author>/<name>@<version> }}`。
-  - `skr publish` 会递归上传依赖，已存在版本返回 `WARN`；`skr create` 保留为兼容别名并输出弃用提示。
-- 输出约束：
-  - `skr list` 输出包含 `id/name/author/skill_id/version/description`，其中 `id=<author>/<name>@<version>` 且先于 `name`。
-  - `skr list` 支持 `--regex <pattern>` 客户端正则过滤（匹配 `id/skill_id/name/author/description`）。
-  - `skr peek` 输出对齐 `id/name/author` 展示规范。
-  - `skr peek` 支持 `--regex <pattern>` 唯一匹配后查询详情。
-  - `author` 缺失时默认回退为 `undefined`。
-  - `skr publish` 输出不包含服务端本地路径。
-  - `skr format [skillDir...]` 交互式支持 `All/Each`，并统一写入 `metadata.version`/`metadata.author`；`skr format --all` 自动扫描当前目录子技能。
-  - `make format` 仅透传 CLI `format` 命令，不再错误要求额外 `VERSION` 参数。
+## Objectives and Scope
+- Summarize `skuare`'s current technical implementation, interface constraints, configuration mechanisms, dependency model, and operational parameters.
+- Serves as a technical supplement to the README, targeting developers/maintainers.
+- For precise dependency file format, see: `docs/skill_deps_format.md`.
+- For tiered storage details, see: `docs/storage_hierarchy.md`.
 
-## 差距分析
-- 文档层面：
-  - 过去 README 承载过多实现细节，用户上手路径不清晰。
-- 运行层面：
-  - 本地模式与远端模式混用时，容易出现“CLI 配置与后端启动参数不一致”。
-- 协议层面：
-  - 依赖递归上传当前按目录约定解析（`skills/<depSkillID>`），跨仓库依赖未统一。
+## Current Status and Factual Basis
+- Modules:
+  - `skuare-svc`: Filesystem storage model `<specDir>/<skillID>/<version>`.
+  - `skuare-cli`: Command-line frontend, supports `init/health/list/peek/get/publish/create/build/format/delete/validate`.
+- Key Configuration:
+  - Backend default `spec-dir`: `$HOME/.skuare` (can be overridden by `SKUARE_SPEC_DIR` or `--spec-dir`).
+  - `scripts/dev-up.sh` and `make start-be` default `SPEC_DIR` unified to `$HOME/.skuare`.
+  - Startup parameters: `--addr`, `--spec-dir`, `--authorized-keys-file`, `--local`, `--auth-max-skew-sec`.
+  - CLI config priority: `CLI args > workspace > global > defaults`.
+  - CLI `remote.mode`: `local` / `remote`, only describes target server mode, not responsible for declaring server storage directory.
+  - CLI local partial repository root: global=`$HOME/.skuare`, workspace=`<cwd>/.skuare`; `get` defaults to `--scope workspace`, can override root directory via `--repo-dir`.
+  - CLI final installation directory: `<repoRoot>/repos/<scope>/<tool>/<skillID>/...`; no longer infers server storage directory from client config.
+- Authentication:
+  - Write endpoints require Ed25519 signature headers in remote mode.
+  - When `local=true`, backend directly allows write requests.
+- Dependency Model:
+  - Dependencies are not declared in `SKILL.md` frontmatter.
+  - Uses `skill-deps.json` + `skill-deps.lock.json`.
+  - `skill-deps*.json` field structure follows examples in `@examples` directory.
+  - Cross-skill references in `SKILL.md` body use unified format `{{ <author>/<name>@<version> }}`.
+  - `skr publish` recursively uploads dependencies, returns `WARN` for existing versions; `skr create` retained as compatibility alias with deprecation notice.
+- Output Constraints:
+  - `skr list` output includes `id/name/author/skill_id/version/description`, where `id=<author>/<name>@<version>` and appears before `name`.
+  - `skr list` supports `--regex <pattern>` for client-side regex filtering (matches `id/skill_id/name/author/description`).
+  - `skr peek` output aligns with `id/name/author` display conventions.
+  - `skr peek` supports `--regex <pattern>` for unique match then query details.
+  - When `author` is missing, defaults to `undefined`.
+  - `skr publish` output does not include server local paths.
+  - `skr format [skillDir...]` interactively supports `All/Each`, and uniformly writes `metadata.version`/`metadata.author`; `skr format --all` automatically scans current directory sub-skills.
+  - `make format` only passes through CLI `format` command, no longer incorrectly requires additional `VERSION` parameter.
 
-## 建议演进路径
-- 参数统一：
-  - 增加 `make doctor` 检查 CLI 配置与后端运行参数一致性。
-- 可观测性：
-  - 后端增加启动配置回显接口（只读、安全字段）。
-- 依赖能力：
-  - 支持可配置依赖解析根目录与远端依赖拉取策略。
-- 稳定性：
-  - 为 `publish/list` 输出格式补充快照测试，避免字段回退。
+## Gap Analysis
+- Documentation level:
+  - Past README carried too many implementation details, unclear user onboarding path.
+- Runtime level:
+  - When mixing local and remote modes, easily causes "CLI config and backend startup parameters inconsistent".
+- Protocol level:
+  - Dependency recursive upload currently parses by directory convention (`skills/<depSkillID>`), cross-repository dependencies not unified.
 
-## 风险与边界
-- 本地模式风险：
-  - 便于开发，但禁用签名校验，不可直接用于生产。
-- 路径风险：
-  - 共享 `SPEC_DIR` 可能导致多环境污染，需要明确目录隔离策略。
-- 兼容边界：
-  - 现有客户端依赖精简输出字段，如需扩展应通过显式开关而非默认变更。
+## Suggested Evolution Path
+- Parameter unification:
+  - Add `make doctor` to check CLI config and backend runtime parameter consistency.
+- Observability:
+  - Backend adds startup config echo endpoint (read-only, safe fields).
+- Dependency capabilities:
+  - Support configurable dependency resolution root directory and remote dependency fetch strategy.
+- Stability:
+  - Add snapshot tests for `publish/list` output format to avoid field regression.
+
+## Risks and Boundaries
+- Local mode risks:
+  - Convenient for development, but disables signature verification, not directly usable in production.
+- Path risks:
+  - Shared `SPEC_DIR` may cause multi-environment pollution, need clear directory isolation strategy.
+- Compatibility boundaries:
+  - Existing clients depend on simplified output fields, extensions should use explicit switches rather than default changes.
