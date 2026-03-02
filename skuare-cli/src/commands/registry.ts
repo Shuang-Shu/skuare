@@ -3,11 +3,8 @@
  */
 
 import type { Command, CommandRegistry } from "./types";
+import { COMMAND_DEFINITIONS } from "./catalog";
 import { HelpCommand, VersionCommand } from "./help";
-import { HealthCommand } from "./admin";
-import { ListCommand, GetCommand, PeekCommand, ValidateCommand } from "./query";
-import { BuildCommand, CreateCommand, DeleteCommand, FormatCommand, PublishCommand } from "./write";
-import { InitCommand } from "./init";
 
 /**
  * 创建并注册所有命令
@@ -18,17 +15,7 @@ export function createCommandRegistry(): CommandRegistry {
   const commands: Command[] = [
     new HelpCommand(),
     new VersionCommand(),
-    new InitCommand(),
-    new HealthCommand(),
-    new ListCommand(),
-    new PeekCommand(),
-    new GetCommand(),
-    new ValidateCommand(),
-    new PublishCommand(),
-    new CreateCommand(),
-    new BuildCommand(),
-    new DeleteCommand(),
-    new FormatCommand(),
+    ...COMMAND_DEFINITIONS.map((definition) => definition.create()),
   ];
 
   for (const cmd of commands) {
