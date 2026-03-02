@@ -15,8 +15,8 @@ const WRITE_OPERATIONS = [
 
 const EXAMPLES = [
   "skr health",
-  "skr detail",
-  "skr detail references/details.md",
+  "skr detail report-generator",
+  "skr detail skuare/report-generator references/details.md",
   "skr list --q pdf",
   "skr list --rgx \"report|alert\"",
   "skr peek pdf-reader 1.0.0",
