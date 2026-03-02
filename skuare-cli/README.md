@@ -46,7 +46,7 @@
   - `init`：写本地配置文件
   - `build <skillName> [refSkill...] [--all]`：本地生成/追加 `<skillName>/skill-deps.json` 与 `<skillName>/skill-deps.lock.json`；若目标 skill 缺失，会先交互式创建最小 `SKILL.md`
   - `format [skillDir...]` / `format --all`：本地格式化 `SKILL.md`
-  - `detail [skillRelativePath...]`：本地展示当前 skill 目录下的文件内容；不传参数时默认读取 `SKILL.md`
+  - `detail <skillName|skillID> [relativePath...]`：本地展示目标已安装 skill 目录下的文件内容；不传文件路径时默认读取该 skill 的 `SKILL.md`
 - server 只读命令：
   - `health` -> `GET /healthz`
   - `list [--q] [--rgx]` -> `GET /api/v1/skills`
@@ -197,8 +197,8 @@ skuare build report-generator data-normalizer schema-validator
 skuare build report-generator normalizer=data-normalizer schema=schema-validator
 
 # 本地查看 skill 文件内容
-skuare detail
-skuare detail references/details.md notes.txt
+skuare detail report-generator
+skuare detail skuare/report-generator references/details.md notes.txt
 ```
 
 `publish` 依赖上传行为：
@@ -219,10 +219,11 @@ skuare detail references/details.md notes.txt
 - 可选别名：`refSkill` 可写为 `alias=refSkill`，落盘后依赖项会包含 `alias` 字段。
 
 `detail` 本地查看行为：
-- 命令格式：`skuare detail [skillRelativePath...]`。
-- 不传参数时默认读取当前目录下的 `SKILL.md`。
+- 命令格式：`skuare detail <skillName|skillID> [relativePath...]`。
+- 第一个参数先定位本地已安装 skill：优先按 `skillID` 精确匹配，其次按 basename 做 `skillName` 唯一匹配。
+- 不传文件路径时默认读取目标 skill 目录下的 `SKILL.md`。
 - 传多个相对路径时，会按文件头分隔依次输出内容，便于区分来源文件。
-- 只允许读取当前 skill 目录内的相对路径文件；绝对路径、越界路径或不存在文件会直接报错。
+- 只允许读取目标 skill 目录内的相对路径文件；绝对路径、越界路径或不存在文件会直接报错。
 
 `list` 输出字段：
 - `skr list` 展示：`id`、`name`、`author`、`skill_id`、`version`、`description`。
@@ -281,4 +282,4 @@ skuare --server http://127.0.0.1:15657 \
 - 2026-02-28：`create` 迁移为 `publish`（保留兼容别名）；`get` 新增 `--scope/--repo-dir/--tool`，安装目标改为本地局部仓库 `repos/<scope>/<tool>/...`，并兼容 LOCAL 同目录共享场景。
 - 2026-03-02：`get` 简化参数：移除 `--scope/--repo-dir/--tool`，改用 `--global` 标志位；不带 `--global` 安装到 `<cwd>/.{llmTool}/skills/`，带 `--global` 安装到 `~/.{llmTool}/skills/`。
 - 2026-03-02：修复发布后作者字段丢失问题；当 `metadata.author` 存在时，服务端索引、`publish` 返回及 `list/peek` 展示都会保留 `author`。
-- 2026-03-02：新增 `detail [skillRelativePath...]`，用于查看当前 skill 目录内文件内容；默认输出 `SKILL.md`，多文件输出带文件头分隔，并拒绝越界路径。
+- 2026-03-02：将 `detail` 修正为 `detail <skillName|skillID> [relativePath...]`；先定位本地已安装 skill，再默认输出其 `SKILL.md`，支持多文件查看并拒绝越界路径。

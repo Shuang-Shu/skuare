@@ -6,9 +6,10 @@ import type { CommandContext } from "./types";
 import { BaseCommand } from "./base";
 import { callApi } from "../http/client";
 import type { JsonValue } from "./types";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { homedir } from "node:os";
+import { resolveToolSkillsDir } from "../config/resolver";
 
 type RemoteFile = { path: string; content: string };
 type InstallResult = { skills: string[]; conflictFiles: string[] };
@@ -203,6 +204,85 @@ function resolveDetailTarget(rootDir: string, input: string): { absolutePath: st
     absolutePath,
     displayPath: normalizePath(rel),
   };
+}
+
+async function isSkillDir(candidate: string): Promise<boolean> {
+  const info = await stat(join(candidate, "SKILL.md")).catch(() => undefined);
+  return !!info?.isFile();
+}
+
+async function collectSkillDirs(rootDir: string): Promise<string[]> {
+  const out: string[] = [];
+
+  async function walk(currentDir: string): Promise<void> {
+    if (await isSkillDir(currentDir)) {
+      out.push(currentDir);
+      return;
+    }
+
+    const entries = await readdir(currentDir, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      await walk(join(currentDir, entry.name));
+    }
+  }
+
+  await walk(rootDir);
+  return out;
+}
+
+function resolveDetailTool(context: CommandContext): string {
+  const tool = (context.llmTools || []).map((v) => v.trim()).find(Boolean);
+  if (!tool) {
+    throw new Error("No llmTools configured. Run `skr init` and select at least one tool");
+  }
+  return tool;
+}
+
+async function resolveDetailSkillDir(context: CommandContext, skillRef: string): Promise<{ skillDir: string; skillID: string; skillsRoot: string }> {
+  const trimmed = skillRef.trim();
+  if (!trimmed) {
+    throw new Error("Usage: skuare detail <skillName|skillID> [relativePath...]");
+  }
+
+  const tool = resolveDetailTool(context);
+  const skillsRoot = resolveToolSkillsDir(context.cwd, tool, context.toolSkillDirs[tool]);
+  const exactDir = resolve(skillsRoot, normalizePath(trimmed));
+  if (await isSkillDir(exactDir)) {
+    return {
+      skillDir: exactDir,
+      skillID: normalizePath(relative(skillsRoot, exactDir)),
+      skillsRoot,
+    };
+  }
+
+  const matches = (await collectSkillDirs(skillsRoot))
+    .map((skillDir) => ({
+      skillDir,
+      skillID: normalizePath(relative(skillsRoot, skillDir)),
+    }))
+    .filter((row) => {
+      if (!row.skillID) {
+        return false;
+      }
+      const parts = row.skillID.split("/");
+      return parts[parts.length - 1] === trimmed;
+    });
+
+  if (matches.length === 1) {
+    return { ...matches[0], skillsRoot };
+  }
+  if (matches.length > 1) {
+    const choices = matches
+      .map((row) => row.skillID)
+      .sort((a, b) => a.localeCompare(b))
+      .join(", ");
+    throw new Error(`detail skillName matched multiple skills: ${choices}`);
+  }
+
+  throw new Error(`detail skill not found in ${skillsRoot}: ${trimmed}`);
 }
 
 /**
@@ -633,12 +713,23 @@ export class DetailCommand extends BaseCommand {
   readonly description = "Show local skill file contents";
 
   async execute(context: CommandContext): Promise<void> {
-    const inputs = context.args.length > 0 ? context.args : ["SKILL.md"];
+    const [skillRef, ...relativePaths] = context.args;
+    if (!skillRef) {
+      this.fail("Usage: skuare detail <skillName|skillID> [relativePath...]");
+    }
+    let skillDir: string;
+    try {
+      ({ skillDir } = await resolveDetailSkillDir(context, skillRef));
+    } catch (err) {
+      this.fail(err instanceof Error ? err.message : `Invalid detail skill: ${skillRef}`);
+    }
+
+    const inputs = relativePaths.length > 0 ? relativePaths : ["SKILL.md"];
     const outputs: string[] = [];
     for (const input of inputs) {
       let target: { absolutePath: string; displayPath: string };
       try {
-        target = resolveDetailTarget(context.cwd, input);
+        target = resolveDetailTarget(skillDir, input);
       } catch (err) {
         this.fail(err instanceof Error ? err.message : `Invalid detail path: ${input}`);
       }

@@ -30,7 +30,7 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
   },
   {
     create: () => new DetailCommand(),
-    help: { usage: ["detail [skillRelativePath...]", "Show local skill file contents"] },
+    help: { usage: ["detail <skillName|skillID> [relativePath...]", "Show local skill file contents"] },
   },
   {
     create: () => new ListCommand(),
