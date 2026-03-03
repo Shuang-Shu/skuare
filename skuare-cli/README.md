@@ -89,6 +89,7 @@
 ## 使用方式（启动/构建/配置）
 ```bash
 cd skuare-cli
+npm install
 npm run check
 npm run build
 skuare init
@@ -97,6 +98,11 @@ skuare --server http://127.0.0.1:15657 health
 # 或
 skr help
 ```
+
+新机初始化前提：
+- Node.js 版本需满足 `>=20`；可先执行 `node -v` 确认。
+- 首次进入 `skuare-cli` 后先执行 `npm install`，确保 `typescript` 与 `@types/node` 已安装。
+- 若编辑器仍提示 `Cannot find module 'node:test'`，优先确认当前工作区使用的是项目内 TypeScript，而不是全局旧版本。
 
 推荐阅读顺序：
 - 先看根 README 的 Quick Start，理解 server、本地仓库与 `skr` 的关系。
