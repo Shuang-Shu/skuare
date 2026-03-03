@@ -102,6 +102,7 @@ skr help
 新机初始化前提：
 - Node.js 版本需满足 `>=20`；可先执行 `node -v` 确认。
 - 首次进入 `skuare-cli` 后先执行 `npm install`，确保 `typescript` 与 `@types/node` 已安装。
+- `TS2688: Cannot find type definition file for 'node'` 表示当前环境没有解析到 `@types/node`；仅安装 Node.js 运行时并不会自带 TypeScript 的 Node 类型定义。
 - 若编辑器仍提示 `Cannot find module 'node:test'`，优先确认当前工作区使用的是项目内 TypeScript，而不是全局旧版本。
 
 环境依赖版本说明（以当前 `package.json` 为准）：
@@ -109,6 +110,7 @@ skr help
 - 开发时依赖：TypeScript `^5.8.2`。
 - Node 类型依赖：`@types/node` `^22.12.0`。
 - 初始化顺序：进入 `skuare-cli` 后先执行 `npm install`，再执行 `npm run check`、`npm run build`、`npm test`。
+- 环境自检：可执行 `npm run doctor`；若缺少 `typescript` 或 `@types/node`，会直接提示修复动作。
 
 推荐阅读顺序：
 - 先看根 README 的 Quick Start，理解 server、本地仓库与 `skr` 的关系。
