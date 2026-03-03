@@ -22,7 +22,7 @@ LOCAL_BIN ?= /tmp/skuare-bin/bin
 RELEASE_REPO ?=
 SVC_VERSION ?= latest
 
-.PHONY: help start-be stop-be start-cli install-skr install-backend health list peek get publish create format delete validate
+.PHONY: help start-be stop-be start-cli install install-cli-deps install-svc-deps install-link install-skr install-backend health list peek get publish create format delete validate
 
 help:
 	@echo "Available targets:"
@@ -31,7 +31,8 @@ help:
 	@echo "  make stop-be                   # 停止后台守护的 skuare-svc"
 	@echo "  make start-cli                 # 启动 CLI（默认 help）"
 	@echo "  make start-cli CLI_ARGS='...'  # 传入 CLI 参数"
-	@echo "  make install-skr               # 注册 skr 到本地 bin"
+	@echo "  make install                   # 安装前后端依赖并注册 skr 到本地 bin"
+	@echo "  make install-skr               # 兼容别名：仅注册链接目标名已迁移到 make install"
 	@echo "  make install-backend RELEASE_REPO=owner/repo [SVC_VERSION=v0.1.0]"
 	@echo "  make <write-op> KEY_ID=... PRIVKEY_FILE=...  # 写操作需提供签名参数"
 	@echo "  make health                    # 健康检查"
@@ -47,6 +48,23 @@ help:
 	@echo "  make delete SKILL_ID=... VERSION=..."
 	@echo "  make validate SKILL_ID=... VERSION=..."
 
+install: install-cli-deps install-svc-deps install-link
+
+install-cli-deps:
+	@command -v npm >/dev/null 2>&1 || { echo "npm is required but was not found in PATH"; exit 2; }
+	cd skuare-cli && npm install
+
+install-svc-deps:
+	@command -v go >/dev/null 2>&1 || { echo "go is required but was not found in PATH"; exit 2; }
+	cd skuare-svc && GOCACHE=$(GOCACHE) go mod download
+
+install-link:
+	mkdir -p $(LOCAL_BIN)
+	chmod +x ./skr
+	ln -sf $(abspath ./skr) $(LOCAL_BIN)/skr
+	@echo "skr installed at: $(LOCAL_BIN)/skr"
+	@echo "Add to PATH if needed: export PATH=$(LOCAL_BIN):\$$PATH"
+
 start-be:
 	@if [ "$(DAEMON)" = "true" ]; then \
 		ADDR="$(ADDR)" LOCAL_MODE="$(LOCAL_MODE)" SPEC_DIR="$(SPEC_DIR)" GOCACHE="$(GOCACHE)" AUTHORIZED_KEYS_FILE="$(AUTHORIZED_KEYS_FILE)" AUTH_MAX_SKEW_SEC="$(AUTH_MAX_SKEW_SEC)" BE_ARGS="$(BE_ARGS)" ./scripts/dev-up.sh; \
@@ -61,11 +79,7 @@ start-cli:
 	cd skuare-cli && npm run build && node dist/index.js --server $(SERVER) $(if $(KEY_ID),--key-id '$(KEY_ID)',) $(if $(PRIVKEY_FILE),--privkey-file '$(PRIVKEY_FILE)',) $(CLI_ARGS)
 
 install-skr:
-	mkdir -p $(LOCAL_BIN)
-	chmod +x ./skr
-	ln -sf $(abspath ./skr) $(LOCAL_BIN)/skr
-	@echo "skr installed at: $(LOCAL_BIN)/skr"
-	@echo "Add to PATH if needed: export PATH=$(LOCAL_BIN):\$$PATH"
+	@$(MAKE) install
 
 install-backend:
 	@if [ -z "$(RELEASE_REPO)" ]; then echo "RELEASE_REPO is required (owner/repo)"; exit 2; fi

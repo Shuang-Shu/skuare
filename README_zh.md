@@ -49,13 +49,15 @@
 # 1) 启动后端（本地模式，守护进程）
 make start-be LOCAL_MODE=true DAEMON=true
 
-# 2) 安装 CLI
-make install-skr
+# 2) 安装依赖并注册 CLI
+make install
 export PATH=/tmp/skuare-bin/bin:$PATH
 
 # 若仓库已自带 skuare-cli/dist，skr 会优先复用预构建产物；
 # 只有在需要重建且本地具备 TypeScript 工具链时才会重新编译。
 # 若当前只能回退到旧 dist，`skr publish ...` 会桥接为旧命令 `create ...` 以保持基础兼容。
+# `make install` 依赖本机 PATH 中已存在 `npm` 和 `go`；
+# 它会先安装 `skuare-cli` 依赖、执行 `skuare-svc` 的 `go mod download`，再把 `skr` 注册到 `LOCAL_BIN`。
 
 # 3) 初始化（可选）
 skr init
@@ -140,3 +142,4 @@ skr delete observability-orchestrator 1.0.0
 - 2026-03-02：`get` 简化参数：移除 `--scope/--repo-dir/--tool`，改用 `--global` 标志位；不带 `--global` 安装到 `<cwd>/.{llmTool}/skills/`，带 `--global` 安装到 `~/.{llmTool}/skills/`。
 - 2026-03-02：将 `skr detail` 修正为 `skr detail <skillName|skillID> [relativePath...]`；会先定位本地已安装 skill，再默认展示其 `SKILL.md`，并拒绝越界路径。
 - 2026-03-01：`skr` 在回退旧 `dist/index.js` 时会将 `publish` 兼容桥接为旧命令 `create`，避免无 TypeScript 环境下出现 `Unknown command: publish`。
+- 2026-03-04：根安装入口从 `make install-skr` 调整为 `make install`；会自动安装 `skuare-cli` 的 npm 依赖、执行 `skuare-svc` 的 `go mod download`，并注册 `skr`。
