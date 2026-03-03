@@ -2,7 +2,7 @@
 
 > 文档类型：README
 > 状态：已完成
-> 更新时间：2026-02-28
+> 更新时间：2026-03-04
 > 适用范围：skuare-cli
 
 ## 目标与范围
@@ -103,6 +103,12 @@ skr help
 - Node.js 版本需满足 `>=20`；可先执行 `node -v` 确认。
 - 首次进入 `skuare-cli` 后先执行 `npm install`，确保 `typescript` 与 `@types/node` 已安装。
 - 若编辑器仍提示 `Cannot find module 'node:test'`，优先确认当前工作区使用的是项目内 TypeScript，而不是全局旧版本。
+
+环境依赖版本说明（以当前 `package.json` 为准）：
+- 运行时依赖：Node.js `>=20`。
+- 开发时依赖：TypeScript `^5.8.2`。
+- Node 类型依赖：`@types/node` `^22.12.0`。
+- 初始化顺序：进入 `skuare-cli` 后先执行 `npm install`，再执行 `npm run check`、`npm run build`、`npm test`。
 
 推荐阅读顺序：
 - 先看根 README 的 Quick Start，理解 server、本地仓库与 `skr` 的关系。
