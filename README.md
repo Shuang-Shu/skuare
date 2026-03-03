@@ -51,13 +51,15 @@ Example:
 # 1) Start backend (local mode, daemon)
 make start-be LOCAL_MODE=true DAEMON=true
 
-# 2) Install CLI
-make install-skr
+# 2) Install dependencies and CLI entry
+make install
 export PATH=/tmp/skuare-bin/bin:$PATH
 
 # If the repo already has skuare-cli/dist, skr will reuse the pre-built artifacts;
 # It will only rebuild when needed and local TypeScript toolchain is available.
 # If falling back to old dist, `skr publish ...` will bridge to old command `create ...` for basic compatibility.
+# `make install` requires local `npm` and `go` in PATH; it installs `skuare-cli` dependencies,
+# runs `go mod download` for `skuare-svc`, and then registers `skr` into `LOCAL_BIN`.
 
 # 3) Initialize (optional)
 skr init
@@ -143,3 +145,4 @@ skr delete observability-orchestrator 1.0.0
 - 2026-03-02: Updated `skr detail` to `skr detail <skillName|skillID> [relativePath...]`; it resolves a local installed skill first, defaults to that skill's `SKILL.md`, and rejects paths outside the target skill directory.
 - 2026-03-01: `skr` bridges `publish` to old command `create` when falling back to old `dist/index.js`, avoiding `Unknown command: publish` in environments without TypeScript.
 - 2026-03-02: Documentation translated to English with Chinese version references.
+- 2026-03-04: Root install entry changed from `make install-skr` to `make install`; it now installs `skuare-cli` npm dependencies, runs `go mod download` for `skuare-svc`, and then registers `skr`.
