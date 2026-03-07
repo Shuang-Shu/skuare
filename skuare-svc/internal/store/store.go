@@ -12,4 +12,11 @@ type Store interface {
 	Delete(skillID string, version string) error
 	Validate(skillID string, version string) (model.SkillEntry, error)
 	Reindex() (int, error)
+
+	// AgentsMD operations
+	CreateAgentsMD(req model.CreateAgentsMDRequest) (model.AgentsMDEntry, error)
+	ListAgentsMD(query string) ([]model.AgentsMDEntry, error)
+	GetAgentsMD(agentsmdID string) (model.AgentsMDOverview, error)
+	GetAgentsMDVersion(agentsmdID string, version string) (model.AgentsMDDetail, error)
+	DeleteAgentsMD(agentsmdID string, version string) error
 }
