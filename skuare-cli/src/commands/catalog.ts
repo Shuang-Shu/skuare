@@ -3,6 +3,20 @@ import { HealthCommand } from "./admin";
 import { InitCommand } from "./init";
 import { DetailCommand, GetCommand, ListCommand, PeekCommand, ValidateCommand } from "./query";
 import { BuildCommand, CreateCommand, DeleteCommand, FormatCommand, PublishCommand } from "./write";
+import {
+  PublishAgentsMDCommand,
+  PublishAgentsMDShortCommand,
+  ListAgentsMDCommand,
+  ListAgentsMDShortCommand,
+  PeekAgentsMDCommand,
+  PeekAgentsMDShortCommand,
+  GetAgentsMDCommand,
+  GetAgentsMDShortCommand,
+  DetailAgentsMDCommand,
+  DetailAgentsMDShortCommand,
+  DeleteAgentsMDCommand,
+  DeleteAgentsMDShortCommand,
+} from "./agentsmd";
 
 export type HelpEntry = {
   usage: string[];
@@ -93,6 +107,61 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
       usage: ["format [skillDir...]", "Interactive format for metadata.version/metadata.author"],
       details: ["format --all                         Format all skill dirs under current directory"],
     },
+  },
+  // AgentsMD commands
+  {
+    create: () => new PublishAgentsMDCommand(),
+    help: {
+      usage: ["publish-agentsmd --file <AGENTS.md> --agentsmd-id <id> --version <v>", ""],
+      details: [
+        "publish-agentsmd --dir <dir>         Publish from dir (auto-find AGENTS.md + agentsmd-meta.json)",
+        "publish-agmd ...                     Short alias for publish-agentsmd",
+      ],
+    },
+  },
+  {
+    create: () => new PublishAgentsMDShortCommand(),
+    help: { usage: ["publish-agmd ...", "Short alias for publish-agentsmd"] },
+  },
+  {
+    create: () => new ListAgentsMDCommand(),
+    help: { usage: ["list-agentsmd [--q <keyword>] [--rgx <re>]", "List AGENTS.md"] },
+  },
+  {
+    create: () => new ListAgentsMDShortCommand(),
+    help: { usage: ["list-agmd ...", "Short alias for list-agentsmd"] },
+  },
+  {
+    create: () => new PeekAgentsMDCommand(),
+    help: { usage: ["peek-agentsmd <agentsmd-id> [version]", "Peek AGENTS.md overview/detail"] },
+  },
+  {
+    create: () => new PeekAgentsMDShortCommand(),
+    help: { usage: ["peek-agmd ...", "Short alias for peek-agentsmd"] },
+  },
+  {
+    create: () => new GetAgentsMDCommand(),
+    help: { usage: ["get-agentsmd <agentsmd-id> [version] [--global]", "Install AGENTS.md"] },
+  },
+  {
+    create: () => new GetAgentsMDShortCommand(),
+    help: { usage: ["get-agmd ...", "Short alias for get-agentsmd"] },
+  },
+  {
+    create: () => new DetailAgentsMDCommand(),
+    help: { usage: ["detail-agentsmd <agentsmdName>", "Show local AGENTS.md content"] },
+  },
+  {
+    create: () => new DetailAgentsMDShortCommand(),
+    help: { usage: ["detail-agmd ...", "Short alias for detail-agentsmd"] },
+  },
+  {
+    create: () => new DeleteAgentsMDCommand(),
+    help: { usage: ["delete-agentsmd <agentsmd-id> <version>", "Delete AGENTS.md version"] },
+  },
+  {
+    create: () => new DeleteAgentsMDShortCommand(),
+    help: { usage: ["delete-agmd ...", "Short alias for delete-agentsmd"] },
   },
 ];
 

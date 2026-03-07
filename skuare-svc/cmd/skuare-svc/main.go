@@ -19,6 +19,7 @@ func main() {
 		log.Fatalf("init fs store failed: %v", err)
 	}
 	svc := service.NewSkillService(fsStore)
+	agentsmdSvc := service.NewAgentsMDService(fsStore)
 	var writeAuthorizer authz.WriteAuthorizer
 	if cfg.LocalMode {
 		writeAuthorizer = authz.NewAllowAllVerifier()
@@ -31,7 +32,7 @@ func main() {
 		writeAuthorizer = authz.NewSignatureVerifierWithMaxSkew(authzReg, time.Duration(cfg.AuthMaxSkewSec)*time.Second)
 	}
 
-	h := internalhttp.NewServer(cfg.Addr, svc, writeAuthorizer, cfg.LocalMode)
+	h := internalhttp.NewServer(cfg.Addr, svc, agentsmdSvc, writeAuthorizer, cfg.LocalMode)
 	log.Printf(
 		"skuare-svc listening on %s, spec_dir=%s, authorized_keys_file=%s, local_mode=%v, auth_max_skew_sec=%d",
 		cfg.Addr,

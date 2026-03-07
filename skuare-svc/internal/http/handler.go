@@ -13,9 +13,10 @@ import (
 )
 
 type Handler struct {
-	svc        *service.SkillService
-	authorizer authz.WriteAuthorizer
-	localMode  bool
+	svc             *service.SkillService
+	agentsmdSvc     *service.AgentsMDService
+	authorizer      authz.WriteAuthorizer
+	localMode       bool
 }
 
 type healthResponse struct {
@@ -23,9 +24,9 @@ type healthResponse struct {
 	Name   string `json:"name"`
 }
 
-func NewServer(addr string, svc *service.SkillService, authorizer authz.WriteAuthorizer, localMode bool) *server.Hertz {
+func NewServer(addr string, svc *service.SkillService, agentsmdSvc *service.AgentsMDService, authorizer authz.WriteAuthorizer, localMode bool) *server.Hertz {
 	h := server.Default(server.WithHostPorts(addr))
-	handler := &Handler{svc: svc, authorizer: authorizer, localMode: localMode}
+	handler := &Handler{svc: svc, agentsmdSvc: agentsmdSvc, authorizer: authorizer, localMode: localMode}
 
 	h.GET("/healthz", handler.healthz)
 
@@ -37,6 +38,13 @@ func NewServer(addr string, svc *service.SkillService, authorizer authz.WriteAut
 	v1.DELETE("/skills/:skillID/:version", handler.deleteVersion)
 	v1.POST("/skills/:skillID/:version/validate", handler.validateVersion)
 	v1.POST("/reindex", handler.reindex)
+
+	// AgentsMD routes
+	v1.POST("/agentsmd", handler.createAgentsMD)
+	v1.GET("/agentsmd", handler.listAgentsMD)
+	v1.GET("/agentsmd/:agentsmdID", handler.getAgentsMD)
+	v1.GET("/agentsmd/:agentsmdID/:version", handler.getAgentsMDVersion)
+	v1.DELETE("/agentsmd/:agentsmdID/:version", handler.deleteAgentsMD)
 
 	return h
 }
@@ -152,4 +160,69 @@ func (h *Handler) checkWritePermission(c *app.RequestContext) error {
 		nonce,
 		signature,
 	)
+}
+
+// AgentsMD handlers
+
+func (h *Handler) createAgentsMD(_ context.Context, c *app.RequestContext) {
+	if err := h.checkWritePermission(c); err != nil {
+		writeError(c, err)
+		return
+	}
+	var req model.CreateAgentsMDRequest
+	if err := c.BindAndValidate(&req); err != nil {
+		writeError(c, err)
+		return
+	}
+	entry, err := h.agentsmdSvc.Create(req)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(201, entry)
+}
+
+func (h *Handler) listAgentsMD(_ context.Context, c *app.RequestContext) {
+	q := c.Query("q")
+	entries, err := h.agentsmdSvc.List(q)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(200, map[string]any{"items": entries})
+}
+
+func (h *Handler) getAgentsMD(_ context.Context, c *app.RequestContext) {
+	agentsmdID := c.Param("agentsmdID")
+	overview, err := h.agentsmdSvc.GetAgentsMD(agentsmdID)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(200, overview)
+}
+
+func (h *Handler) getAgentsMDVersion(_ context.Context, c *app.RequestContext) {
+	agentsmdID := c.Param("agentsmdID")
+	version := c.Param("version")
+	detail, err := h.agentsmdSvc.GetVersion(agentsmdID, version)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(200, detail)
+}
+
+func (h *Handler) deleteAgentsMD(_ context.Context, c *app.RequestContext) {
+	if err := h.checkWritePermission(c); err != nil {
+		writeError(c, err)
+		return
+	}
+	agentsmdID := c.Param("agentsmdID")
+	version := c.Param("version")
+	if err := h.agentsmdSvc.Delete(agentsmdID, version); err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(200, map[string]any{"deleted": true})
 }
