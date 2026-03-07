@@ -14,13 +14,13 @@ test("buildHelpText includes all registered help entries", () => {
   }
 });
 
-test("buildHelpText keeps global flags and examples", () => {
+test("buildHelpText keeps global flags", () => {
   const helpText = buildHelpText();
 
   assert.match(helpText, /Global Flags:/);
   assert.match(helpText, /--server <url>/);
-  assert.match(helpText, /Write Operations:/);
-  assert.match(helpText, /skr build report-generator --all/);
+  assert.match(helpText, /--key-id <id>/);
+  assert.match(helpText, /--privkey-file <path>/);
 });
 
 function escapeRegex(input: string): string {

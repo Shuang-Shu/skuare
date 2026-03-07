@@ -130,11 +130,11 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
   },
   {
     create: () => new ListAgentsMDCommand(),
-    help: { usage: ["list-agentsmd [--q <keyword>] [--rgx <re>]", "List AGENTS.md"] },
+    help: { usage: ["list-agentsmd [--q <keyword>] [--rgx <pattern>]", "List AGENTS.md"] },
   },
   {
     create: () => new ListAgentsMDShortCommand(),
-    help: { usage: ["list-agmd ...", "Short alias for list-agentsmd"] },
+    help: { usage: ["list-agmd [--q <keyword>] [--rgx <pattern>]", "Short alias for list-agentsmd"] },
   },
   {
     create: () => new PeekAgentsMDCommand(),
