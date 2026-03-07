@@ -9,9 +9,12 @@ type CreateAgentsMDRequest struct {
 
 // AgentsMDEntry AGENTS.md 条目
 type AgentsMDEntry struct {
-	AgentsMDID string `json:"agentsmd_id"`
-	Version    string `json:"version"`
-	ID         string `json:"id"` // <agentsmd-id>@<version>
+	AgentsMDID  string `json:"agentsmd_id"`
+	Version     string `json:"version"`
+	ID          string `json:"id"` // <agentsmd-id>@<version>
+	Name        string `json:"name"`
+	Author      string `json:"author"`
+	Description string `json:"description"`
 }
 
 // AgentsMDDetail AGENTS.md 详情

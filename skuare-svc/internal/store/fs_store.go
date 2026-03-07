@@ -493,9 +493,12 @@ func (s *FSStore) CreateAgentsMD(req model.CreateAgentsMDRequest) (model.AgentsM
 	}
 
 	return model.AgentsMDEntry{
-		AgentsMDID: req.AgentsMDID,
-		Version:    req.Version,
-		ID:         fmt.Sprintf("%s@%s", req.AgentsMDID, req.Version),
+		AgentsMDID:  req.AgentsMDID,
+		Version:     req.Version,
+		ID:          fmt.Sprintf("%s@%s", req.AgentsMDID, req.Version),
+		Name:        req.AgentsMDID,
+		Author:      "undefined",
+		Description: "",
 	}, nil
 }
 
@@ -534,9 +537,12 @@ func (s *FSStore) ListAgentsMD(query string) ([]model.AgentsMDEntry, error) {
 			}
 			version := vEntry.Name()
 			entries = append(entries, model.AgentsMDEntry{
-				AgentsMDID: agentsmdID,
-				Version:    version,
-				ID:         fmt.Sprintf("%s@%s", agentsmdID, version),
+				AgentsMDID:  agentsmdID,
+				Version:     version,
+				ID:          fmt.Sprintf("%s@%s", agentsmdID, version),
+				Name:        agentsmdID,
+				Author:      "undefined",
+				Description: "",
 			})
 		}
 	}
