@@ -60,9 +60,14 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
   {
     create: () => new GetCommand(),
     help: {
-      usage: ["get <skillID> [version] [--rgx <re>] [--global]", ""],
+      usage: ["get <author>/<name>@<version> | <author>/<name> | <name> [--global]", ""],
       details: [
-        "                                       Install skill and dependencies (default: <cwd>/.{tool}/skills/, --global: ~/.{tool}/skills/)",
+        "                                       Install skill and dependencies to local partial repository",
+        "                                       - <author>/<name>@<version> or <name>@<version>: exact match",
+        "                                       - <author>/<name> or <name>: interactive selection if multiple versions found",
+        "                                       - Default: <cwd>/.{tool}/skills/, --global: ~/.{tool}/skills/",
+        "get --rgx <pattern> [version] [--global]",
+        "                                       Install by regex pattern (must match exactly one skill)",
       ],
     },
   },
