@@ -218,3 +218,111 @@ export async function selectModifyFields(): Promise<Set<"mode" | "address" | "po
 
   return result as Set<"mode" | "address" | "port" | "keyId" | "privateKeyFile" | "llmTools">;
 }
+
+type SkillOption = {
+  skillID: string;
+  version: string;
+  description: string;
+};
+
+export async function selectSkillWithScroll(
+  skills: SkillOption[],
+  title: string
+): Promise<SkillOption> {
+  const stdin = process.stdin as StdinInterface;
+  const stdout = process.stdout as StdoutInterface;
+
+  if (!stdin.isTTY || !stdout.isTTY) {
+    return skills[0];
+  }
+
+  const readline = await import("node:readline");
+  readline.emitKeypressEvents(process.stdin);
+
+  stdin.resume?.();
+  const wasRaw = !!stdin.isRaw;
+  stdin.setRawMode?.(true);
+
+  const windowSize = 10;
+  let idx = 0;
+  let windowStart = 0;
+  let rendered = false;
+  let enterArmed = false;
+
+  setTimeout(() => {
+    enterArmed = true;
+  }, 200);
+
+  const render = () => {
+    const blockHeight = Math.min(windowSize, skills.length) + 1;
+    if (rendered) {
+      stdout.write(`\x1b[${blockHeight}F`);
+    }
+    stdout.write("\x1b[J");
+    stdout.write(`${title} (${idx + 1}/${skills.length})\n`);
+
+    const windowEnd = Math.min(windowStart + windowSize, skills.length);
+    for (let i = windowStart; i < windowEnd; i++) {
+      const cursor = i === idx ? "> " : "  ";
+      const skill = skills[i];
+      const label = `${skill.skillID}@${skill.version} - ${skill.description}`;
+      stdout.write(`${cursor}${label}\n`);
+    }
+    rendered = true;
+  };
+
+  render();
+
+  return await new Promise<SkillOption>((resolve) => {
+    const onKeypress: KeypressHandler = (str, key) => {
+      if (key?.name === "up") {
+        if (idx > 0) {
+          idx--;
+          if (idx < windowStart) {
+            windowStart = Math.max(0, windowStart - 1);
+          }
+          render();
+        }
+        return;
+      }
+
+      if (key?.name === "down") {
+        if (idx < skills.length - 1) {
+          idx++;
+          if (idx >= windowStart + windowSize) {
+            windowStart = Math.min(skills.length - windowSize, windowStart + 1);
+          }
+          render();
+        }
+        return;
+      }
+
+      if (key?.name === "return" || key?.name === "enter") {
+        if (!enterArmed) {
+          return;
+        }
+
+        stdin.off("keypress", onKeypress);
+        stdin.setRawMode?.(wasRaw);
+        stdin.pause?.();
+        const blockHeight = Math.min(windowSize, skills.length) + 1;
+        if (rendered) {
+          stdout.write(`\x1b[${blockHeight}F`);
+          stdout.write("\x1b[J");
+        }
+        stdout.write(`Selected: ${skills[idx].skillID}@${skills[idx].version}\n`);
+        resolve(skills[idx]);
+        return;
+      }
+
+      if (key?.ctrl && key?.name === "c") {
+        stdin.off("keypress", onKeypress);
+        stdin.setRawMode?.(wasRaw);
+        stdin.pause?.();
+        process.exit(130);
+      }
+    };
+
+    stdin.on("keypress", onKeypress);
+  });
+}

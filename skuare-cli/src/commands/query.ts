@@ -22,6 +22,11 @@ type NormalizedSkillItem = {
   description: JsonValue;
 };
 
+type ParsedGetInput =
+  | { type: "full"; author: string; name: string; version: string }
+  | { type: "author-name"; author: string; name: string }
+  | { type: "name-only"; name: string };
+
 function normalizePath(input: string): string {
   return input.replace(/\\/g, "/").replace(/^\.\/+/, "");
 }
@@ -467,6 +472,44 @@ export class PeekCommand extends BaseCommand {
   }
 }
 
+function parseGetInput(input: string): ParsedGetInput {
+  const trimmed = input.trim();
+  const atIndex = trimmed.indexOf("@");
+  
+  if (atIndex > 0) {
+    const beforeAt = trimmed.slice(0, atIndex);
+    const version = trimmed.slice(atIndex + 1).trim();
+    const slashIndex = beforeAt.indexOf("/");
+    
+    if (slashIndex > 0) {
+      return {
+        type: "full",
+        author: beforeAt.slice(0, slashIndex).trim(),
+        name: beforeAt.slice(slashIndex + 1).trim(),
+        version,
+      };
+    }
+    
+    return {
+      type: "full",
+      author: "",
+      name: beforeAt.trim(),
+      version,
+    };
+  }
+  
+  const slashIndex = trimmed.indexOf("/");
+  if (slashIndex > 0) {
+    return {
+      type: "author-name",
+      author: trimmed.slice(0, slashIndex).trim(),
+      name: trimmed.slice(slashIndex + 1).trim(),
+    };
+  }
+  
+  return { type: "name-only", name: trimmed };
+}
+
 export class GetCommand extends BaseCommand {
   readonly name = "get";
   readonly description = "Install skill to local partial repository";
@@ -475,20 +518,31 @@ export class GetCommand extends BaseCommand {
     const isGlobal = context.args.includes("--global");
     const regexPattern = parseRegexOption(context.args);
     const positional = stripOptionsWithValues(stripRegexOptions(context.args), []).filter(arg => arg !== "--global");
-    let [skillID, versionArg] = positional;
+    
+    let skillID: string;
+    let versionArg: string | undefined;
+    
     if (regexPattern) {
       if (positional.length > 1) {
         this.fail("Usage: skuare get --rgx <pattern> [version] [--global]");
       }
       skillID = await this.resolveSkillIDByRegex(context, regexPattern);
       versionArg = positional[0];
+    } else {
+      const [input, version] = positional;
+      if (!input) {
+        this.fail("Missing <skillID>. Usage: skuare get <skillID> [version] [--rgx <pattern>] [--global]");
+      }
+      if (positional.length > 2) {
+        this.fail("Usage: skuare get <skillID> [version] [--rgx <pattern>] [--global]");
+      }
+      
+      const parsed = parseGetInput(input);
+      const resolved = await this.resolveSkillByPattern(context, parsed);
+      skillID = resolved.skillID;
+      versionArg = version || resolved.version;
     }
-    if (!skillID) {
-      this.fail("Missing <skillID>. Usage: skuare get <skillID> [version] [--rgx <pattern>] [--global]");
-    }
-    if (positional.length > 2) {
-      this.fail("Usage: skuare get <skillID> [version] [--rgx <pattern>] [--global]");
-    }
+    
     const tool = this.resolveTargetTool(context.llmTools);
     const targetRoot = this.resolveInstallTargetRoot(context.cwd, tool, isGlobal);
     const sharedLocalDir = false;
@@ -545,6 +599,58 @@ export class GetCommand extends BaseCommand {
       this.fail(`Matched skill has empty skill_id for regex: ${pattern}`);
     }
     return resolvedSkillID;
+  }
+
+  private async resolveSkillByPattern(
+    context: CommandContext,
+    parsed: ParsedGetInput
+  ): Promise<{ skillID: string; version?: string }> {
+    if (parsed.type === "full") {
+      const skillID = parsed.author ? `${parsed.author}/${parsed.name}` : parsed.name;
+      return { skillID, version: parsed.version };
+    }
+
+    const resp = await callApi({
+      method: "GET",
+      path: "/api/v1/skills",
+      server: context.server,
+      silent: true,
+    });
+    const itemsRaw = (resp.data && typeof resp.data === "object" && !Array.isArray(resp.data))
+      ? (resp.data as { items?: JsonValue }).items
+      : undefined;
+    const items = Array.isArray(itemsRaw) ? itemsRaw : [];
+    const normalized = normalizeListItems(items);
+
+    let matched: NormalizedSkillItem[];
+    if (parsed.type === "author-name") {
+      matched = normalized.filter(
+        (item) => item.author === parsed.author && item.name === parsed.name
+      );
+    } else {
+      matched = normalized.filter((item) => item.name === parsed.name);
+    }
+
+    if (matched.length === 0) {
+      const input = parsed.type === "author-name" ? `${parsed.author}/${parsed.name}` : parsed.name;
+      this.fail(`No skill found for: ${input}`);
+    }
+
+    if (matched.length === 1) {
+      return { skillID: String(matched[0].skill_id) };
+    }
+
+    const { selectSkillWithScroll } = await import("../ui/selectors.js");
+    const options = matched.map((item) => ({
+      skillID: String(item.skill_id),
+      version: String(item.version),
+      description: String(item.description || ""),
+    }));
+    const selected = await selectSkillWithScroll(
+      options,
+      `Multiple skills found, select one (use ↑/↓, Enter to confirm):`
+    );
+    return { skillID: selected.skillID, version: selected.version };
   }
 
   private resolveTargetTool(llmTools: string[]): string {
