@@ -112,14 +112,9 @@ export class ListAgentsMDCommand implements Command {
     });
     
     const data = resp.data as { items?: Array<{ id: string }> };
-    if (!data.items || data.items.length === 0) {
-      console.log(`${Status.Warn} No AGENTS.md found`);
-      return;
-    }
-
-    for (const item of data.items) {
-      console.log(`${item.id}`);
-    }
+    const items = data.items || [];
+    
+    console.log(JSON.stringify({ items }, null, 2));
   }
 }
 
