@@ -36,12 +36,13 @@
 - `POST /api/v1/reindex`
 - OpenAPI：`skuare-svc/docs/openapi.yaml`
 - 查询/创建返回：当上传的 `SKILL.md` 含 `metadata.author` 时，`POST/GET /api/v1/skills*` 返回体会包含 `author` 字段。
+- 创建请求支持可选 `force: true`；传入后会覆盖相同 `skill_id@version` 的已有版本。
 - 错误响应：统一为 `{ "code": "...", "message": "..." }`
 - 错误码定义：统一收敛到 `internal/util/errcode.go`
 - 写操作鉴权：`POST /api/v1/skills`、`DELETE /api/v1/skills/:skillID/:version`、`POST /api/v1/reindex` 需要数字签名请求头（`X-Skuare-Key-Id`/`X-Skuare-Timestamp`/`X-Skuare-Nonce`/`X-Skuare-Signature`）。
 
 ### 错误码约定
-- `SKILL_VERSION_ALREADY_EXISTS`：创建已存在的技能版本。
+- `SKILL_VERSION_ALREADY_EXISTS`：创建已存在的技能版本，且请求未显式传入 `force: true`。
 - `SKILL_VERSION_NOT_FOUND`：查询/删除不存在的技能版本。
 - `FORBIDDEN`：写接口鉴权失败（缺失签名头、未注册 key、签名无效、时间戳过期、nonce 重放等）。
 - `INVALID_ARGUMENT`：请求参数或 `SKILL.md` 校验失败。
@@ -119,6 +120,7 @@ curl -X POST "http://127.0.0.1:15657/api/v1/reindex" \
 {
   "skill_id": "pdf-reader",
   "version": "1.0.0",
+  "force": true,
   "skill": {
     "description": "Read and analyze PDF files",
     "overview": "Extract text by page range and return structured summary",
@@ -131,6 +133,8 @@ curl -X POST "http://127.0.0.1:15657/api/v1/reindex" \
   }
 }
 ```
+
+When `force` is `true`, the server replaces the existing version directory under the per-skill lock.
 
 ## 验收标准与风险
 - 验收：全量单测通过，服务可完成创建/查询/删除/校验/重建索引流程。

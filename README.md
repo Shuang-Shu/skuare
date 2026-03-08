@@ -35,7 +35,7 @@ Default repository root path: `$HOME/.skuare`
 ## Core Capability: Dependency Management
 - Dependency description file: `skill-deps.json`
 - Dependency lock file: `skill-deps.lock.json`
-- `skr publish --dir <skill-dir>`: read dependency description and recursively upload dependent Skills to remote repository.
+- `skr publish --dir <skill-dir> [--force|-f]`: read dependency description and recursively upload dependent Skills to remote repository; `--force/-f` overwrites an existing version.
 - `skr build <skillName> [refSkill...] [--all]`: automatically create or append dependency files (`skill-deps.json` / `skill-deps.lock.json`) for local skill. When target skill doesn't exist, it will interactively create a minimal `SKILL.md` template first. Supports `alias=refSkill`; `--all` will use all valid skillDirs in current directory as reference skills.
 - `skr detail <skillName|skillID> [relativePath...]`: show files under a local installed skill. Defaults to the target skill's `SKILL.md` when no path is provided.
 - `skr get <skill-id> [--global]`: fetch Skill from remote repository and install its dependencies flatly.
@@ -80,6 +80,7 @@ skr peek observability-orchestrator
 
 # 7) Server write commands: publish Skill (recursively handles dependencies)
 skr publish --dir ./skills/observability-orchestrator
+skr publish --dir ./skills/observability-orchestrator --force
 
 # 8) Hybrid commands: fetch and install (flatly installs dependencies)
 skr get observability-orchestrator
@@ -118,6 +119,7 @@ skr get observability-orchestrator --global
 - Server write commands:
 ```bash
 skr publish --dir ./skills/observability-orchestrator
+skr publish --dir ./skills/observability-orchestrator --force
 skr create --dir ./skills/observability-orchestrator
 skr delete observability-orchestrator 1.0.0
 ```

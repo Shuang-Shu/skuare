@@ -3,6 +3,7 @@ package model
 type CreateSkillVersionRequest struct {
 	SkillID string     `json:"skill_id"`
 	Version string     `json:"version"`
+	Force   bool       `json:"force,omitempty"`
 	Skill   SkillSpec  `json:"skill"`
 	Files   []FileSpec `json:"files,omitempty"`
 }

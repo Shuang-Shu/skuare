@@ -33,7 +33,7 @@
 ## 核心能力：依赖管理
 - 依赖描述文件：`skill-deps.json`
 - 依赖锁定文件：`skill-deps.lock.json`
-- `skr publish --dir <skill-dir>`：读取依赖描述并递归上传依赖 Skill 到远程仓库。
+- `skr publish --dir <skill-dir> [--force|-f]`：读取依赖描述并递归上传依赖 Skill 到远程仓库；`--force/-f` 可覆盖已存在版本。
 - `skr build <skillName> [refSkill...] [--all]`：为本地 skill 自动创建或追加更新依赖文件（`skill-deps.json` / `skill-deps.lock.json`），当目标 skill 不存在时会先交互式创建最小 `SKILL.md` 模板，支持 `alias=refSkill`；`--all` 会将当前目录下全部合法 skillDir 作为引用 skill。
 - `skr detail <skillName|skillID> [relativePath...]`：展示本地已安装 skill 下的文件内容；不传文件路径时默认输出目标 skill 的 `SKILL.md`。
 - `skr get <skill-id> [--global]`：从远程仓库拉取 Skill 并平铺安装其依赖。
@@ -78,6 +78,7 @@ skr peek observability-orchestrator
 
 # 7) server 写命令：发布 Skill（会递归处理依赖）
 skr publish --dir ./skills/observability-orchestrator
+skr publish --dir ./skills/observability-orchestrator --force
 
 # 8) 混合命令：拉取并安装（会平铺安装依赖）
 skr get observability-orchestrator
@@ -116,6 +117,7 @@ skr get observability-orchestrator --global
 - server 写命令：
 ```bash
 skr publish --dir ./skills/observability-orchestrator
+skr publish --dir ./skills/observability-orchestrator --force
 skr create --dir ./skills/observability-orchestrator
 skr delete observability-orchestrator 1.0.0
 ```

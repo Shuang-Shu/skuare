@@ -89,7 +89,13 @@ func (s *FSStore) Create(req model.CreateSkillVersionRequest) (model.SkillEntry,
 	defer unlock()
 
 	targetDir := s.versionDir(req.SkillID, req.Version)
+	targetExists := false
 	if _, err := s.fs.Stat(targetDir); err == nil {
+		targetExists = true
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return model.SkillEntry{}, err
+	}
+	if targetExists && !req.Force {
 		return model.SkillEntry{}, ErrAlreadyExists
 	}
 
@@ -122,10 +128,26 @@ func (s *FSStore) Create(req model.CreateSkillVersionRequest) (model.SkillEntry,
 		}
 	}
 
+	backupDir := ""
+	if targetExists {
+		backupDir = filepath.Join(skillDir, req.Version+".bak-"+fmt.Sprintf("%d", time.Now().UnixNano()))
+		if err := s.fs.Rename(targetDir, backupDir); err != nil {
+			return model.SkillEntry{}, err
+		}
+	}
+
 	if err := s.fs.Rename(tmpDir, targetDir); err != nil {
+		if backupDir != "" {
+			_ = s.fs.Rename(backupDir, targetDir)
+		}
 		return model.SkillEntry{}, err
 	}
 	cleanup = false
+	if backupDir != "" {
+		if err := s.fs.RemoveAll(backupDir); err != nil {
+			return model.SkillEntry{}, err
+		}
+	}
 
 	entry := model.SkillEntry{
 		SkillID:     req.SkillID,

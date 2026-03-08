@@ -78,20 +78,21 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
   {
     create: () => new PublishCommand(),
     help: {
-      usage: ["publish --file <request.json>", "Publish from request JSON"],
+      usage: ["publish --file <request.json> [--force|-f]", "Publish from request JSON"],
       details: [
-        "publish --skill <SKILL.md> [--skill-id <id>] [--version <v>]",
+        "publish --skill <SKILL.md> [--skill-id <id>] [--version <v>] [--force|-f]",
         "                                       Explicit SKILL.md mode, version from frontmatter metadata.version",
-        "publish --dir <skillDir> [--skill-id <id>] [--version <v>]",
+        "publish --dir <skillDir> [--skill-id <id>] [--version <v>] [--force|-f]",
         "                                       Explicit dir mode, version from <dir>/SKILL.md frontmatter metadata.version",
-        "publish <path...> [--all] [--skill-id <id>] [--version <v>]",
+        "publish <path...> [--all] [--skill-id <id>] [--version <v>] [--force|-f]",
         "                                       Auto detect each path: SKILL.md -> dir -> JSON fallback",
+        "                                       Use --force/-f to overwrite an existing skill version",
       ],
     },
   },
   {
     create: () => new CreateCommand(),
-    help: { usage: ["create ...", "Deprecated alias of publish"] },
+    help: { usage: ["create ... [--force|-f]", "Deprecated alias of publish"] },
   },
   {
     create: () => new BuildCommand(),
