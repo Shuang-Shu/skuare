@@ -12,6 +12,8 @@ import * as readlinePromises from "node:readline/promises";
 import { collectPositionalArgs } from "../utils/command_args";
 import { parseSkillFrontmatter, parseSkillMarkdown, readSkillMetadataDefaults, renderSkillTemplate, withUpdatedSkillMetadata } from "../utils/skill_manifest";
 import { discoverSkillDirs } from "../utils/skill_workspace";
+import { DeleteAgentsMDCommand, PublishAgentsMDCommand } from "./agentsmd";
+import { normalizeResourceContext } from "./resource_type";
 
 type ReadlineInterface = Awaited<ReturnType<typeof readlinePromises.createInterface>>;
 
@@ -33,15 +35,22 @@ export class PublishCommand extends BaseCommand {
   readonly description: string = "Publish skill version";
 
   async execute(context: CommandContext): Promise<void> {
-    const forceUpload = this.hasForceFlag(context.args);
-    const sources = await this.resolveCreateSources(context.args, context.cwd);
+    const normalized = normalizeResourceContext(context);
+    if (normalized.resourceType === "agentsmd") {
+      await new PublishAgentsMDCommand().execute(normalized.context);
+      return;
+    }
+
+    const skillContext = normalized.context;
+    const forceUpload = this.hasForceFlag(skillContext.args);
+    const sources = await this.resolveCreateSources(skillContext.args, skillContext.cwd);
     for (const source of sources) {
       if (source.kind !== "json") {
-        await this.uploadDependencies(source, context, forceUpload);
+        await this.uploadDependencies(source, skillContext, forceUpload);
       }
       const rawBody = source.kind === "json"
         ? (await this.readJsonFile(source.path) as JsonValue)
-        : (await this.buildRequestFromSkillSource(context.args, source) as JsonValue);
+        : (await this.buildRequestFromSkillSource(skillContext.args, source) as JsonValue);
       const body = this.applyForceFlag(rawBody, forceUpload);
 
       try {
@@ -49,8 +58,8 @@ export class PublishCommand extends BaseCommand {
           method: "POST",
           path: "/api/v1/skills",
           body,
-          server: context.server,
-          auth: context.auth,
+          server: skillContext.server,
+          auth: skillContext.auth,
           silent: true,
         });
         this.printCreateResult(resp.data);
@@ -802,7 +811,13 @@ export class DeleteCommand extends BaseCommand {
   readonly description = "Delete skill version";
 
   async execute(context: CommandContext): Promise<void> {
-    const [skillID, version] = context.args;
+    const normalized = normalizeResourceContext(context);
+    if (normalized.resourceType === "agentsmd") {
+      await new DeleteAgentsMDCommand().execute(normalized.context);
+      return;
+    }
+
+    const [skillID, version] = normalized.context.args;
 
     if (!skillID || !version) {
       this.fail("Usage: skuare delete <skillID> <version>");
@@ -811,8 +826,8 @@ export class DeleteCommand extends BaseCommand {
     await callApi({
       method: "DELETE",
       path: `/api/v1/skills/${encodeURIComponent(skillID)}/${encodeURIComponent(version)}`,
-      server: context.server,
-      auth: context.auth,
+      server: normalized.context.server,
+      auth: normalized.context.auth,
     });
   }
 }

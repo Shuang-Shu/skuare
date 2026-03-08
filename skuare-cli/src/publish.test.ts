@@ -69,6 +69,39 @@ test("publish suggests --force or -f when version already exists", async () => {
   }
 });
 
+test("publish --type skill strips resource type option before resolving positional source", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "skuare-publish-type-skill-"));
+  const skillDir = join(workspace, "demo-skill");
+  const requestBodies: JsonValue[] = [];
+
+  await createSkillDir(skillDir, "demo-skill", "1.0.0", "Original description");
+
+  const restore = mockFetch(async (_input, init) => {
+    requestBodies.push(JSON.parse(String(init?.body ?? "{}")) as JsonValue);
+    return new Response(JSON.stringify({
+      skill_id: "demo-skill",
+      version: "1.0.0",
+      name: "demo-skill",
+      description: "Original description",
+    }), {
+      status: 201,
+      headers: { "content-type": "application/json" },
+    });
+  });
+
+  try {
+    const logs = await captureConsole(async () => {
+      await new PublishCommand().execute(createContext(workspace, ["--type", "skill", skillDir]));
+    });
+
+    assert.equal(requestBodies.length, 1);
+    assert.match(logs.join("\n"), /"skill_id": "demo-skill"/);
+  } finally {
+    restore();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 async function createSkillDir(skillDir: string, name: string, version: string, description: string): Promise<void> {
   await mkdir(skillDir, { recursive: true });
   await writeFile(

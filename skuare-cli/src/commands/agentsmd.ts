@@ -1,7 +1,6 @@
 import * as fs from "node:fs/promises";
 import { homedir } from "node:os";
 import * as path from "node:path";
-import { AliasCommand } from "./alias";
 import { BaseCommand } from "./base";
 import type { CommandContext, JsonValue } from "./types";
 import { callApi } from "../http/client";
@@ -116,12 +115,6 @@ export class PublishAgentsMDCommand extends BaseCommand {
   }
 }
 
-export class PublishAgentsMDShortCommand extends AliasCommand {
-  constructor() {
-    super("publish-agmd", "Short alias for publish-agentsmd", () => new PublishAgentsMDCommand());
-  }
-}
-
 export class ListAgentsMDCommand extends BaseCommand {
   readonly name = "list-agentsmd";
   readonly description = "List AGENTS.md";
@@ -154,12 +147,6 @@ export class ListAgentsMDCommand extends BaseCommand {
   }
 }
 
-export class ListAgentsMDShortCommand extends AliasCommand {
-  constructor() {
-    super("list-agmd", "Short alias for list-agentsmd", () => new ListAgentsMDCommand());
-  }
-}
-
 export class PeekAgentsMDCommand extends BaseCommand {
   readonly name = "peek-agentsmd";
   readonly description = "Peek AGENTS.md";
@@ -186,21 +173,22 @@ export class PeekAgentsMDCommand extends BaseCommand {
   }
 }
 
-export class PeekAgentsMDShortCommand extends AliasCommand {
-  constructor() {
-    super("peek-agmd", "Short alias for peek-agentsmd", () => new PeekAgentsMDCommand());
-  }
-}
-
 export class GetAgentsMDCommand extends BaseCommand {
   readonly name = "get-agentsmd";
   readonly description = "Install AGENTS.md";
 
   async execute(ctx: CommandContext): Promise<void> {
+    if (ctx.args.includes("--wrap")) {
+      this.fail("--wrap is only supported for skill resources");
+    }
+
     const positional = ctx.args.filter((arg) => arg !== "--global");
     const [agentsmdID, versionArg] = positional;
     if (!agentsmdID) {
       this.fail("Missing agentsmd-id");
+    }
+    if (positional.length > 2) {
+      this.fail("Usage: skuare get --type agentsmd <agentsmd-id> [version] [--global]");
     }
 
     const isGlobal = ctx.args.includes("--global");
@@ -242,12 +230,6 @@ export class GetAgentsMDCommand extends BaseCommand {
   }
 }
 
-export class GetAgentsMDShortCommand extends AliasCommand {
-  constructor() {
-    super("get-agmd", "Short alias for get-agentsmd", () => new GetAgentsMDCommand());
-  }
-}
-
 export class DetailAgentsMDCommand extends BaseCommand {
   readonly name = "detail-agentsmd";
   readonly description = "Show local AGENTS.md";
@@ -278,12 +260,6 @@ export class DetailAgentsMDCommand extends BaseCommand {
   }
 }
 
-export class DetailAgentsMDShortCommand extends AliasCommand {
-  constructor() {
-    super("detail-agmd", "Short alias for detail-agentsmd", () => new DetailAgentsMDCommand());
-  }
-}
-
 export class DeleteAgentsMDCommand extends BaseCommand {
   readonly name = "delete-agentsmd";
   readonly description = "Delete AGENTS.md version";
@@ -302,11 +278,5 @@ export class DeleteAgentsMDCommand extends BaseCommand {
       silent: true,
     });
     console.log(`${Status.Success} Deleted ${agentsmdID}@${version}`);
-  }
-}
-
-export class DeleteAgentsMDShortCommand extends AliasCommand {
-  constructor() {
-    super("delete-agmd", "Short alias for delete-agentsmd", () => new DeleteAgentsMDCommand());
   }
 }

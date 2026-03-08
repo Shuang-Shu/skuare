@@ -12,6 +12,8 @@ import { resolveToolSkillsDir } from "../config/resolver";
 import { parseRegexOption, stripRegexOptions } from "../utils/command_args";
 import { resolveInstallTargetRoot, resolvePrimaryTool } from "../utils/install_paths";
 import { parseSkillFrontmatter } from "../utils/skill_manifest";
+import { DetailAgentsMDCommand, GetAgentsMDCommand, ListAgentsMDCommand, PeekAgentsMDCommand } from "./agentsmd";
+import { normalizeResourceContext } from "./resource_type";
 
 type RemoteFile = { path: string; content: string };
 type InstallResult = { skills: string[]; conflictFiles: string[] };
@@ -357,15 +359,22 @@ export class ListCommand extends BaseCommand {
   readonly description = "List skills (GET /api/v1/skills)";
 
   async execute(context: CommandContext): Promise<void> {
-    const q = this.parseOptionValue(context.args, "--q");
-    const regexPattern = parseRegexOption(context.args);
+    const resourceContext = normalizeResourceContext(context);
+    if (resourceContext.resourceType === "agentsmd") {
+      await new ListAgentsMDCommand().execute(resourceContext.context);
+      return;
+    }
+
+    const args = resourceContext.context.args;
+    const q = this.parseOptionValue(args, "--q");
+    const regexPattern = parseRegexOption(args);
     const regex = regexPattern ? this.compileRegex(regexPattern) : undefined;
     const path = q ? `/api/v1/skills?q=${encodeURIComponent(q)}` : "/api/v1/skills";
 
     const resp = await callApi({
       method: "GET",
       path,
-      server: context.server,
+      server: resourceContext.context.server,
       silent: true,
     });
 
@@ -373,8 +382,8 @@ export class ListCommand extends BaseCommand {
       ? (resp.data as { items?: JsonValue }).items
       : undefined;
     const items = Array.isArray(itemsRaw) ? itemsRaw : [];
-    const normalized = normalizeListItems(items);
-    const filtered = regex ? normalized.filter((item) => matchesSkill(regex, item)) : normalized;
+    const normalizedItems = normalizeListItems(items);
+    const filtered = regex ? normalizedItems.filter((item) => matchesSkill(regex, item)) : normalizedItems;
 
     console.log(JSON.stringify({ items: filtered }, null, 2));
   }
@@ -396,15 +405,22 @@ export class PeekCommand extends SkillCatalogCommand {
   readonly description = "Peek skill overview/detail";
 
   async execute(context: CommandContext): Promise<void> {
-    const regexPattern = parseRegexOption(context.args);
-    const positional = stripRegexOptions(context.args);
+    const normalized = normalizeResourceContext(context);
+    if (normalized.resourceType === "agentsmd") {
+      await new PeekAgentsMDCommand().execute(normalized.context);
+      return;
+    }
+
+    const skillContext = normalized.context;
+    const regexPattern = parseRegexOption(skillContext.args);
+    const positional = stripRegexOptions(skillContext.args);
     let [skillID, version] = positional;
 
     if (regexPattern) {
       if (positional.length > 1) {
         this.fail("Usage: skuare peek --rgx <pattern> [version]");
       }
-      skillID = await this.resolveSkillIDByRegex(context, regexPattern);
+      skillID = await this.resolveSkillIDByRegex(skillContext, regexPattern);
       version = positional[0];
     }
 
@@ -416,7 +432,7 @@ export class PeekCommand extends SkillCatalogCommand {
       const resp = await callApi({
         method: "GET",
         path: `/api/v1/skills/${encodeURIComponent(skillID)}/${encodeURIComponent(version)}`,
-        server: context.server,
+        server: skillContext.server,
         silent: true,
       });
       const row = (resp.data && typeof resp.data === "object" && !Array.isArray(resp.data))
@@ -464,7 +480,7 @@ export class PeekCommand extends SkillCatalogCommand {
     const resp = await callApi({
       method: "GET",
       path: `/api/v1/skills/${encodeURIComponent(skillID)}`,
-      server: context.server,
+      server: skillContext.server,
       silent: true,
     });
     const row = (resp.data && typeof resp.data === "object" && !Array.isArray(resp.data))
@@ -844,10 +860,17 @@ export class GetCommand extends DependencyAwareCommand {
   readonly description = "Install skill to local partial repository";
 
   async execute(context: CommandContext): Promise<void> {
-    const isGlobal = context.args.includes("--global");
-    const wrapMode = context.args.includes("--wrap");
-    const regexPattern = parseRegexOption(context.args);
-    const positional = stripRegexOptions(context.args).filter((arg) => arg !== "--global" && arg !== "--wrap");
+    const normalized = normalizeResourceContext(context);
+    if (normalized.resourceType === "agentsmd") {
+      await new GetAgentsMDCommand().execute(normalized.context);
+      return;
+    }
+
+    const skillContext = normalized.context;
+    const isGlobal = skillContext.args.includes("--global");
+    const wrapMode = skillContext.args.includes("--wrap");
+    const regexPattern = parseRegexOption(skillContext.args);
+    const positional = stripRegexOptions(skillContext.args).filter((arg) => arg !== "--global" && arg !== "--wrap");
 
     let skillID: string;
     let versionArg: string | undefined;
@@ -856,7 +879,7 @@ export class GetCommand extends DependencyAwareCommand {
       if (positional.length > 1) {
         this.fail("Usage: skuare get --rgx <pattern> [version] [--global] [--wrap]");
       }
-      skillID = await this.resolveSkillIDByRegex(context, regexPattern);
+      skillID = await this.resolveSkillIDByRegex(skillContext, regexPattern);
       versionArg = positional[0];
     } else {
       const [input, version] = positional;
@@ -868,15 +891,15 @@ export class GetCommand extends DependencyAwareCommand {
       }
 
       const parsed = parseGetInput(input);
-      const resolved = await this.resolveSkillByPattern(context, parsed);
+      const resolved = await this.resolveSkillByPattern(skillContext, parsed);
       skillID = resolved.skillID;
       versionArg = version || resolved.version;
     }
 
-    const tool = this.resolvePrimaryTool(context.llmTools);
-    const targetRoot = this.resolveInstallTargetRoot(context.cwd, tool, isGlobal);
-    const rootNode = await this.fetchRemoteSkillNode(context, skillID, versionArg);
-    const graph = await this.buildDependencyGraph(context, rootNode);
+    const tool = this.resolvePrimaryTool(skillContext.llmTools);
+    const targetRoot = this.resolveInstallTargetRoot(skillContext.cwd, tool, isGlobal);
+    const rootNode = await this.fetchRemoteSkillNode(skillContext, skillID, versionArg);
+    const graph = await this.buildDependencyGraph(skillContext, rootNode);
     const sharedLocalDir = false;
     const nodesToInstall = wrapMode ? [graph.root] : this.collectSubtree(graph, graph.root.skillID);
     const result = await this.installGraphNodes(targetRoot, nodesToInstall, { sharedLocalDir });
@@ -1058,13 +1081,20 @@ export class DetailCommand extends BaseCommand {
   readonly description = "Show local skill file contents";
 
   async execute(context: CommandContext): Promise<void> {
-    const [skillRef, ...relativePaths] = context.args;
+    const normalized = normalizeResourceContext(context);
+    if (normalized.resourceType === "agentsmd") {
+      await new DetailAgentsMDCommand().execute(normalized.context);
+      return;
+    }
+
+    const skillContext = normalized.context;
+    const [skillRef, ...relativePaths] = skillContext.args;
     if (!skillRef) {
       this.fail("Usage: skuare detail <skillName|skillID> [relativePath...]");
     }
     let skillDir: string;
     try {
-      ({ skillDir } = await resolveDetailSkillDir(context, skillRef));
+      ({ skillDir } = await resolveDetailSkillDir(skillContext, skillRef));
     } catch (err) {
       this.fail(err instanceof Error ? err.message : `Invalid detail skill: ${skillRef}`);
     }
