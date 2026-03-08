@@ -39,7 +39,7 @@
   - `skr list` supports `--regex <pattern>` for client-side regex filtering (matches `id/skill_id/name/author/description`).
   - `skr peek` output aligns with `id/name/author` display conventions.
   - `skr peek` supports `--regex <pattern>` for unique match then query details.
-  - `skr get --wrap` installs only the root skill and persists `.skuare-wrap.json`; `skr deps` inspects or installs wrapped dependency subtrees on demand.
+  - `skr get --wrap` installs only the root skill and persists `.skuare-wrap.json`; `skr deps` inspects or installs wrapped dependency subtrees on demand, and now reuses `get`-style skill selectors (`<author>/<name>@<version> | <author>/<name> | <name>`) for dependency targets.
   - AGENTS.md resources now reuse the base command entry via `--type agentsmd|agmd`; removed suffix commands such as `list-agmd` and `publish-agentsmd` return migration hints instead of remaining registered commands.
   - When `SKILL.md metadata.author` exists, the server returns `author` directly in `publish/list/peek` related responses.
   - When `author` is missing, defaults to `undefined`.
@@ -47,7 +47,7 @@
   - `skr format [skillDir...]` interactively supports `All/Each`, and uniformly writes `metadata.version`/`metadata.author`; `skr format --all` automatically scans current directory sub-skills.
   - `make format` only passes through CLI `format` command, no longer incorrectly requires additional `VERSION` parameter.
 - Maintainer Notes:
-  - CLI shared parsing logic now lives in dedicated helper modules (`utils/command_args`, `utils/skill_manifest`, `utils/install_paths`, `utils/skill_workspace`) plus `commands/resource_type`, so `query.ts` and `write.ts` can dispatch Skill vs AGENTS.md flows without re-registering parallel command trees.
+  - CLI shared parsing logic now lives in dedicated helper modules (`utils/command_args`, `utils/skill_manifest`, `utils/install_paths`, `utils/skill_workspace`) plus `commands/resource_type`; inside `query.ts`, `get` and `deps` also share one skill selector flow instead of maintaining separate target-matching branches.
   - Backend handler/store layers use lightweight helper methods for repeated JSON response and versioned-resource filesystem flows; the project intentionally avoids introducing a heavy generic resource framework.
 
 ## Gap Analysis
