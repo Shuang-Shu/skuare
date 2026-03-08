@@ -1,31 +1,65 @@
 #!/usr/bin/env bash
+# 指定脚本的解释器为 bash，并从环境变量中查找 bash 的路径
 set -euo pipefail
+# 设置脚本选项：
+# -e: 遇到错误时立即退出
+# -u: 使用未定义的变量时视为错误
+# -o pipefail: 管道中的任意命令失败都会导致整个管道失败
 
 SCRIPT_PATH="${BASH_SOURCE[0]}"
+# 获取当前脚本的路径
 if command -v readlink >/dev/null 2>&1; then
+  # 检查系统是否支持 readlink 命令
   RESOLVED="$(readlink -f "${SCRIPT_PATH}" 2>/dev/null || true)"
+  # 如果支持，解析脚本的绝对路径
   if [ -n "${RESOLVED}" ]; then
     SCRIPT_PATH="${RESOLVED}"
   fi
 fi
 ROOT_DIR="$(cd "$(dirname "${SCRIPT_PATH}")" && pwd)"
+# 获取脚本所在目录的绝对路径
 CLI_DIR="${ROOT_DIR}/skuare-cli"
+# 定义 CLI 目录路径
 DIST_ENTRY="${CLI_DIR}/dist/index.js"
+# 定义编译后入口文件路径
 BUILD_STAMP="${CLI_DIR}/dist/.build-stamp"
+# 定义构建时间戳文件路径
 BUILD_LOG=""
+# 初始化构建日志变量
 USED_FALLBACK_DIST=0
+# 标记是否使用了回退的 dist
+
+dist_help_supports_publish() {
+  local help_output
+
+  if [ ! -f "${DIST_ENTRY}" ]; then
+    return 1
+  fi
+
+  help_output="$(node "${DIST_ENTRY}" help 2>/dev/null || true)"
+  if [ -n "${help_output}" ] && printf '%s\n' "${help_output}" | grep -Eq '^[[:space:]]+publish([[:space:]]|$)'; then
+    return 0
+  fi
+
+  return 1
+}
 
 dist_supports_publish() {
+  # 检查 dist 目录是否支持 publish 命令
   if [ ! -d "${CLI_DIR}/dist" ]; then
     return 1
   fi
-  if rg -q "publish --file|command 'create' is deprecated, use 'publish' instead" "${CLI_DIR}/dist" 2>/dev/null; then
+  if dist_help_supports_publish; then
+    return 0
+  fi
+  if command -v rg >/dev/null 2>&1 && rg -q "publish --file|command 'create' is deprecated, use 'publish' instead" "${CLI_DIR}/dist" 2>/dev/null; then
     return 0
   fi
   return 1
 }
 
 rewrite_legacy_command() {
+  # 重写旧版命令以兼容新版本
   if [ "$#" -gt 0 ] && [ "$1" = "publish" ] && ! dist_supports_publish; then
     if [ "${USED_FALLBACK_DIST}" -eq 1 ]; then
       echo "[WARN] Legacy dist detected during fallback; mapping 'publish' to 'create' for compatibility." >&2
@@ -39,18 +73,23 @@ rewrite_legacy_command() {
 }
 
 cleanup() {
+  # 清理构建日志文件
   if [ -n "${BUILD_LOG}" ] && [ -f "${BUILD_LOG}" ]; then
     rm -f "${BUILD_LOG}"
   fi
 }
 
 trap cleanup EXIT
+# 在脚本退出时自动调用 cleanup 函数
 
 needs_build() {
+  # 检查是否需要重新构建
   [ -f "${DIST_ENTRY}" ] || return 0
+  # 如果入口文件不存在，则需要构建
   [ -f "${BUILD_STAMP}" ] || return 0
+  # 如果构建时间戳文件不存在，则需要构建
 
-  # Source/config changes should invalidate dist.
+  # 检查源文件或配置文件是否有更新
   for p in "${CLI_DIR}/src" "${CLI_DIR}/package.json" "${CLI_DIR}/package-lock.json" "${CLI_DIR}/tsconfig.json"; do
     [ -e "${p}" ] || continue
     if find "${p}" -type f -newer "${BUILD_STAMP}" -print -quit | grep -q .; then
@@ -62,10 +101,14 @@ needs_build() {
 }
 
 if needs_build; then
+  # 如果需要构建
   BUILD_LOG="$(mktemp)"
+  # 创建临时文件记录构建日志
   if npm --prefix "${CLI_DIR}" run build >"${BUILD_LOG}" 2>&1; then
+    # 如果构建成功，更新时间戳文件
     touch "${BUILD_STAMP}"
   else
+    # 如果构建失败
     if [ -f "${DIST_ENTRY}" ] && grep -Eiq "(tsc: not found|typescript[^[:alnum:]]|command not found)" "${BUILD_LOG}"; then
       echo "[WARN] CLI rebuild skipped because local TypeScript tooling is unavailable; using existing dist/index.js." >&2
       USED_FALLBACK_DIST=1
@@ -77,6 +120,9 @@ if needs_build; then
 fi
 
 LEGACY_ARGS=("$@")
+# 保存传递给脚本的参数
 rewrite_legacy_command "$@"
+# 重写旧版命令
 
 node "${DIST_ENTRY}" "${LEGACY_ARGS[@]}"
+# 使用 Node.js 执行入口文件，并传递参数
