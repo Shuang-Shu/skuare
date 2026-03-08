@@ -8,8 +8,10 @@ import { callApi } from "../http/client";
 import type { JsonValue } from "./types";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { homedir } from "node:os";
 import { resolveToolSkillsDir } from "../config/resolver";
+import { parseRegexOption, stripRegexOptions } from "../utils/command_args";
+import { resolveInstallTargetRoot, resolvePrimaryTool } from "../utils/install_paths";
+import { parseSkillFrontmatter } from "../utils/skill_manifest";
 
 type RemoteFile = { path: string; content: string };
 type InstallResult = { skills: string[]; conflictFiles: string[] };
@@ -93,72 +95,6 @@ function parseSkillIDParts(skillID: string): { authorFromID: string; nameFromID:
   };
 }
 
-function unquoteYaml(v: string): string {
-  if ((v.startsWith("\"") && v.endsWith("\"")) || (v.startsWith("'") && v.endsWith("'"))) {
-    return v.slice(1, -1).trim();
-  }
-  return v.trim();
-}
-
-function parseSkillFrontmatter(content: string): {
-  name: string;
-  description: string;
-  metadataVersion: string;
-  metadataAuthor: string;
-} {
-  const lines = content.split(/\r?\n/);
-  if (lines[0]?.trim() !== "---") {
-    return { name: "", description: "", metadataVersion: "", metadataAuthor: "" };
-  }
-  let fmEnd = -1;
-  for (let i = 1; i < lines.length; i += 1) {
-    if (lines[i].trim() === "---") {
-      fmEnd = i;
-      break;
-    }
-  }
-  if (fmEnd < 0) {
-    return { name: "", description: "", metadataVersion: "", metadataAuthor: "" };
-  }
-
-  let name = "";
-  let description = "";
-  let metadataVersion = "";
-  let metadataAuthor = "";
-  let metadataIndent = -1;
-  for (const rawLine of lines.slice(1, fmEnd)) {
-    const line = rawLine.trim();
-    const indent = rawLine.length - rawLine.trimStart().length;
-    if (!line) {
-      continue;
-    }
-    if (line === "metadata:") {
-      metadataIndent = indent;
-      continue;
-    }
-    if (metadataIndent >= 0) {
-      if (indent <= metadataIndent) {
-        metadataIndent = -1;
-      } else if (line.startsWith("version:")) {
-        metadataVersion = unquoteYaml(line.slice("version:".length).trim());
-        continue;
-      } else if (line.startsWith("author:")) {
-        metadataAuthor = unquoteYaml(line.slice("author:".length).trim());
-        continue;
-      }
-    }
-    if (line.startsWith("name:")) {
-      name = unquoteYaml(line.slice("name:".length).trim());
-      continue;
-    }
-    if (line.startsWith("description:")) {
-      description = unquoteYaml(line.slice("description:".length).trim());
-      continue;
-    }
-  }
-  return { name, description, metadataVersion, metadataAuthor };
-}
-
 function parseMetadataAuthorFromSkillFiles(filesValue: JsonValue | undefined): string {
   if (!Array.isArray(filesValue)) {
     return "";
@@ -190,39 +126,6 @@ function buildDisplayIdentity(input: {
   const version = (input.version || "").trim();
   const id = version ? `${author}/${name}@${version}` : `${author}/${name}`;
   return { id, name, author };
-}
-
-function stripOptionsWithValues(args: string[], options: string[]): string[] {
-  const set = new Set(options);
-  const out: string[] = [];
-  for (let i = 0; i < args.length; i += 1) {
-    if (set.has(args[i])) {
-      i += 1;
-      continue;
-    }
-    out.push(args[i]);
-  }
-  return out;
-}
-
-function parseOptionValue(args: string[], option: string): string | undefined {
-  const idx = args.indexOf(option);
-  if (idx < 0) {
-    return undefined;
-  }
-  const value = args[idx + 1];
-  if (!value) {
-    throw new Error(`Missing value for ${option}`);
-  }
-  return value;
-}
-
-function parseRegexOption(args: string[]): string | undefined {
-  return parseOptionValue(args, "--rgx") || parseOptionValue(args, "--regex");
-}
-
-function stripRegexOptions(args: string[]): string[] {
-  return stripOptionsWithValues(args, ["--rgx", "--regex"]);
 }
 
 function normalizeListItems(items: JsonValue[]): NormalizedSkillItem[] {
@@ -402,6 +305,50 @@ function parseGetInput(input: string): ParsedGetInput {
   return { type: "name-only", name: trimmed };
 }
 
+abstract class SkillCatalogCommand extends BaseCommand {
+  protected compileRegex(pattern: string): RegExp {
+    try {
+      return new RegExp(pattern);
+    } catch {
+      this.fail(`Invalid regex pattern: ${pattern}`);
+    }
+  }
+
+  protected async resolveSkillIDByRegex(context: CommandContext, pattern: string): Promise<string> {
+    const matched = (await this.loadCatalogItems(context)).filter((item) => matchesSkill(this.compileRegex(pattern), item));
+    if (matched.length === 0) {
+      this.fail(`No skill matched regex: ${pattern}`);
+    }
+    if (matched.length > 1) {
+      const choices = matched
+        .slice(0, 10)
+        .map((item) => String(item.id || item.skill_id || "unknown"))
+        .join(", ");
+      const suffix = matched.length > 10 ? ", ..." : "";
+      this.fail(`Regex matched multiple skills (${matched.length}): ${choices}${suffix}`);
+    }
+    const skillID = String(matched[0].skill_id || "").trim();
+    if (!skillID) {
+      this.fail(`Matched skill has empty skill_id for regex: ${pattern}`);
+    }
+    return skillID;
+  }
+
+  protected async loadCatalogItems(context: CommandContext): Promise<NormalizedSkillItem[]> {
+    const resp = await callApi({
+      method: "GET",
+      path: "/api/v1/skills",
+      server: context.server,
+      silent: true,
+    });
+    const itemsRaw = (resp.data && typeof resp.data === "object" && !Array.isArray(resp.data))
+      ? (resp.data as { items?: JsonValue }).items
+      : undefined;
+    const items = Array.isArray(itemsRaw) ? itemsRaw : [];
+    return normalizeListItems(items);
+  }
+}
+
 /**
  * 列出技能命令
  */
@@ -444,7 +391,7 @@ export class ListCommand extends BaseCommand {
 /**
  * 获取技能详情命令
  */
-export class PeekCommand extends BaseCommand {
+export class PeekCommand extends SkillCatalogCommand {
   readonly name = "peek";
   readonly description = "Peek skill overview/detail";
 
@@ -543,60 +490,15 @@ export class PeekCommand extends BaseCommand {
       ids,
     }, null, 2));
   }
-
-  private compileRegex(pattern: string): RegExp {
-    try {
-      return new RegExp(pattern);
-    } catch {
-      this.fail(`Invalid regex pattern: ${pattern}`);
-    }
-  }
-
-  private async resolveSkillIDByRegex(context: CommandContext, pattern: string): Promise<string> {
-    const regex = this.compileRegex(pattern);
-    const resp = await callApi({
-      method: "GET",
-      path: "/api/v1/skills",
-      server: context.server,
-      silent: true,
-    });
-    const itemsRaw = (resp.data && typeof resp.data === "object" && !Array.isArray(resp.data))
-      ? (resp.data as { items?: JsonValue }).items
-      : undefined;
-    const items = Array.isArray(itemsRaw) ? itemsRaw : [];
-    const matched = normalizeListItems(items).filter((item) => matchesSkill(regex, item));
-    if (matched.length === 0) {
-      this.fail(`No skill matched regex: ${pattern}`);
-    }
-    if (matched.length > 1) {
-      const choices = matched
-        .slice(0, 10)
-        .map((item) => String(item.id || item.skill_id || "unknown"))
-        .join(", ");
-      const suffix = matched.length > 10 ? ", ..." : "";
-      this.fail(`Regex matched multiple skills (${matched.length}): ${choices}${suffix}`);
-    }
-    const skillID = String(matched[0].skill_id || "").trim();
-    if (!skillID) {
-      this.fail(`Matched skill has empty skill_id for regex: ${pattern}`);
-    }
-    return skillID;
-  }
 }
 
-abstract class DependencyAwareCommand extends BaseCommand {
+abstract class DependencyAwareCommand extends SkillCatalogCommand {
   protected resolvePrimaryTool(llmTools: string[]): string {
-    const first = (llmTools || []).map((v) => v.trim()).find(Boolean);
-    if (!first) {
-      this.fail("No llmTools configured. Run `skr init` and select at least one tool");
-    }
-    return first;
+    return resolvePrimaryTool(llmTools);
   }
 
   protected resolveInstallTargetRoot(cwd: string, tool: string, isGlobal: boolean): string {
-    return isGlobal
-      ? join(homedir(), `.${tool}`, "skills")
-      : join(cwd, `.${tool}`, "skills");
+    return resolveInstallTargetRoot(cwd, tool, isGlobal);
   }
 
   protected onDependencyCycle(context: DependencyCycleContext): never {
@@ -1009,46 +911,6 @@ export class GetCommand extends DependencyAwareCommand {
     const filePath = join(targetRoot, skillID, WRAP_METADATA_FILE);
     await writeFile(filePath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
   }
-
-  private compileRegex(pattern: string): RegExp {
-    try {
-      return new RegExp(pattern);
-    } catch {
-      this.fail(`Invalid regex pattern: ${pattern}`);
-    }
-  }
-
-  private async resolveSkillIDByRegex(context: CommandContext, pattern: string): Promise<string> {
-    const regex = this.compileRegex(pattern);
-    const resp = await callApi({
-      method: "GET",
-      path: "/api/v1/skills",
-      server: context.server,
-      silent: true,
-    });
-    const itemsRaw = (resp.data && typeof resp.data === "object" && !Array.isArray(resp.data))
-      ? (resp.data as { items?: JsonValue }).items
-      : undefined;
-    const items = Array.isArray(itemsRaw) ? itemsRaw : [];
-    const matched = normalizeListItems(items).filter((item) => matchesSkill(regex, item));
-    if (matched.length === 0) {
-      this.fail(`No skill matched regex: ${pattern}`);
-    }
-    if (matched.length > 1) {
-      const choices = matched
-        .slice(0, 10)
-        .map((item) => String(item.id || item.skill_id || "unknown"))
-        .join(", ");
-      const suffix = matched.length > 10 ? ", ..." : "";
-      this.fail(`Regex matched multiple skills (${matched.length}): ${choices}${suffix}`);
-    }
-    const resolvedSkillID = String(matched[0].skill_id || "").trim();
-    if (!resolvedSkillID) {
-      this.fail(`Matched skill has empty skill_id for regex: ${pattern}`);
-    }
-    return resolvedSkillID;
-  }
-
   private async resolveSkillByPattern(
     context: CommandContext,
     parsed: ParsedGetInput

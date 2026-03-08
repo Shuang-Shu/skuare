@@ -4,7 +4,7 @@
 
 > Document Type: TECH  
 > Status: Completed  
-> Last Updated: 2026-02-28  
+> Last Updated: 2026-03-08  
 > Scope: project-wide
 
 ## Objectives and Scope
@@ -16,15 +16,15 @@
 ## Current Status and Factual Basis
 - Modules:
   - `skuare-svc`: Filesystem storage model `<specDir>/<skillID>/<version>`.
-  - `skuare-cli`: Command-line frontend, supports `init/health/list/peek/get/publish/create/build/format/delete/validate`.
+  - `skuare-cli`: Command-line frontend, supports `init/health/list/peek/get/deps/publish/create/build/format/delete/validate` and `agentsmd` command groups.
 - Key Configuration:
   - Backend default `spec-dir`: `$HOME/.skuare` (can be overridden by `SKUARE_SPEC_DIR` or `--spec-dir`).
   - `scripts/dev-up.sh` and `make start-be` default `SPEC_DIR` unified to `$HOME/.skuare`.
   - Startup parameters: `--addr`, `--spec-dir`, `--authorized-keys-file`, `--local`, `--auth-max-skew-sec`.
   - CLI config priority: `CLI args > workspace > global > defaults`.
   - CLI `remote.mode`: `local` / `remote`, only describes target server mode, not responsible for declaring server storage directory.
-  - CLI local partial repository root: global=`$HOME/.skuare`, workspace=`<cwd>/.skuare`; `get` defaults to `--scope workspace`, can override root directory via `--repo-dir`.
-  - CLI final installation directory: `<repoRoot>/repos/<scope>/<tool>/<skillID>/...`; no longer infers server storage directory from client config.
+  - CLI local installation root: default skill install path is `<cwd>/.{tool}/skills/`; `--global` switches to `~/.{tool}/skills/`.
+  - `agentsmd` install target is `<cwd>/.{tool}/AGENTS.md`; `--global` switches to `~/.{tool}/AGENTS.md`.
 - Authentication:
   - Write endpoints require Ed25519 signature headers in remote mode.
   - When `local=true`, backend directly allows write requests.
@@ -39,11 +39,16 @@
   - `skr list` supports `--regex <pattern>` for client-side regex filtering (matches `id/skill_id/name/author/description`).
   - `skr peek` output aligns with `id/name/author` display conventions.
   - `skr peek` supports `--regex <pattern>` for unique match then query details.
+  - `skr get --wrap` installs only the root skill and persists `.skuare-wrap.json`; `skr deps` inspects or installs wrapped dependency subtrees on demand.
+  - `agentsmd` short aliases such as `list-agmd` and `get-agmd` are implemented as explicit proxy commands to keep compatibility while avoiding duplicated business logic.
   - When `SKILL.md metadata.author` exists, the server returns `author` directly in `publish/list/peek` related responses.
   - When `author` is missing, defaults to `undefined`.
   - `skr publish` output does not include server local paths.
   - `skr format [skillDir...]` interactively supports `All/Each`, and uniformly writes `metadata.version`/`metadata.author`; `skr format --all` automatically scans current directory sub-skills.
   - `make format` only passes through CLI `format` command, no longer incorrectly requires additional `VERSION` parameter.
+- Maintainer Notes:
+  - CLI shared parsing logic now lives in dedicated helper modules (`utils/command_args`, `utils/skill_manifest`, `utils/install_paths`, `utils/skill_workspace`) instead of being duplicated across `query.ts`, `write.ts`, and `agentsmd.ts`.
+  - Backend handler/store layers use lightweight helper methods for repeated JSON response and versioned-resource filesystem flows; the project intentionally avoids introducing a heavy generic resource framework.
 
 ## Gap Analysis
 - Documentation level:

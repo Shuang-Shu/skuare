@@ -13,10 +13,10 @@ import (
 )
 
 type Handler struct {
-	svc             *service.SkillService
-	agentsmdSvc     *service.AgentsMDService
-	authorizer      authz.WriteAuthorizer
-	localMode       bool
+	svc         *service.SkillService
+	agentsmdSvc *service.AgentsMDService
+	authorizer  authz.WriteAuthorizer
+	localMode   bool
 }
 
 type healthResponse struct {
@@ -54,21 +54,16 @@ func (h *Handler) healthz(_ context.Context, c *app.RequestContext) {
 }
 
 func (h *Handler) createSkill(_ context.Context, c *app.RequestContext) {
-	if err := h.checkWritePermission(c); err != nil {
-		writeError(c, err)
+	if !h.requireWritePermission(c) {
 		return
 	}
 	var req model.CreateSkillVersionRequest
-	if err := c.BindAndValidate(&req); err != nil {
-		writeError(c, err)
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
-	entry, err := h.svc.Create(req)
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	c.JSON(201, entry)
+	writeJSONCall(c, 201, func() (model.SkillEntry, error) {
+		return h.svc.Create(req)
+	})
 }
 
 func (h *Handler) listSkills(_ context.Context, c *app.RequestContext) {
@@ -83,28 +78,21 @@ func (h *Handler) listSkills(_ context.Context, c *app.RequestContext) {
 
 func (h *Handler) getSkill(_ context.Context, c *app.RequestContext) {
 	skillID := c.Param("skillID")
-	overview, err := h.svc.GetSkill(skillID)
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	c.JSON(200, overview)
+	writeJSONCall(c, 200, func() (model.SkillOverview, error) {
+		return h.svc.GetSkill(skillID)
+	})
 }
 
 func (h *Handler) getVersion(_ context.Context, c *app.RequestContext) {
 	skillID := c.Param("skillID")
 	version := c.Param("version")
-	detail, err := h.svc.GetVersion(skillID, version)
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	c.JSON(200, detail)
+	writeJSONCall(c, 200, func() (model.SkillDetail, error) {
+		return h.svc.GetVersion(skillID, version)
+	})
 }
 
 func (h *Handler) deleteVersion(_ context.Context, c *app.RequestContext) {
-	if err := h.checkWritePermission(c); err != nil {
-		writeError(c, err)
+	if !h.requireWritePermission(c) {
 		return
 	}
 	skillID := c.Param("skillID")
@@ -113,31 +101,27 @@ func (h *Handler) deleteVersion(_ context.Context, c *app.RequestContext) {
 		writeError(c, err)
 		return
 	}
-	c.JSON(200, map[string]any{"deleted": true})
+	writeDeleted(c)
 }
 
 func (h *Handler) validateVersion(_ context.Context, c *app.RequestContext) {
 	skillID := c.Param("skillID")
 	version := c.Param("version")
-	entry, err := h.svc.Validate(skillID, version)
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	c.JSON(200, entry)
+	writeJSONCall(c, 200, func() (model.SkillEntry, error) {
+		return h.svc.Validate(skillID, version)
+	})
 }
 
 func (h *Handler) reindex(_ context.Context, c *app.RequestContext) {
-	if err := h.checkWritePermission(c); err != nil {
-		writeError(c, err)
+	if !h.requireWritePermission(c) {
 		return
 	}
-	n, err := h.svc.Reindex()
+	count, err := h.svc.Reindex()
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	c.JSON(200, map[string]any{"count": n})
+	c.JSON(200, map[string]any{"count": count})
 }
 
 func (h *Handler) checkWritePermission(c *app.RequestContext) error {
@@ -165,21 +149,16 @@ func (h *Handler) checkWritePermission(c *app.RequestContext) error {
 // AgentsMD handlers
 
 func (h *Handler) createAgentsMD(_ context.Context, c *app.RequestContext) {
-	if err := h.checkWritePermission(c); err != nil {
-		writeError(c, err)
+	if !h.requireWritePermission(c) {
 		return
 	}
 	var req model.CreateAgentsMDRequest
-	if err := c.BindAndValidate(&req); err != nil {
-		writeError(c, err)
+	if !bindAndValidateJSON(c, &req) {
 		return
 	}
-	entry, err := h.agentsmdSvc.Create(req)
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	c.JSON(201, entry)
+	writeJSONCall(c, 201, func() (model.AgentsMDEntry, error) {
+		return h.agentsmdSvc.Create(req)
+	})
 }
 
 func (h *Handler) listAgentsMD(_ context.Context, c *app.RequestContext) {
@@ -194,28 +173,21 @@ func (h *Handler) listAgentsMD(_ context.Context, c *app.RequestContext) {
 
 func (h *Handler) getAgentsMD(_ context.Context, c *app.RequestContext) {
 	agentsmdID := c.Param("agentsmdID")
-	overview, err := h.agentsmdSvc.GetAgentsMD(agentsmdID)
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	c.JSON(200, overview)
+	writeJSONCall(c, 200, func() (model.AgentsMDOverview, error) {
+		return h.agentsmdSvc.GetAgentsMD(agentsmdID)
+	})
 }
 
 func (h *Handler) getAgentsMDVersion(_ context.Context, c *app.RequestContext) {
 	agentsmdID := c.Param("agentsmdID")
 	version := c.Param("version")
-	detail, err := h.agentsmdSvc.GetVersion(agentsmdID, version)
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	c.JSON(200, detail)
+	writeJSONCall(c, 200, func() (model.AgentsMDDetail, error) {
+		return h.agentsmdSvc.GetVersion(agentsmdID, version)
+	})
 }
 
 func (h *Handler) deleteAgentsMD(_ context.Context, c *app.RequestContext) {
-	if err := h.checkWritePermission(c); err != nil {
-		writeError(c, err)
+	if !h.requireWritePermission(c) {
 		return
 	}
 	agentsmdID := c.Param("agentsmdID")
@@ -224,5 +196,34 @@ func (h *Handler) deleteAgentsMD(_ context.Context, c *app.RequestContext) {
 		writeError(c, err)
 		return
 	}
+	writeDeleted(c)
+}
+
+func (h *Handler) requireWritePermission(c *app.RequestContext) bool {
+	if err := h.checkWritePermission(c); err != nil {
+		writeError(c, err)
+		return false
+	}
+	return true
+}
+
+func bindAndValidateJSON[T any](c *app.RequestContext, target *T) bool {
+	if err := c.BindAndValidate(target); err != nil {
+		writeError(c, err)
+		return false
+	}
+	return true
+}
+
+func writeJSONCall[T any](c *app.RequestContext, status int, call func() (T, error)) {
+	value, err := call()
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.JSON(status, value)
+}
+
+func writeDeleted(c *app.RequestContext) {
 	c.JSON(200, map[string]any{"deleted": true})
 }

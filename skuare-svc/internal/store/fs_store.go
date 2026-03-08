@@ -238,28 +238,10 @@ func (s *FSStore) GetVersion(skillID string, version string) (model.SkillDetail,
 	}
 
 	versionDir := s.versionDir(skillID, version)
-
-	files := make([]model.FileSpec, 0)
-	_ = s.fs.WalkDir(versionDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		rel, relErr := filepath.Rel(versionDir, path)
-		if relErr == nil {
-			b, readErr := s.fs.ReadFile(path)
-			if readErr != nil {
-				return nil
-			}
-			files = append(files, model.FileSpec{
-				Path:    filepath.ToSlash(rel),
-				Content: string(b),
-			})
-		}
-		return nil
-	})
-	sort.Slice(files, func(i, j int) bool {
-		return files[i].Path < files[j].Path
-	})
+	files, err := s.listFiles(versionDir)
+	if err != nil {
+		return model.SkillDetail{}, err
+	}
 
 	return model.SkillDetail{
 		SkillEntry: entry,
@@ -282,10 +264,7 @@ func (s *FSStore) Delete(skillID string, version string) error {
 	defer unlock()
 
 	versionDir := s.versionDir(skillID, version)
-	if _, err := s.fs.Stat(versionDir); errors.Is(err, os.ErrNotExist) {
-		return ErrNotFound
-	}
-	if err := s.fs.RemoveAll(versionDir); err != nil {
+	if err := s.removeVersionDir(versionDir); err != nil {
 		return err
 	}
 
@@ -293,11 +272,7 @@ func (s *FSStore) Delete(skillID string, version string) error {
 		return err
 	}
 
-	parent := filepath.Dir(versionDir)
-	empty, err := s.isDirEmpty(parent)
-	if err == nil && empty {
-		_ = s.fs.Remove(parent)
-	}
+	s.cleanupParentDir(versionDir)
 	return nil
 }
 
@@ -621,12 +596,12 @@ func (s *FSStore) GetAgentsMDVersion(agentsmdID string, version string) (model.A
 	}
 
 	versionDir := filepath.Join(s.agentsmdDir(), agentsmdID, version)
-	if _, err := s.fs.Stat(versionDir); errors.Is(err, os.ErrNotExist) {
-		return model.AgentsMDDetail{}, ErrNotFound
+	if err := s.ensureVersionDir(versionDir); err != nil {
+		return model.AgentsMDDetail{}, err
 	}
 
 	agentsmdPath := filepath.Join(versionDir, "AGENTS.md")
-	content, err := s.fs.ReadFile(agentsmdPath)
+	content, err := s.readTextFile(agentsmdPath)
 	if err != nil {
 		return model.AgentsMDDetail{}, err
 	}
@@ -635,7 +610,7 @@ func (s *FSStore) GetAgentsMDVersion(agentsmdID string, version string) (model.A
 		AgentsMDID: agentsmdID,
 		Version:    version,
 		ID:         fmt.Sprintf("%s@%s", agentsmdID, version),
-		Content:    string(content),
+		Content:    content,
 	}, nil
 }
 
@@ -649,19 +624,72 @@ func (s *FSStore) DeleteAgentsMD(agentsmdID string, version string) error {
 	}
 
 	versionDir := filepath.Join(s.agentsmdDir(), agentsmdID, version)
-	if _, err := s.fs.Stat(versionDir); errors.Is(err, os.ErrNotExist) {
-		return ErrNotFound
-	}
-
-	if err := s.fs.RemoveAll(versionDir); err != nil {
+	if err := s.removeVersionDir(versionDir); err != nil {
 		return err
 	}
 
-	// Clean up empty parent directory
-	agentsmdIDDir := filepath.Join(s.agentsmdDir(), agentsmdID)
-	if empty, _ := s.isDirEmpty(agentsmdIDDir); empty {
-		_ = s.fs.Remove(agentsmdIDDir)
-	}
-
+	s.cleanupParentDir(versionDir)
 	return nil
+}
+
+func (s *FSStore) ensureVersionDir(versionDir string) error {
+	if _, err := s.fs.Stat(versionDir); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return ErrNotFound
+		}
+		return err
+	}
+	return nil
+}
+
+func (s *FSStore) removeVersionDir(versionDir string) error {
+	if err := s.ensureVersionDir(versionDir); err != nil {
+		return err
+	}
+	return s.fs.RemoveAll(versionDir)
+}
+
+func (s *FSStore) cleanupParentDir(versionDir string) {
+	parent := filepath.Dir(versionDir)
+	empty, err := s.isDirEmpty(parent)
+	if err == nil && empty {
+		_ = s.fs.Remove(parent)
+	}
+}
+
+func (s *FSStore) listFiles(versionDir string) ([]model.FileSpec, error) {
+	if err := s.ensureVersionDir(versionDir); err != nil {
+		return nil, err
+	}
+	files := make([]model.FileSpec, 0)
+	_ = s.fs.WalkDir(versionDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		rel, relErr := filepath.Rel(versionDir, path)
+		if relErr != nil {
+			return nil
+		}
+		content, readErr := s.readTextFile(path)
+		if readErr != nil {
+			return nil
+		}
+		files = append(files, model.FileSpec{
+			Path:    filepath.ToSlash(rel),
+			Content: content,
+		})
+		return nil
+	})
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].Path < files[j].Path
+	})
+	return files, nil
+}
+
+func (s *FSStore) readTextFile(path string) (string, error) {
+	b, err := s.fs.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
