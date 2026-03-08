@@ -5,6 +5,7 @@
 import type { CommandContext, JsonValue } from "./types";
 import { BaseCommand } from "./base";
 import { callApi } from "../http/client";
+import { isDomainError } from "../domain/errors";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, posix, relative, resolve } from "node:path";
 import * as readlinePromises from "node:readline/promises";
@@ -29,14 +30,16 @@ export class PublishCommand extends BaseCommand {
   readonly description: string = "Publish skill version";
 
   async execute(context: CommandContext): Promise<void> {
+    const forceUpload = this.hasForceFlag(context.args);
     const sources = await this.resolveCreateSources(context.args, context.cwd);
     for (const source of sources) {
       if (source.kind !== "json") {
-        await this.uploadDependencies(source, context);
+        await this.uploadDependencies(source, context, forceUpload);
       }
-      const body = source.kind === "json"
+      const rawBody = source.kind === "json"
         ? (await this.readJsonFile(source.path) as JsonValue)
         : (await this.buildRequestFromSkillSource(context.args, source) as JsonValue);
+      const body = this.applyForceFlag(rawBody, forceUpload);
 
       try {
         const resp = await callApi({
@@ -49,24 +52,31 @@ export class PublishCommand extends BaseCommand {
         });
         this.printCreateResult(resp.data);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!this.isAlreadyExistsError(msg)) {
+        if (!this.isAlreadyExistsError(err)) {
           throw err;
         }
         const info = this.extractSkillVersion(body);
+        if (forceUpload) {
+          this.fail(`Force publish failed because the server still reported an existing version: ${info.skillID}@${info.version}`);
+        }
         console.log(`${this.yellow("[WARN]")} skill version already exists: ${info.skillID}@${info.version}`);
+        console.log(`${this.yellow("[TIP]")} Retry with --force or -f to overwrite the existing version.`);
       }
     }
   }
 
-  private async uploadDependencies(source: Exclude<CreateSource, { kind: "json" }>, context: CommandContext): Promise<void> {
+  private async uploadDependencies(
+    source: Exclude<CreateSource, { kind: "json" }>,
+    context: CommandContext,
+    forceUpload: boolean
+  ): Promise<void> {
     const sourceDir = source.kind === "skill" ? dirname(resolve(source.path)) : resolve(source.path);
     const skillsRoot = dirname(sourceDir);
     const deps = await this.readDependencies(sourceDir);
     const uploaded = new Set<string>();
     const visiting = new Set<string>();
     for (const dep of deps) {
-      await this.uploadOneDependency(dep, skillsRoot, context, uploaded, visiting);
+      await this.uploadOneDependency(dep, skillsRoot, context, uploaded, visiting, forceUpload);
     }
   }
 
@@ -75,7 +85,8 @@ export class PublishCommand extends BaseCommand {
     skillsRoot: string,
     context: CommandContext,
     uploaded: Set<string>,
-    visiting: Set<string>
+    visiting: Set<string>,
+    forceUpload: boolean
   ): Promise<void> {
     const key = `${dep.skill}@${dep.version}`;
     if (uploaded.has(key)) {
@@ -96,10 +107,13 @@ export class PublishCommand extends BaseCommand {
 
     const transitive = await this.readDependencies(depDir);
     for (const child of transitive) {
-      await this.uploadOneDependency(child, skillsRoot, context, uploaded, visiting);
+      await this.uploadOneDependency(child, skillsRoot, context, uploaded, visiting, forceUpload);
     }
 
-    const depBody = await this.buildRequestFromSkillSource([], { kind: "dir", path: depDir });
+    const depBody = this.applyForceFlag(
+      await this.buildRequestFromSkillSource([], { kind: "dir", path: depDir }),
+      forceUpload
+    );
     try {
       await callApi({
         method: "POST",
@@ -110,8 +124,7 @@ export class PublishCommand extends BaseCommand {
         silent: true,
       });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!this.isAlreadyExistsError(msg)) {
+      if (!this.isAlreadyExistsError(err)) {
         throw err;
       }
     }
@@ -153,8 +166,29 @@ export class PublishCommand extends BaseCommand {
     return deps;
   }
 
-  private isAlreadyExistsError(message: string): boolean {
+  private isAlreadyExistsError(err: unknown): boolean {
+    if (isDomainError(err)) {
+      return err.code === "SKILL_VERSION_ALREADY_EXISTS";
+    }
+    const message = err instanceof Error ? err.message : String(err);
     return message.includes("HTTP 409") && message.includes("SKILL_VERSION_ALREADY_EXISTS");
+  }
+
+  private hasForceFlag(args: string[]): boolean {
+    return args.includes("--force") || args.includes("-f");
+  }
+
+  private applyForceFlag(body: JsonValue, forceUpload: boolean): JsonValue {
+    if (!forceUpload) {
+      return body;
+    }
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      this.fail("--force requires the publish request body to be a JSON object");
+    }
+    return {
+      ...body,
+      force: true,
+    } satisfies JsonValue;
   }
 
   private extractSkillVersion(body: JsonValue): { skillID: string; version: string } {
@@ -316,6 +350,9 @@ export class PublishCommand extends BaseCommand {
         continue;
       }
       if (v === "--all") {
+        continue;
+      }
+      if (v === "--force" || v === "-f") {
         continue;
       }
       if (v.startsWith("--")) {

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -187,5 +188,116 @@ func TestFSStorePersistsAuthorFromSkillMetadata(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].Author != "custom-author" {
 		t.Fatalf("expected author to survive reindex, got %+v", items)
+	}
+}
+
+func TestFSStoreCreateDuplicateWithoutForceReturnsAlreadyExists(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewFSStore(dir)
+	if err != nil {
+		t.Fatalf("NewFSStore failed: %v", err)
+	}
+
+	req := model.CreateSkillVersionRequest{
+		SkillID: "demo-skill",
+		Version: "1.0.0",
+		Skill: model.SkillSpec{
+			Description: "first description",
+			Overview:    "first overview",
+		},
+	}
+
+	if _, err := s.Create(req); err != nil {
+		t.Fatalf("first Create failed: %v", err)
+	}
+
+	_, err = s.Create(req)
+	if !errors.Is(err, ErrAlreadyExists) {
+		t.Fatalf("expected ErrAlreadyExists, got %v", err)
+	}
+}
+
+func TestFSStoreCreateForceOverwritesExistingVersion(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewFSStore(dir)
+	if err != nil {
+		t.Fatalf("NewFSStore failed: %v", err)
+	}
+
+	firstSkillMD := strings.Join([]string{
+		"---",
+		"name: demo-skill",
+		"metadata:",
+		"  version: 1.0.0",
+		"description: first description",
+		"---",
+		"",
+		"# demo-skill",
+		"",
+		"## Overview",
+		"first overview",
+		"",
+	}, "\n")
+	secondSkillMD := strings.Join([]string{
+		"---",
+		"name: demo-skill",
+		"metadata:",
+		"  version: 1.0.0",
+		"description: second description",
+		"---",
+		"",
+		"# demo-skill",
+		"",
+		"## Overview",
+		"second overview",
+		"",
+	}, "\n")
+
+	firstReq := model.CreateSkillVersionRequest{
+		SkillID: "demo-skill",
+		Version: "1.0.0",
+		Files: []model.FileSpec{
+			{Path: "SKILL.md", Content: firstSkillMD},
+			{Path: "notes/old.txt", Content: "old content"},
+		},
+	}
+	if _, err := s.Create(firstReq); err != nil {
+		t.Fatalf("first Create failed: %v", err)
+	}
+
+	secondReq := model.CreateSkillVersionRequest{
+		SkillID: "demo-skill",
+		Version: "1.0.0",
+		Force:   true,
+		Files: []model.FileSpec{
+			{Path: "SKILL.md", Content: secondSkillMD},
+			{Path: "notes/new.txt", Content: "new content"},
+		},
+	}
+	entry, err := s.Create(secondReq)
+	if err != nil {
+		t.Fatalf("force Create failed: %v", err)
+	}
+	if entry.Description != "second description" {
+		t.Fatalf("expected overwritten description, got %q", entry.Description)
+	}
+
+	detail, err := s.GetVersion("demo-skill", "1.0.0")
+	if err != nil {
+		t.Fatalf("GetVersion failed: %v", err)
+	}
+
+	files := map[string]string{}
+	for _, file := range detail.Files {
+		files[file.Path] = file.Content
+	}
+	if files["notes/new.txt"] != "new content" {
+		t.Fatalf("expected new file to exist, got %+v", files)
+	}
+	if _, ok := files["notes/old.txt"]; ok {
+		t.Fatalf("expected old file to be removed after force overwrite, got %+v", files)
+	}
+	if !strings.Contains(files["SKILL.md"], "second description") {
+		t.Fatalf("expected SKILL.md to be overwritten, got %q", files["SKILL.md"])
 	}
 }

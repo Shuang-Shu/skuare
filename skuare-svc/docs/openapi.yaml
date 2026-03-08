@@ -222,6 +222,9 @@ components:
           type: string
         version:
           type: string
+        force:
+          type: boolean
+          description: When true, overwrite an existing skill version with the same skill_id/version
         skill:
           $ref: '#/components/schemas/SkillSpec'
         files:

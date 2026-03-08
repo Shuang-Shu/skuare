@@ -62,11 +62,11 @@
   - 实际安装目标：`<repoRoot>/repos/<scope>/<tool>/<skillID>/...`
   - CLI 不根据本地配置推断服务端存储目录；服务端仓库根仅由服务端启动参数决定
 - server 写命令：
-  - `publish --file <json>` -> `POST /api/v1/skills`
-  - `publish --skill <SKILL.md> [--skill-id] [--version]` -> `POST /api/v1/skills`
-  - `publish --dir <skillDir> [--skill-id] [--version]` -> `POST /api/v1/skills`
-  - `publish <path...> [--all] [--skill-id] [--version]` -> 自动检测每个 path：`SKILL.md` 文件 -> 目录 -> JSON 回退
-  - `create ...` -> `publish` 的兼容别名，保留但标记弃用
+  - `publish --file <json> [--force|-f]` -> `POST /api/v1/skills`
+  - `publish --skill <SKILL.md> [--skill-id] [--version] [--force|-f]` -> `POST /api/v1/skills`
+  - `publish --dir <skillDir> [--skill-id] [--version] [--force|-f]` -> `POST /api/v1/skills`
+  - `publish <path...> [--all] [--skill-id] [--version] [--force|-f]` -> 自动检测每个 path：`SKILL.md` 文件 -> 目录 -> JSON 回退
+  - `create ... [--force|-f]` -> `publish` 的兼容别名，保留但标记弃用
   - `delete <skillID> <version>` -> `DELETE /api/v1/skills/:skillID/:version`
 
 ## 鉴权机制说明
@@ -201,6 +201,9 @@ skuare --server http://127.0.0.1:15657 publish /tmp/create-skill.json
 # 可选：传 --version 做一致性校验（与 frontmatter metadata.version 不一致会报错）
 skuare --server http://127.0.0.1:15657 publish --dir ./skills/pdf-reader --version 1.0.0
 
+# 可选：传 --force/-f 覆盖同版本 Skill
+skuare --server http://127.0.0.1:15657 publish --dir ./skills/pdf-reader --force
+
 # 拉取到本地局部仓库
 skuare get pdf-reader --scope workspace
 skuare get pdf-reader --scope global --repo-dir ~/.skuare
@@ -217,9 +220,10 @@ skuare detail skuare/report-generator references/details.md notes.txt
 
 `publish` 依赖上传行为：
 - 若来源是 `--skill`/`--dir`/`<path>` 且解析到技能目录，CLI 会读取 `skill-deps.json` 并递归上传依赖技能。
-- 依赖已存在（`409 SKILL_VERSION_ALREADY_EXISTS`）会自动跳过。
+- 依赖已存在（`409 SKILL_VERSION_ALREADY_EXISTS`）默认会自动跳过；若传入 `--force/-f` 则会改为覆盖上传。
 - 依赖目录默认按同级目录解析（例如 `skills/<depSkillID>`）。
-- 当前 skill 若已存在（`409 SKILL_VERSION_ALREADY_EXISTS`），CLI 输出 `WARN` 并返回成功，不再报错退出。
+- 当前 skill 若已存在（`409 SKILL_VERSION_ALREADY_EXISTS`），CLI 会输出 `WARN` 和 `--force/-f` 提示，并返回成功，不再报错退出。
+- 传入 `--force/-f` 时，请求体会附带 `force: true`，服务端支持时会覆盖已存在版本。
 - 当 `SKILL.md metadata.author` 存在时，`skr publish` 成功返回会包含 `author`，后续 `list/peek` 也会直接展示该值。
 
 `build` 依赖文件行为：
