@@ -2,7 +2,7 @@
 
 > 文档类型：TECH
 > 状态：已完成
-> 更新时间：2026-02-28
+> 更新时间：2026-03-08
 > 适用范围：project-wide
 
 ## 目标与范围
@@ -14,15 +14,15 @@
 ## 现状与事实依据
 - 模块：
   - `skuare-svc`：文件系统存储模型 `<specDir>/<skillID>/<version>`。
-  - `skuare-cli`：命令式前端，支持 `init/health/list/peek/get/publish/create/build/format/delete/validate`。
+  - `skuare-cli`：命令式前端，支持 `init/health/list/peek/get/deps/publish/create/build/format/delete/validate` 与 `agentsmd` 命令组。
 - 关键配置：
   - 后端默认 `spec-dir`：`$HOME/.skuare`（可由 `SKUARE_SPEC_DIR` 或 `--spec-dir` 覆盖）。
   - `scripts/dev-up.sh` 与 `make start-be` 默认 `SPEC_DIR` 已统一为 `$HOME/.skuare`。
   - 启动参数：`--addr`、`--spec-dir`、`--authorized-keys-file`、`--local`、`--auth-max-skew-sec`。
   - CLI 配置优先级：`CLI 参数 > workspace > global > defaults`。
   - CLI `remote.mode`：`local` / `remote`，仅描述目标服务端模式，不负责声明服务端存储目录。
-  - CLI 本地局部仓库根：global=`$HOME/.skuare`，workspace=`<cwd>/.skuare`；`get` 默认 `--scope workspace`，可通过 `--repo-dir` 覆盖根目录。
-  - CLI 最终安装目录：`<repoRoot>/repos/<scope>/<tool>/<skillID>/...`；不再根据客户端配置推断服务端存储目录。
+  - CLI 本地安装根目录：默认 skill 安装到 `<cwd>/.{tool}/skills/`；加 `--global` 时安装到 `~/.{tool}/skills/`。
+  - `agentsmd` 的安装目标为 `<cwd>/.{tool}/AGENTS.md`；加 `--global` 时安装到 `~/.{tool}/AGENTS.md`。
 - 鉴权：
   - 写接口在 remote 模式要求 Ed25519 签名头。
   - `local=true` 时后端直接放行写请求。
@@ -37,11 +37,16 @@
   - `skr list` 支持 `--regex <pattern>` 客户端正则过滤（匹配 `id/skill_id/name/author/description`）。
   - `skr peek` 输出对齐 `id/name/author` 展示规范。
   - `skr peek` 支持 `--regex <pattern>` 唯一匹配后查询详情。
+  - `skr get --wrap` 只安装根 Skill，并落盘 `.skuare-wrap.json`；`skr deps` 用于按需查看或安装被包装的依赖子树。
+  - `list-agmd`、`get-agmd` 等 `agentsmd` 短命令以显式代理命令实现，用于保持兼容同时避免重复业务逻辑。
   - 当 `SKILL.md metadata.author` 存在时，服务端会在 `publish/list/peek` 相关返回中直接透出 `author`。
   - `author` 缺失时默认回退为 `undefined`。
   - `skr publish` 输出不包含服务端本地路径。
   - `skr format [skillDir...]` 交互式支持 `All/Each`，并统一写入 `metadata.version`/`metadata.author`；`skr format --all` 自动扫描当前目录子技能。
   - `make format` 仅透传 CLI `format` 命令，不再错误要求额外 `VERSION` 参数。
+- 维护说明：
+  - CLI 共享解析能力已收敛到独立工具模块（`utils/command_args`、`utils/skill_manifest`、`utils/install_paths`、`utils/skill_workspace`），不再在 `query.ts`、`write.ts`、`agentsmd.ts` 中重复实现。
+  - 后端 handler/store 仅采用轻量辅助方法收敛重复 JSON 响应与版本化资源文件流程，刻意避免引入过重的统一资源框架。
 
 ## 差距分析
 - 文档层面：

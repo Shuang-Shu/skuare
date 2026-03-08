@@ -217,6 +217,57 @@ func TestFSStoreCreateDuplicateWithoutForceReturnsAlreadyExists(t *testing.T) {
 	}
 }
 
+func TestFSStoreAgentsMDCrud(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewFSStore(dir)
+	if err != nil {
+		t.Fatalf("NewFSStore failed: %v", err)
+	}
+
+	entry, err := s.CreateAgentsMD(model.CreateAgentsMDRequest{
+		AgentsMDID: "team-guide",
+		Version:    "1.0.0",
+		Content:    "# Team Guide\n",
+	})
+	if err != nil {
+		t.Fatalf("CreateAgentsMD failed: %v", err)
+	}
+	if entry.ID != "team-guide@1.0.0" {
+		t.Fatalf("unexpected entry ID: %s", entry.ID)
+	}
+
+	items, err := s.ListAgentsMD("team")
+	if err != nil {
+		t.Fatalf("ListAgentsMD failed: %v", err)
+	}
+	if len(items) != 1 || items[0].Version != "1.0.0" {
+		t.Fatalf("unexpected agentsmd items: %+v", items)
+	}
+
+	overview, err := s.GetAgentsMD("team-guide")
+	if err != nil {
+		t.Fatalf("GetAgentsMD failed: %v", err)
+	}
+	if len(overview.Versions) != 1 || overview.Versions[0] != "1.0.0" {
+		t.Fatalf("unexpected overview: %+v", overview)
+	}
+
+	detail, err := s.GetAgentsMDVersion("team-guide", "1.0.0")
+	if err != nil {
+		t.Fatalf("GetAgentsMDVersion failed: %v", err)
+	}
+	if detail.Content != "# Team Guide\n" {
+		t.Fatalf("unexpected content: %q", detail.Content)
+	}
+
+	if err := s.DeleteAgentsMD("team-guide", "1.0.0"); err != nil {
+		t.Fatalf("DeleteAgentsMD failed: %v", err)
+	}
+	if _, err := s.GetAgentsMDVersion("team-guide", "1.0.0"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound after delete, got %v", err)
+	}
+}
+
 func TestFSStoreCreateForceOverwritesExistingVersion(t *testing.T) {
 	dir := t.TempDir()
 	s, err := NewFSStore(dir)

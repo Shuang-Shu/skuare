@@ -9,6 +9,9 @@ import { isDomainError } from "../domain/errors";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, posix, relative, resolve } from "node:path";
 import * as readlinePromises from "node:readline/promises";
+import { collectPositionalArgs } from "../utils/command_args";
+import { parseSkillFrontmatter, parseSkillMarkdown, readSkillMetadataDefaults, renderSkillTemplate, withUpdatedSkillMetadata } from "../utils/skill_manifest";
+import { discoverSkillDirs } from "../utils/skill_workspace";
 
 type ReadlineInterface = Awaited<ReturnType<typeof readlinePromises.createInterface>>;
 
@@ -100,9 +103,9 @@ export class PublishCommand extends BaseCommand {
     const depDir = join(skillsRoot, dep.skill);
     await this.assertSkillDir(depDir);
     const depSkillRaw = await readFile(join(depDir, "SKILL.md"), "utf8");
-    const depParsed = this.parseSkillMarkdown(depSkillRaw);
-    if (depParsed.version !== dep.version) {
-      this.fail(`Dependency version mismatch for ${dep.skill}: deps=${dep.version}, SKILL.md=${depParsed.version}`);
+    const depParsed = parseSkillMarkdown(depSkillRaw);
+    if (depParsed.metadataVersion !== dep.version) {
+      this.fail(`Dependency version mismatch for ${dep.skill}: deps=${dep.version}, SKILL.md=${depParsed.metadataVersion}`);
     }
 
     const transitive = await this.readDependencies(depDir);
@@ -227,14 +230,14 @@ export class PublishCommand extends BaseCommand {
       : join(resolve(source.path), "SKILL.md");
     const sourceDir = dirname(resolvedSkillFile);
     const content = await readFile(resolvedSkillFile, "utf8");
-    const parsed = this.parseSkillMarkdown(content);
+    const parsed = parseSkillMarkdown(content);
 
     const skillID = (skillIdFromArg || parsed.name).trim();
     if (!skillID) {
       this.fail("Cannot infer skill_id. Provide --skill-id <id> or set frontmatter name in SKILL.md");
     }
 
-    const version = parsed.version.trim();
+    const version = parsed.metadataVersion.trim();
     if (!version) {
       this.fail("Frontmatter requires metadata.version; uploading SKILL.md without metadata.version is not allowed");
     }
@@ -282,9 +285,13 @@ export class PublishCommand extends BaseCommand {
       return [{ kind: "json", path: requestFile }];
     }
 
-    const positional = this.getPositionalArgs(args);
+    const positional = collectPositionalArgs(
+      args,
+      ["--file", "--skill", "--dir", "--version", "--skill-id"],
+      ["--all", "--force", "-f"]
+    );
     const allPositional = includeAll
-      ? [...positional, ...(await this.discoverSkillDirsInCurrentDir(cwd))]
+      ? [...positional, ...(await discoverSkillDirs(cwd))]
       : positional;
     const unique = Array.from(new Set(allPositional.map((v) => v.trim()).filter(Boolean)));
     if (unique.length === 0) {
@@ -319,46 +326,6 @@ export class PublishCommand extends BaseCommand {
       }
 
       this.fail(`Cannot detect source mode from path: ${p}`);
-    }
-    return out;
-  }
-
-  private async discoverSkillDirsInCurrentDir(cwd: string): Promise<string[]> {
-    const entries = await readdir(cwd, { withFileTypes: true });
-    const out: string[] = [];
-    for (const entry of entries) {
-      if (!entry.isDirectory()) {
-        continue;
-      }
-      const dir = join(cwd, entry.name);
-      const skillPath = join(dir, "SKILL.md");
-      const info = await stat(skillPath).catch(() => undefined);
-      if (info?.isFile()) {
-        out.push(dir);
-      }
-    }
-    return out;
-  }
-
-  private getPositionalArgs(args: string[]): string[] {
-    const optionsWithValue = new Set(["--file", "--skill", "--dir", "--version", "--skill-id"]);
-    const out: string[] = [];
-    for (let i = 0; i < args.length; i += 1) {
-      const v = args[i];
-      if (optionsWithValue.has(v)) {
-        i += 1;
-        continue;
-      }
-      if (v === "--all") {
-        continue;
-      }
-      if (v === "--force" || v === "-f") {
-        continue;
-      }
-      if (v.startsWith("--")) {
-        continue;
-      }
-      out.push(v);
     }
     return out;
   }
@@ -407,117 +374,6 @@ export class PublishCommand extends BaseCommand {
     }
   }
 
-  private parseSkillMarkdown(content: string): {
-    name: string;
-    version: string;
-    description: string;
-    overview: string;
-    sections: Array<{ title: string; content: string }>;
-  } {
-    const lines = content.split(/\r?\n/);
-    if (lines.length < 4 || lines[0].trim() !== "---") {
-      this.fail("SKILL.md must start with YAML frontmatter");
-    }
-
-    let fmEnd = -1;
-    for (let i = 1; i < lines.length; i += 1) {
-      if (lines[i].trim() === "---") {
-        fmEnd = i;
-        break;
-      }
-    }
-    if (fmEnd < 0) {
-      this.fail("Invalid SKILL.md frontmatter: missing closing ---");
-    }
-
-    let name = "";
-    let version = "";
-    let description = "";
-    let metadataIndent = -1;
-    for (const rawLine of lines.slice(1, fmEnd)) {
-      const line = rawLine.trim();
-      const indent = rawLine.length - rawLine.trimStart().length;
-      if (line === "metadata:") {
-        metadataIndent = indent;
-        continue;
-      }
-      if (metadataIndent >= 0) {
-        if (line && indent <= metadataIndent) {
-          metadataIndent = -1;
-        } else if (line.startsWith("version:")) {
-          version = this.unquote(line.slice("version:".length).trim());
-          continue;
-        }
-      }
-      if (line.startsWith("name:")) {
-        name = this.unquote(line.slice("name:".length).trim());
-      } else if (line.startsWith("description:")) {
-        description = this.unquote(line.slice("description:".length).trim());
-      }
-    }
-    if (!name) {
-      this.fail("Frontmatter requires name");
-    }
-    if (!version) {
-      this.fail("Frontmatter requires metadata.version");
-    }
-    if (!description) {
-      this.fail("Frontmatter requires description");
-    }
-
-    const body = lines.slice(fmEnd + 1).join("\n");
-    const blocks = this.parseH2Blocks(body);
-    const overview = (blocks.find((b) => b.title.toLowerCase() === "overview")?.content || "").trim();
-
-    const sections = blocks
-      .filter((b) => b.title.toLowerCase() !== "overview" && b.content.trim() !== "")
-      .map((b) => ({ title: b.title, content: b.content.trim() }));
-
-    return {
-      name,
-      version,
-      description,
-      overview,
-      sections,
-    };
-  }
-
-  private parseH2Blocks(markdown: string): Array<{ title: string; content: string }> {
-    const lines = markdown.split(/\r?\n/);
-    const blocks: Array<{ title: string; content: string }> = [];
-    let currentTitle = "";
-    let currentContent: string[] = [];
-
-    const flush = (): void => {
-      if (!currentTitle) {
-        return;
-      }
-      blocks.push({ title: currentTitle, content: currentContent.join("\n").trim() });
-    };
-
-    for (const line of lines) {
-      const m = line.match(/^##\s+(.+?)\s*$/);
-      if (m) {
-        flush();
-        currentTitle = m[1].trim();
-        currentContent = [];
-        continue;
-      }
-      if (currentTitle) {
-        currentContent.push(line);
-      }
-    }
-    flush();
-    return blocks;
-  }
-
-  private unquote(v: string): string {
-    if ((v.startsWith("\"") && v.endsWith("\"")) || (v.startsWith("'") && v.endsWith("'"))) {
-      return v.slice(1, -1).trim();
-    }
-    return v.trim();
-  }
-
   private async collectSideFiles(dir: string, _skillFilePath: string): Promise<Array<{ path: string; content: string }>> {
     const out: Array<{ path: string; content: string }> = [];
     const root = resolve(dir);
@@ -564,7 +420,7 @@ export class FormatCommand extends BaseCommand {
 
   async execute(context: CommandContext): Promise<void> {
     const includeAll = context.args.includes("--all");
-    const positional = this.getPositionalArgs(context.args);
+    const positional = collectPositionalArgs(context.args, [], ["--all"]);
     if (includeAll && positional.length > 0) {
       this.fail("--all cannot be used with positional skillDir arguments");
     }
@@ -586,7 +442,7 @@ export class FormatCommand extends BaseCommand {
 
         for (const path of files) {
           const raw = await readFile(path, "utf8");
-          const next = this.withMetadata(raw, version, author);
+          const next = withUpdatedSkillMetadata(raw, version, author);
           await writeFile(path, next, "utf8");
           changed.push({ file: path, version, author });
         }
@@ -604,7 +460,7 @@ export class FormatCommand extends BaseCommand {
             defaults.author || "undefined"
           );
           const raw = await readFile(path, "utf8");
-          const next = this.withMetadata(raw, version, author);
+          const next = withUpdatedSkillMetadata(raw, version, author);
           await writeFile(path, next, "utf8");
           changed.push({ file: path, version, author });
         }
@@ -616,43 +472,14 @@ export class FormatCommand extends BaseCommand {
     }
   }
 
-  private getPositionalArgs(args: string[]): string[] {
-    const out: string[] = [];
-    for (const arg of args) {
-      if (arg.startsWith("--")) {
-        continue;
-      }
-      out.push(arg);
-    }
-    return out;
-  }
-
   private async resolveFormatTargets(inputs: string[], cwd: string, includeAll: boolean): Promise<string[]> {
-    const targets = includeAll || inputs.length === 0 ? await this.discoverSkillDirsInCurrentDir(cwd) : inputs;
+    const targets = includeAll || inputs.length === 0 ? await discoverSkillDirs(cwd) : inputs;
     const unique = Array.from(new Set(targets.map((v) => v.trim()).filter(Boolean)));
     const resolved: string[] = [];
     for (const input of unique) {
       resolved.push(await this.resolveSkillFilePath(input));
     }
     return resolved;
-  }
-
-  private async discoverSkillDirsInCurrentDir(cwd: string): Promise<string[]> {
-    const entries = await readdir(cwd, { withFileTypes: true });
-    const out: string[] = [];
-    for (const entry of entries) {
-      if (!entry.isDirectory()) {
-        continue;
-      }
-      const dirPath = join(cwd, entry.name);
-      const skillPath = join(dirPath, "SKILL.md");
-      const info = await stat(skillPath).catch(() => undefined);
-      if (info?.isFile()) {
-        out.push(dirPath);
-      }
-    }
-    out.sort((a, b) => a.localeCompare(b));
-    return out;
   }
 
   private async selectMode(rl: ReadlineInterface): Promise<"all" | "each"> {
@@ -694,166 +521,7 @@ export class FormatCommand extends BaseCommand {
 
   private async readMetadataDefaults(path: string): Promise<{ version: string; author: string }> {
     const content = await readFile(path, "utf8");
-    const lines = content.split(/\r?\n/);
-    if (lines[0]?.trim() !== "---") {
-      return { version: "", author: "" };
-    }
-    let fmEnd = -1;
-    for (let i = 1; i < lines.length; i += 1) {
-      if (lines[i].trim() === "---") {
-        fmEnd = i;
-        break;
-      }
-    }
-    if (fmEnd < 0) {
-      return { version: "", author: "" };
-    }
-
-    let metaIndent = -1;
-    let version = "";
-    let author = "";
-    for (const rawLine of lines.slice(1, fmEnd)) {
-      const line = rawLine.trim();
-      const indent = rawLine.length - rawLine.trimStart().length;
-      if (line === "metadata:") {
-        metaIndent = indent;
-        continue;
-      }
-      if (metaIndent >= 0) {
-        if (line && indent <= metaIndent) {
-          metaIndent = -1;
-        } else if (line.startsWith("version:") && !version) {
-          version = this.unquote(line.slice("version:".length).trim());
-          continue;
-        } else if (line.startsWith("author:") && !author) {
-          author = this.unquote(line.slice("author:".length).trim());
-          continue;
-        }
-      }
-    }
-    return { version, author };
-  }
-
-  private withMetadata(content: string, version: string, author: string): string {
-    const versionVal = this.toYamlString(version);
-    const authorVal = this.toYamlString(author);
-    const lines = content.split(/\r?\n/);
-    if (lines[0]?.trim() !== "---") {
-      const fm = ["---", "metadata:", `  author: ${authorVal}`, `  version: ${versionVal}`, "---", ""].join("\n");
-      return `${fm}${content}`;
-    }
-
-    let fmEnd = -1;
-    for (let i = 1; i < lines.length; i += 1) {
-      if (lines[i].trim() === "---") {
-        fmEnd = i;
-        break;
-      }
-    }
-    if (fmEnd < 0) {
-      this.fail("Invalid frontmatter: missing closing ---");
-    }
-
-    const fmLines = lines.slice(1, fmEnd);
-    const rest = lines.slice(fmEnd + 1);
-
-    // Normalize top-level `author/version` to `metadata.author/metadata.version`.
-    let topLevelAuthorValue = "";
-    let topLevelVersionValue = "";
-    for (let i = fmLines.length - 1; i >= 0; i -= 1) {
-      const raw = fmLines[i];
-      const trimmed = raw.trim();
-      const indent = raw.length - raw.trimStart().length;
-      if (indent === 0 && trimmed.startsWith("author:")) {
-        if (!topLevelAuthorValue) {
-          topLevelAuthorValue = raw.slice(raw.indexOf("author:") + "author:".length).trim();
-        }
-        fmLines.splice(i, 1);
-        continue;
-      }
-      if (indent === 0 && trimmed.startsWith("version:")) {
-        if (!topLevelVersionValue) {
-          topLevelVersionValue = raw.slice(raw.indexOf("version:") + "version:".length).trim();
-        }
-        fmLines.splice(i, 1);
-      }
-    }
-
-    let metaStart = -1;
-    let metaEnd = -1;
-    for (let i = 0; i < fmLines.length; i += 1) {
-      const l = fmLines[i];
-      if (l.trim() === "metadata:") {
-        metaStart = i;
-        metaEnd = i;
-        for (let j = i + 1; j < fmLines.length; j += 1) {
-          const next = fmLines[j];
-          const indent = next.length - next.trimStart().length;
-          if (next.trim() !== "" && indent === 0) {
-            break;
-          }
-          metaEnd = j;
-        }
-        break;
-      }
-    }
-
-    if (metaStart < 0) {
-      fmLines.push("metadata:");
-      fmLines.push(`  author: ${authorVal || topLevelAuthorValue}`);
-      fmLines.push(`  version: ${versionVal || topLevelVersionValue}`);
-    } else {
-      let hasAuthor = false;
-      let hasVersion = false;
-      for (let i = metaStart + 1; i <= metaEnd; i += 1) {
-        const t = fmLines[i].trim();
-        if (t.startsWith("author:")) {
-          hasAuthor = true;
-        }
-        if (t.startsWith("version:")) {
-          hasVersion = true;
-        }
-      }
-      if (hasAuthor) {
-        for (let i = metaStart + 1; i <= metaEnd; i += 1) {
-          const t = fmLines[i].trim();
-          if (t.startsWith("author:")) {
-            fmLines[i] = `  author: ${authorVal}`;
-            break;
-          }
-        }
-      }
-      if (!hasAuthor) {
-        fmLines.splice(metaEnd + 1, 0, `  author: ${authorVal || topLevelAuthorValue}`);
-        metaEnd += 1;
-      }
-
-      if (hasVersion) {
-        for (let i = metaStart + 1; i <= metaEnd; i += 1) {
-          const t = fmLines[i].trim();
-          if (t.startsWith("version:")) {
-            fmLines[i] = `  version: ${versionVal}`;
-            break;
-          }
-        }
-      }
-      if (!hasVersion) {
-        fmLines.splice(metaEnd + 1, 0, `  version: ${versionVal || topLevelVersionValue}`);
-      }
-    }
-
-    return ["---", ...fmLines, "---", ...rest].join("\n");
-  }
-
-  private toYamlString(input: string): string {
-    return `"${input.replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`;
-  }
-
-  private unquote(v: string): string {
-    if ((v.startsWith("\"") && v.endsWith("\"")) || (v.startsWith("'") && v.endsWith("'"))) {
-      return v.slice(1, -1).trim();
-    }
-    return v.trim();
+    return readSkillMetadataDefaults(content);
   }
 }
 
@@ -942,24 +610,11 @@ export class BuildCommand extends BaseCommand {
   }
 
   private async resolveAllRefSkills(cwd: string, targetDir: string): Promise<string[]> {
-    const entries = await readdir(cwd, { withFileTypes: true });
-    const refs: string[] = [];
-    for (const entry of entries) {
-      if (!entry.isDirectory()) {
-        continue;
-      }
-      const candidate = join(cwd, entry.name);
-      const skillPath = join(candidate, "SKILL.md");
-      const skillInfo = await stat(skillPath).catch(() => undefined);
-      if (!skillInfo?.isFile()) {
-        continue;
-      }
-      if (resolve(candidate) === resolve(targetDir)) {
-        continue;
-      }
-      refs.push(entry.name);
-    }
-    return refs.sort((a, b) => a.localeCompare(b));
+    const refs = await discoverSkillDirs(cwd);
+    return refs
+      .filter((candidate) => resolve(candidate) !== resolve(targetDir))
+      .map((candidate) => basename(candidate))
+      .sort((a, b) => a.localeCompare(b));
   }
 
   private async resolveTargetSkillDir(input: string, baseDir: string, fallbackDir: string): Promise<string> {
@@ -1025,7 +680,7 @@ export class BuildCommand extends BaseCommand {
 
       await mkdir(targetDir, { recursive: true });
       const skillPath = join(targetDir, "SKILL.md");
-      await writeFile(skillPath, this.renderSkillTemplate(skillID, description, author, version), "utf8");
+      await writeFile(skillPath, renderSkillTemplate(skillID, description, author, version), "utf8");
     } finally {
       rl.close();
     }
@@ -1056,82 +711,9 @@ export class BuildCommand extends BaseCommand {
     return value;
   }
 
-  private renderSkillTemplate(skillID: string, description: string, author: string, version: string): string {
-    const safeSkillID = this.toYamlString(skillID);
-    const safeDescription = this.toYamlString(description);
-    const safeAuthor = this.toYamlString(author);
-    const safeVersion = this.toYamlString(version);
-    return [
-      "---",
-      `name: ${safeSkillID}`,
-      "metadata:",
-      `  version: ${safeVersion}`,
-      `  author: ${safeAuthor}`,
-      `description: ${safeDescription}`,
-      "---",
-      "",
-      `# ${skillID}`,
-      "",
-      "## Overview",
-      `Use this skill when you need ${skillID} to deliver its intended workflow.`,
-      "",
-      "## Inputs Needed",
-      "- Clarify the user goal and expected output.",
-      "- Gather any required context, files, or constraints before execution.",
-      "",
-      "## Workflow",
-      "1. Confirm the task scope and success criteria.",
-      "2. Execute the core workflow for this skill.",
-      "3. Return the result with any important caveats or next steps.",
-      "",
-      "## Output Contract",
-      "- Return the requested result directly.",
-      "- Call out assumptions, risks, or follow-up actions when relevant.",
-      "",
-    ].join("\n");
-  }
-
-  private toYamlString(input: string): string {
-    return `"${input.replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`;
-  }
-
   private async readSkillVersion(skillDir: string): Promise<string> {
     const raw = await readFile(join(skillDir, "SKILL.md"), "utf8");
-    const lines = raw.split(/\r?\n/);
-    if (lines.length < 3 || lines[0].trim() !== "---") {
-      this.fail(`SKILL.md must start with YAML frontmatter: ${join(skillDir, "SKILL.md")}`);
-    }
-    let fmEnd = -1;
-    for (let i = 1; i < lines.length; i += 1) {
-      if (lines[i].trim() === "---") {
-        fmEnd = i;
-        break;
-      }
-    }
-    if (fmEnd < 0) {
-      this.fail(`Invalid frontmatter in ${join(skillDir, "SKILL.md")}: missing closing ---`);
-    }
-
-    let version = "";
-    let metadataIndent = -1;
-    for (const rawLine of lines.slice(1, fmEnd)) {
-      const line = rawLine.trim();
-      const indent = rawLine.length - rawLine.trimStart().length;
-      if (line === "metadata:") {
-        metadataIndent = indent;
-        continue;
-      }
-      if (metadataIndent >= 0) {
-        if (line && indent <= metadataIndent) {
-          metadataIndent = -1;
-          continue;
-        }
-        if (line.startsWith("version:")) {
-          version = this.unquote(line.slice("version:".length).trim());
-          break;
-        }
-      }
-    }
+    const version = parseSkillFrontmatter(raw).metadataVersion;
     if (!version) {
       this.fail(`metadata.version is required in ${join(skillDir, "SKILL.md")}`);
     }
@@ -1201,13 +783,6 @@ export class BuildCommand extends BaseCommand {
 
   private depKey(dep: { skill: string; alias?: string }): string {
     return dep.alias?.trim() || dep.skill;
-  }
-
-  private unquote(v: string): string {
-    if ((v.startsWith("\"") && v.endsWith("\"")) || (v.startsWith("'") && v.endsWith("'"))) {
-      return v.slice(1, -1).trim();
-    }
-    return v.trim();
   }
 }
 

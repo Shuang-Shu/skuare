@@ -4,6 +4,8 @@
 
 import type { Command, CommandContext } from "./types";
 import { DomainError } from "../domain/errors";
+import { parseOptionValue } from "../utils/command_args";
+import { readJsonFile } from "../utils/fs";
 
 export abstract class BaseCommand implements Command {
   abstract readonly name: string;
@@ -15,24 +17,14 @@ export abstract class BaseCommand implements Command {
    * 从参数中解析选项值
    */
   protected parseOptionValue(args: string[], option: string): string | undefined {
-    const idx = args.indexOf(option);
-    if (idx < 0) {
-      return undefined;
-    }
-    const value = args[idx + 1];
-    if (!value) {
-      throw new DomainError("CLI_MISSING_OPTION_VALUE", `Missing value for ${option}`);
-    }
-    return value;
+    return parseOptionValue(args, option);
   }
 
   /**
    * 读取 JSON 文件
    */
   protected async readJsonFile(path: string): Promise<unknown> {
-    const fs = await import("node:fs/promises");
-    const raw = await fs.readFile(path, "utf8");
-    return JSON.parse(raw) as unknown;
+    return readJsonFile(path);
   }
 
   /**
