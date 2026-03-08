@@ -61,7 +61,7 @@ test("get reports circular dependencies instead of silently skipping them", asyn
   }
 });
 
-test("deps can inspect and install wrapped dependency subtrees", async () => {
+test("deps can inspect and install wrapped dependency subtrees with get-like skill selectors", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "skuare-deps-"));
   const installRoot = join(workspace, ".codex", "skills");
   const rootDir = join(installRoot, "demo", "root");
@@ -94,12 +94,12 @@ test("deps can inspect and install wrapped dependency subtrees", async () => {
     assert.equal(brief.dependencies[0].description, "Child description");
 
     const content = await captureStdout(async () => {
-      await new DepsCommand().execute(createContext(workspace, ["--content", rootDir, "demo/child"]));
+      await new DepsCommand().execute(createContext(workspace, ["--content", rootDir, "child"]));
     });
     assert.match(content, /# demo\/child/);
 
     const treeLogs = await captureConsole(async () => {
-      await new DepsCommand().execute(createContext(workspace, ["--tree", rootDir, "demo/child"]));
+      await new DepsCommand().execute(createContext(workspace, ["--tree", rootDir, "demo/child@2.0.0"]));
     });
     const tree = JSON.parse(treeLogs.join("\n")) as { files: string[] };
     assert.deepEqual(new Set(tree.files), new Set(["SKILL.md", "references/guide.md", "skill-deps.lock.json"]));

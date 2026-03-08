@@ -29,6 +29,18 @@ type ParsedGetInput =
   | { type: "full"; author: string; name: string; version: string }
   | { type: "author-name"; author: string; name: string }
   | { type: "name-only"; name: string };
+type SkillSelectionCandidate = {
+  skillID: string;
+  version: string;
+  name: string;
+  author: string;
+  description: string;
+};
+type SkillCandidateResolutionOptions = {
+  allowMissingExact?: boolean;
+  notFoundMessage: (input: string) => string;
+  selectionTitle: string;
+};
 type DependencyRef = {
   skillID: string;
   version: string;
@@ -113,6 +125,18 @@ function parseMetadataAuthorFromSkillFiles(filesValue: JsonValue | undefined): s
     return parseSkillFrontmatter(String(file.content || "")).metadataAuthor;
   }
   return "";
+}
+
+function parseSkillIdentityFromRemoteFiles(files: RemoteFile[]): { name: string; author: string } {
+  const skillFile = files.find((file) => normalizePath(file.path) === "SKILL.md");
+  if (!skillFile) {
+    return { name: "", author: "" };
+  }
+  const parsed = parseSkillFrontmatter(skillFile.content);
+  return {
+    name: parsed.name,
+    author: parsed.metadataAuthor,
+  };
 }
 
 function buildDisplayIdentity(input: {
@@ -305,6 +329,17 @@ function parseGetInput(input: string): ParsedGetInput {
   }
 
   return { type: "name-only", name: trimmed };
+}
+
+function formatParsedGetInput(input: ParsedGetInput): string {
+  if (input.type === "full") {
+    const skillID = input.author ? `${input.author}/${input.name}` : input.name;
+    return `${skillID}@${input.version}`;
+  }
+  if (input.type === "author-name") {
+    return `${input.author}/${input.name}`;
+  }
+  return input.name;
 }
 
 abstract class SkillCatalogCommand extends BaseCommand {
@@ -523,6 +558,183 @@ abstract class DependencyAwareCommand extends SkillCatalogCommand {
 
   protected onDependencyVersionConflict(skillID: string, existingVersion: string, nextVersion: string): never {
     this.fail(`Conflicting dependency versions for ${skillID}: ${existingVersion} vs ${nextVersion}`);
+  }
+
+  protected createSkillSelectionCandidate(input: {
+    skillID: string;
+    version?: string;
+    name?: string;
+    author?: string;
+    description?: string;
+  }): SkillSelectionCandidate {
+    const display = buildDisplayIdentity({
+      skillID: input.skillID,
+      version: input.version,
+      name: input.name,
+      author: input.author,
+    });
+    return {
+      skillID: input.skillID.trim(),
+      version: (input.version || "").trim(),
+      name: display.name,
+      author: display.author,
+      description: (input.description || "").trim(),
+    };
+  }
+
+  protected createCatalogSkillCandidates(items: NormalizedSkillItem[]): SkillSelectionCandidate[] {
+    return items.map((item) => this.createSkillSelectionCandidate({
+      skillID: String(item.skill_id || "").trim(),
+      version: String(item.version || "").trim(),
+      name: item.name,
+      author: item.author,
+      description: String(item.description || "").trim(),
+    }));
+  }
+
+  protected createDependencySkillCandidates(nodes: SkillGraphNode[]): SkillSelectionCandidate[] {
+    return nodes.map((node) => {
+      const identity = parseSkillIdentityFromRemoteFiles(node.files);
+      return this.createSkillSelectionCandidate({
+        skillID: node.skillID,
+        version: node.version,
+        name: identity.name && identity.name !== node.skillID ? identity.name : undefined,
+        author: identity.author,
+        description: node.description,
+      });
+    });
+  }
+
+  protected async resolveSkillCandidate(
+    parsed: ParsedGetInput,
+    candidates: SkillSelectionCandidate[],
+    options: SkillCandidateResolutionOptions
+  ): Promise<SkillSelectionCandidate> {
+    if (parsed.type === "full") {
+      const exactMatches = candidates.filter((candidate) => {
+        if (candidate.version !== parsed.version) {
+          return false;
+        }
+        if (parsed.author) {
+          return candidate.skillID === `${parsed.author}/${parsed.name}`;
+        }
+        return candidate.skillID === parsed.name || candidate.name === parsed.name;
+      });
+      const exact = this.sortSkillSelectionCandidates(exactMatches);
+      if (exact.length === 1) {
+        return exact[0];
+      }
+      if (exact.length > 1) {
+        return this.selectSkillCandidate(exact, options.selectionTitle);
+      }
+      if (options.allowMissingExact) {
+        return this.createSkillSelectionCandidate({
+          skillID: parsed.author ? `${parsed.author}/${parsed.name}` : parsed.name,
+          version: parsed.version,
+          name: parsed.name,
+          author: parsed.author,
+        });
+      }
+      this.fail(options.notFoundMessage(formatParsedGetInput(parsed)));
+    }
+
+    const matched = this.sortSkillSelectionCandidates(
+      candidates.filter((candidate) => {
+        if (parsed.type === "author-name") {
+          return candidate.author === parsed.author && candidate.name === parsed.name;
+        }
+        return candidate.name === parsed.name;
+      })
+    );
+
+    if (matched.length === 0) {
+      this.fail(options.notFoundMessage(formatParsedGetInput(parsed)));
+    }
+    if (matched.length === 1) {
+      return matched[0];
+    }
+    return this.selectSkillCandidate(matched, options.selectionTitle);
+  }
+
+  protected async resolveSkillByPattern(
+    context: CommandContext,
+    parsed: ParsedGetInput
+  ): Promise<{ skillID: string; version?: string }> {
+    if (parsed.type === "full") {
+      const selected = await this.resolveSkillCandidate(parsed, [], {
+        allowMissingExact: true,
+        notFoundMessage: (input) => `No skill found for: ${input}`,
+        selectionTitle: "Multiple skills found, select one (use ↑/↓, Enter to confirm):",
+      });
+      return { skillID: selected.skillID, version: selected.version };
+    }
+
+    const resp = await callApi({
+      method: "GET",
+      path: "/api/v1/skills",
+      server: context.server,
+      silent: true,
+    });
+    const itemsRaw = (resp.data && typeof resp.data === "object" && !Array.isArray(resp.data))
+      ? (resp.data as { items?: JsonValue }).items
+      : undefined;
+    const items = Array.isArray(itemsRaw) ? itemsRaw : [];
+    const selected = await this.resolveSkillCandidate(
+      parsed,
+      this.createCatalogSkillCandidates(normalizeListItems(items)),
+      {
+        notFoundMessage: (input) => `No skill found for: ${input}`,
+        selectionTitle: "Multiple skills found, select one (use ↑/↓, Enter to confirm):",
+      }
+    );
+    return { skillID: selected.skillID, version: selected.version || undefined };
+  }
+
+  protected async resolveDependencyTarget(
+    graph: DependencyGraph,
+    rootSkillID: string,
+    depInput: string
+  ): Promise<SkillGraphNode> {
+    const descendants = this.collectSubtree(graph, rootSkillID).filter((node) => node.skillID !== rootSkillID);
+    const selected = await this.resolveSkillCandidate(
+      parseGetInput(depInput),
+      this.createDependencySkillCandidates(descendants),
+      {
+        notFoundMessage: (input) => `Dependency ${input} is not part of ${rootSkillID}`,
+        selectionTitle: "Multiple dependencies found, select one (use ↑/↓, Enter to confirm):",
+      }
+    );
+    const target = descendants.find((node) => node.skillID === selected.skillID && node.version === selected.version);
+    if (!target) {
+      this.fail(`Dependency ${selected.skillID}@${selected.version} is not part of ${rootSkillID}`);
+    }
+    return target;
+  }
+
+  private sortSkillSelectionCandidates(candidates: SkillSelectionCandidate[]): SkillSelectionCandidate[] {
+    return [...candidates].sort((a, b) => {
+      const left = `${a.skillID}@${a.version}`;
+      const right = `${b.skillID}@${b.version}`;
+      return left.localeCompare(right);
+    });
+  }
+
+  private async selectSkillCandidate(
+    candidates: SkillSelectionCandidate[],
+    selectionTitle: string
+  ): Promise<SkillSelectionCandidate> {
+    const { selectSkillWithScroll } = await import("../ui/selectors.js");
+    const options = candidates.map((item) => ({
+      skillID: item.skillID,
+      version: item.version,
+      description: item.description,
+    }));
+    const selected = await selectSkillWithScroll(options, selectionTitle);
+    const matched = candidates.find((item) => item.skillID === selected.skillID && item.version === selected.version);
+    if (!matched) {
+      this.fail(`Selected skill is not part of current candidate set: ${selected.skillID}@${selected.version}`);
+    }
+    return matched;
   }
 
   protected parseDependencyRefs(files: RemoteFile[], sourceLabel: string): DependencyRef[] {
@@ -934,57 +1146,6 @@ export class GetCommand extends DependencyAwareCommand {
     const filePath = join(targetRoot, skillID, WRAP_METADATA_FILE);
     await writeFile(filePath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
   }
-  private async resolveSkillByPattern(
-    context: CommandContext,
-    parsed: ParsedGetInput
-  ): Promise<{ skillID: string; version?: string }> {
-    if (parsed.type === "full") {
-      const skillID = parsed.author ? `${parsed.author}/${parsed.name}` : parsed.name;
-      return { skillID, version: parsed.version };
-    }
-
-    const resp = await callApi({
-      method: "GET",
-      path: "/api/v1/skills",
-      server: context.server,
-      silent: true,
-    });
-    const itemsRaw = (resp.data && typeof resp.data === "object" && !Array.isArray(resp.data))
-      ? (resp.data as { items?: JsonValue }).items
-      : undefined;
-    const items = Array.isArray(itemsRaw) ? itemsRaw : [];
-    const normalized = normalizeListItems(items);
-
-    let matched: NormalizedSkillItem[];
-    if (parsed.type === "author-name") {
-      matched = normalized.filter(
-        (item) => item.author === parsed.author && item.name === parsed.name
-      );
-    } else {
-      matched = normalized.filter((item) => item.name === parsed.name);
-    }
-
-    if (matched.length === 0) {
-      const input = parsed.type === "author-name" ? `${parsed.author}/${parsed.name}` : parsed.name;
-      this.fail(`No skill found for: ${input}`);
-    }
-
-    if (matched.length === 1) {
-      return { skillID: String(matched[0].skill_id) };
-    }
-
-    const { selectSkillWithScroll } = await import("../ui/selectors.js");
-    const options = matched.map((item) => ({
-      skillID: String(item.skill_id),
-      version: String(item.version),
-      description: String(item.description || ""),
-    }));
-    const selected = await selectSkillWithScroll(
-      options,
-      "Multiple skills found, select one (use ↑/↓, Enter to confirm):"
-    );
-    return { skillID: selected.skillID, version: selected.version };
-  }
 }
 
 export class DepsCommand extends DependencyAwareCommand {
@@ -1023,21 +1184,18 @@ export class DepsCommand extends DependencyAwareCommand {
       return;
     }
 
-    const [rootSkillDir, depSkillID] = positional;
-    if (!rootSkillDir || !depSkillID || positional.length !== 2) {
-      this.fail("Usage: skuare deps (--content|--tree|--install) <rootSkillDir> <depSkillID> [--global]");
+    const [rootSkillDir, depTarget] = positional;
+    if (!rootSkillDir || !depTarget || positional.length !== 2) {
+      this.fail("Usage: skuare deps (--content|--tree|--install) <rootSkillDir> <depSkillID|author/name@version|author/name|name> [--global]");
     }
 
     const { descriptor, graph } = await this.buildGraphFromLocalRoot(context, rootSkillDir);
-    const targetNode = this.findDescendant(graph, descriptor.rootSkillID, depSkillID);
-    if (!targetNode) {
-      this.fail(`Dependency ${depSkillID} is not part of ${descriptor.rootSkillID}`);
-    }
+    const targetNode = await this.resolveDependencyTarget(graph, descriptor.rootSkillID, depTarget);
 
     if (action === "--content") {
       const skillFile = targetNode.files.find((file) => normalizePath(file.path) === "SKILL.md");
       if (!skillFile) {
-        this.fail(`Dependency ${depSkillID}@${targetNode.version} does not contain SKILL.md`);
+        this.fail(`Dependency ${targetNode.skillID}@${targetNode.version} does not contain SKILL.md`);
       }
       process.stdout.write(skillFile.content);
       return;
@@ -1069,10 +1227,6 @@ export class DepsCommand extends DependencyAwareCommand {
 
   private collectDescendants(graph: DependencyGraph, rootSkillID: string): SkillGraphNode[] {
     return this.collectSubtree(graph, rootSkillID).filter((node) => node.skillID !== rootSkillID);
-  }
-
-  private findDescendant(graph: DependencyGraph, rootSkillID: string, depSkillID: string): SkillGraphNode | undefined {
-    return this.collectDescendants(graph, rootSkillID).find((node) => node.skillID === depSkillID);
   }
 }
 

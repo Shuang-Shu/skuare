@@ -67,9 +67,9 @@
   - `get --type agentsmd|agmd <agentsmd-id> [version] [--global]`
   - 默认安装到 `<cwd>/.{llmTool}/AGENTS.md`；`--global` 时安装到 `~/.{llmTool}/AGENTS.md`
   - `deps --brief <rootSkillDir>`：列出全部后代依赖的 `skill_id/version/description`
-  - `deps --content <rootSkillDir> <depSkillID>`：输出目标依赖的 `SKILL.md`
-  - `deps --tree <rootSkillDir> <depSkillID>`：输出目标依赖的文件列表
-  - `deps --install <rootSkillDir> <depSkillID> [--global]`：按需安装目标依赖子树
+  - `deps --content <rootSkillDir> <depSkillID|author/name@version|author/name|name>`：输出目标依赖的 `SKILL.md`
+  - `deps --tree <rootSkillDir> <depSkillID|author/name@version|author/name|name>`：输出目标依赖的文件列表
+  - `deps --install <rootSkillDir> <depSkillID|author/name@version|author/name|name> [--global]`：按需安装目标依赖子树
 - server 写命令：
   - `publish --file <json> [--force|-f]` -> `POST /api/v1/skills`
   - `publish --skill <SKILL.md> [--skill-id] [--version] [--force|-f]` -> `POST /api/v1/skills`
@@ -209,6 +209,7 @@ skuare get pdf-reader --global
 skuare get pdf-reader --wrap
 skuare deps --brief ./.codex/skills/pdf-reader
 skuare deps --install ./.codex/skills/pdf-reader skuare/text-splitter
+skuare deps --content ./.codex/skills/pdf-reader text-splitter
 
 # AGENTS.md 资源统一走 --type
 skuare --server http://127.0.0.1:15657 publish --type agentsmd --file ./agents/AGENTS.md --agentsmd-id team/agents --version 1.0.0
@@ -274,9 +275,10 @@ skuare detail skuare/report-generator references/details.md notes.txt
 
 `deps` wrap 依赖行为：
 - `deps --brief <rootSkillDir>`：列出全部后代依赖的 `skill_id`、`version`、`description`
-- `deps --content <rootSkillDir> <depSkillID>`：输出目标依赖的 `SKILL.md`
-- `deps --tree <rootSkillDir> <depSkillID>`：输出目标依赖的文件列表
-- `deps --install <rootSkillDir> <depSkillID> [--global]`：默认安装到 wrap 根 Skill 同级目录；带 `--global` 时安装到 `~/.{tool}/skills/`
+- `deps --content <rootSkillDir> <depSkillID|author/name@version|author/name|name>`：输出目标依赖的 `SKILL.md`
+- `deps --tree <rootSkillDir> <depSkillID|author/name@version|author/name|name>`：输出目标依赖的文件列表
+- `deps --install <rootSkillDir> <depSkillID|author/name@version|author/name|name> [--global]`：默认安装到 wrap 根 Skill 同级目录；带 `--global` 时安装到 `~/.{tool}/skills/`
+- 依赖目标选择已与 `get` 对齐，支持 `<author>/<name>@<version>`、`<author>/<name>`、`<name>`；若候选不唯一，会复用 `get` 的交互选择逻辑
 
 写操作示例（携带公钥）：
 ```bash

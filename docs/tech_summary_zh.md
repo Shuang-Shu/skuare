@@ -37,7 +37,7 @@
   - `skr list` 支持 `--regex <pattern>` 客户端正则过滤（匹配 `id/skill_id/name/author/description`）。
   - `skr peek` 输出对齐 `id/name/author` 展示规范。
   - `skr peek` 支持 `--regex <pattern>` 唯一匹配后查询详情。
-  - `skr get --wrap` 只安装根 Skill，并落盘 `.skuare-wrap.json`；`skr deps` 用于按需查看或安装被包装的依赖子树。
+  - `skr get --wrap` 只安装根 Skill，并落盘 `.skuare-wrap.json`；`skr deps` 用于按需查看或安装被包装的依赖子树，且依赖目标已复用 `get` 的 Skill 选择形式（`<author>/<name>@<version> | <author>/<name> | <name>`）。
   - AGENTS.md 资源已统一复用基础命令入口，通过 `--type agentsmd|agmd` 切换；`list-agmd`、`publish-agentsmd` 等旧后缀命令不再注册，只返回迁移提示。
   - 当 `SKILL.md metadata.author` 存在时，服务端会在 `publish/list/peek` 相关返回中直接透出 `author`。
   - `author` 缺失时默认回退为 `undefined`。
@@ -45,7 +45,7 @@
   - `skr format [skillDir...]` 交互式支持 `All/Each`，并统一写入 `metadata.version`/`metadata.author`；`skr format --all` 自动扫描当前目录子技能。
   - `make format` 仅透传 CLI `format` 命令，不再错误要求额外 `VERSION` 参数。
 - 维护说明：
-  - CLI 共享解析能力已收敛到独立工具模块（`utils/command_args`、`utils/skill_manifest`、`utils/install_paths`、`utils/skill_workspace`）以及 `commands/resource_type`，由 `query.ts` / `write.ts` 统一分发 Skill 与 AGENTS.md 流程，不再维护并行命令树。
+  - CLI 共享解析能力已收敛到独立工具模块（`utils/command_args`、`utils/skill_manifest`、`utils/install_paths`、`utils/skill_workspace`）以及 `commands/resource_type`；`query.ts` 内部的 `get` / `deps` 也已共享同一套 Skill 目标解析流程，不再维护分叉的匹配逻辑。
   - 后端 handler/store 仅采用轻量辅助方法收敛重复 JSON 响应与版本化资源文件流程，刻意避免引入过重的统一资源框架。
 
 ## 差距分析

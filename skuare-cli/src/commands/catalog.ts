@@ -71,14 +71,14 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
   {
     create: () => new DepsCommand(),
     help: {
-      usage: ["deps (--brief|--content|--tree|--install) <rootSkillDir> [depSkillID] [--global]", "Inspect or install wrapped skill dependencies"],
+      usage: ["deps (--brief|--content|--tree|--install) <rootSkillDir> [depSkillID|author/name@version|author/name|name] [--global]", "Inspect or install wrapped skill dependencies"],
       details: [
         "deps --brief <rootSkillDir>            List all descendant dependency skill IDs and descriptions",
-        "deps --content <rootSkillDir> <depSkillID>",
+        "deps --content <rootSkillDir> <depSkillID|author/name@version|author/name|name>",
         "                                       Print the target dependency's SKILL.md content",
-        "deps --tree <rootSkillDir> <depSkillID>",
+        "deps --tree <rootSkillDir> <depSkillID|author/name@version|author/name|name>",
         "                                       Show the target dependency's file list",
-        "deps --install <rootSkillDir> <depSkillID> [--global]",
+        "deps --install <rootSkillDir> <depSkillID|author/name@version|author/name|name> [--global]",
         "                                       Install the selected dependency subtree next to the wrapped root or into ~/.{tool}/skills/",
       ],
     },
