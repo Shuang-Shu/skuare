@@ -38,13 +38,16 @@ Default repository root path: `$HOME/.skuare`
 - `skr publish --dir <skill-dir> [--force|-f]`: read dependency description and recursively upload dependent Skills to remote repository; `--force/-f` overwrites an existing version.
 - `skr build <skillName> [refSkill...] [--all]`: automatically create or append dependency files (`skill-deps.json` / `skill-deps.lock.json`) for local skill. When target skill doesn't exist, it will interactively create a minimal `SKILL.md` template first. Supports `alias=refSkill`; `--all` will use all valid skillDirs in current directory as reference skills.
 - `skr detail <skillName|skillID> [relativePath...]`: show files under a local installed skill. Defaults to the target skill's `SKILL.md` when no path is provided.
-- `skr get <skill-id> [--global]`: fetch Skill from remote repository and install its dependencies flatly.
+- `skr get <skill-id> [--global] [--wrap]`: fetch Skill from remote repository.
   - Without `--global`: install to `<cwd>/.{llmTool}/skills/<skillID>/`
   - With `--global`: install to `~/.{llmTool}/skills/<skillID>/`
   - `llmTool` is the first tool in config file (codex/claudecode/custom)
+  - Default mode installs the full dependency graph flatly; `--wrap` installs only the root skill and leaves dependencies queryable via `skr deps`
+- `skr deps --brief|--content|--tree|--install <rootSkillDir> ...`: inspect or install wrapped dependency subtrees on demand.
 
 Example:
 - If `a` depends on `b` and `c`, after executing `skr get a`, you'll get three skill directories `a`, `b`, `c` under the target tool directory.
+- If you execute `skr get a --wrap`, only `a` is installed locally first; use `skr deps --brief <rootSkillDir>` to inspect the full dependency graph and `skr deps --install <rootSkillDir> <depSkillID>` to install a subtree later.
 
 ## Quick Start
 ```bash
@@ -82,8 +85,10 @@ skr peek observability-orchestrator
 skr publish --dir ./skills/observability-orchestrator
 skr publish --dir ./skills/observability-orchestrator --force
 
-# 8) Hybrid commands: fetch and install (flatly installs dependencies)
+# 8) Hybrid commands: fetch and install
 skr get observability-orchestrator
+skr get observability-orchestrator --wrap
+skr deps --brief ./.codex/skills/skuare/observability-orchestrator
 
 # 9) Stop backend daemon
 make stop-be
@@ -114,6 +119,10 @@ skr validate observability-orchestrator 1.0.0
 skr get --rgx "observability"
 skr get observability-orchestrator
 skr get observability-orchestrator --global
+skr get observability-orchestrator --wrap
+skr deps --brief ./.codex/skills/skuare/observability-orchestrator
+skr deps --content ./.codex/skills/skuare/observability-orchestrator skuare/core-time-utils
+skr deps --install ./.codex/skills/skuare/observability-orchestrator skuare/core-time-utils
 ```
 
 - Server write commands:
@@ -148,3 +157,4 @@ skr delete observability-orchestrator 1.0.0
 - 2026-03-01: `skr` bridges `publish` to old command `create` when falling back to old `dist/index.js`, avoiding `Unknown command: publish` in environments without TypeScript.
 - 2026-03-02: Documentation translated to English with Chinese version references.
 - 2026-03-04: Root install entry changed from `make install-skr` to `make install`; it now installs `skuare-cli` npm dependencies, runs `go mod download` for `skuare-svc`, and then registers `skr`.
+- 2026-03-08: Added `skr get --wrap` and `skr deps`, allowing root-only installation for large skill groups and on-demand dependency inspection/installation; `get` now reports circular dependencies explicitly instead of silently skipping them.

@@ -36,13 +36,16 @@
 - `skr publish --dir <skill-dir> [--force|-f]`：读取依赖描述并递归上传依赖 Skill 到远程仓库；`--force/-f` 可覆盖已存在版本。
 - `skr build <skillName> [refSkill...] [--all]`：为本地 skill 自动创建或追加更新依赖文件（`skill-deps.json` / `skill-deps.lock.json`），当目标 skill 不存在时会先交互式创建最小 `SKILL.md` 模板，支持 `alias=refSkill`；`--all` 会将当前目录下全部合法 skillDir 作为引用 skill。
 - `skr detail <skillName|skillID> [relativePath...]`：展示本地已安装 skill 下的文件内容；不传文件路径时默认输出目标 skill 的 `SKILL.md`。
-- `skr get <skill-id> [--global]`：从远程仓库拉取 Skill 并平铺安装其依赖。
+- `skr get <skill-id> [--global] [--wrap]`：从远程仓库拉取 Skill。
   - 不带 `--global`：安装到 `<cwd>/.{llmTool}/skills/<skillID>/`
   - 带 `--global`：安装到 `~/.{llmTool}/skills/<skillID>/`
   - `llmTool` 取值为配置文件中第一个工具（codex/claudecode/custom）
+  - 默认会把完整依赖图平铺安装；带 `--wrap` 时只安装根 Skill，依赖留给 `skr deps` 按需查看和安装
+- `skr deps --brief|--content|--tree|--install <rootSkillDir> ...`：围绕 wrap 根 Skill 查看依赖摘要、内容、文件树，并按需安装子树。
 
 示例：
 - 若 `a` 依赖 `b` 和 `c`，执行 `skr get a` 后，目标工具目录下会得到 `a`、`b`、`c` 三个技能目录。
+- 若执行 `skr get a --wrap`，本地只先落 `a`；后续可用 `skr deps --brief <rootSkillDir>` 查看依赖，用 `skr deps --install <rootSkillDir> <depSkillID>` 按需安装子树。
 
 ## Quick Start
 ```bash
@@ -80,8 +83,10 @@ skr peek observability-orchestrator
 skr publish --dir ./skills/observability-orchestrator
 skr publish --dir ./skills/observability-orchestrator --force
 
-# 8) 混合命令：拉取并安装（会平铺安装依赖）
+# 8) 混合命令：拉取并安装
 skr get observability-orchestrator
+skr get observability-orchestrator --wrap
+skr deps --brief ./.codex/skills/skuare/observability-orchestrator
 
 # 9) 停止后端守护进程
 make stop-be
@@ -112,6 +117,10 @@ skr validate observability-orchestrator 1.0.0
 skr get --rgx "observability"
 skr get observability-orchestrator
 skr get observability-orchestrator --global
+skr get observability-orchestrator --wrap
+skr deps --brief ./.codex/skills/skuare/observability-orchestrator
+skr deps --content ./.codex/skills/skuare/observability-orchestrator skuare/core-time-utils
+skr deps --install ./.codex/skills/skuare/observability-orchestrator skuare/core-time-utils
 ```
 
 - server 写命令：
@@ -145,3 +154,4 @@ skr delete observability-orchestrator 1.0.0
 - 2026-03-02：将 `skr detail` 修正为 `skr detail <skillName|skillID> [relativePath...]`；会先定位本地已安装 skill，再默认展示其 `SKILL.md`，并拒绝越界路径。
 - 2026-03-01：`skr` 在回退旧 `dist/index.js` 时会将 `publish` 兼容桥接为旧命令 `create`，避免无 TypeScript 环境下出现 `Unknown command: publish`。
 - 2026-03-04：根安装入口从 `make install-skr` 调整为 `make install`；会自动安装 `skuare-cli` 的 npm 依赖、执行 `skuare-svc` 的 `go mod download`，并注册 `skr`。
+- 2026-03-08：新增 `skr get --wrap` 与 `skr deps`，支持大型 skill group 先只安装根 Skill，再按需查看和安装依赖；`get` 遇到循环依赖时会显式报错。
