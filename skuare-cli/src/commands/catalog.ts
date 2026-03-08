@@ -1,7 +1,7 @@
 import type { Command } from "./types";
 import { HealthCommand } from "./admin";
 import { InitCommand } from "./init";
-import { DetailCommand, GetCommand, ListCommand, PeekCommand, ValidateCommand } from "./query";
+import { DepsCommand, DetailCommand, GetCommand, ListCommand, PeekCommand, ValidateCommand } from "./query";
 import { BuildCommand, CreateCommand, DeleteCommand, FormatCommand, PublishCommand } from "./write";
 import {
   PublishAgentsMDCommand,
@@ -60,14 +60,30 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
   {
     create: () => new GetCommand(),
     help: {
-      usage: ["get <author>/<name>@<version> | <author>/<name> | <name> [--global]", ""],
+      usage: ["get <author>/<name>@<version> | <author>/<name> | <name> [--global] [--wrap]", ""],
       details: [
         "                                       Install skill and dependencies to local partial repository",
         "                                       - <author>/<name>@<version> or <name>@<version>: exact match",
         "                                       - <author>/<name> or <name>: interactive selection if multiple versions found",
         "                                       - Default: <cwd>/.{tool}/skills/, --global: ~/.{tool}/skills/",
-        "get --rgx <pattern> [version] [--global]",
+        "                                       - --wrap: install only the root skill and keep dependencies queryable via `skr deps`",
+        "get --rgx <pattern> [version] [--global] [--wrap]",
         "                                       Install by regex pattern (must match exactly one skill)",
+      ],
+    },
+  },
+  {
+    create: () => new DepsCommand(),
+    help: {
+      usage: ["deps (--brief|--content|--tree|--install) <rootSkillDir> [depSkillID] [--global]", "Inspect or install wrapped skill dependencies"],
+      details: [
+        "deps --brief <rootSkillDir>            List all descendant dependency skill IDs and descriptions",
+        "deps --content <rootSkillDir> <depSkillID>",
+        "                                       Print the target dependency's SKILL.md content",
+        "deps --tree <rootSkillDir> <depSkillID>",
+        "                                       Show the target dependency's file list",
+        "deps --install <rootSkillDir> <depSkillID> [--global]",
+        "                                       Install the selected dependency subtree next to the wrapped root or into ~/.{tool}/skills/",
       ],
     },
   },

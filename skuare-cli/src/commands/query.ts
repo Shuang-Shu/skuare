@@ -7,7 +7,7 @@ import { BaseCommand } from "./base";
 import { callApi } from "../http/client";
 import type { JsonValue } from "./types";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { homedir } from "node:os";
 import { resolveToolSkillsDir } from "../config/resolver";
 
@@ -21,14 +21,61 @@ type NormalizedSkillItem = {
   version: JsonValue;
   description: JsonValue;
 };
-
 type ParsedGetInput =
   | { type: "full"; author: string; name: string; version: string }
   | { type: "author-name"; author: string; name: string }
   | { type: "name-only"; name: string };
+type DependencyRef = {
+  skillID: string;
+  version: string;
+  requestedVersion: string;
+  alias?: string;
+};
+type SkillGraphNode = {
+  skillID: string;
+  version: string;
+  description: string;
+  files: RemoteFile[];
+  dependencies: DependencyRef[];
+};
+type DependencyGraph = {
+  root: SkillGraphNode;
+  nodes: Map<string, SkillGraphNode>;
+};
+type DependencyCycleContext = {
+  cyclePath: string[];
+  skillID: string;
+  version: string;
+};
+type WrapMetadata = {
+  version: 1;
+  mode: "wrap";
+  tool: string;
+  root_skill_id: string;
+  root_version: string;
+  install_root: string;
+  global: boolean;
+};
+type LocalRootDescriptor = {
+  rootDir: string;
+  rootSkillID: string;
+  rootVersion: string;
+  description: string;
+  tool?: string;
+  installRoot: string;
+  metadata?: WrapMetadata;
+  files: RemoteFile[];
+  dependencies: DependencyRef[];
+};
+
+const WRAP_METADATA_FILE = ".skuare-wrap.json";
 
 function normalizePath(input: string): string {
   return input.replace(/\\/g, "/").replace(/^\.\/+/, "");
+}
+
+function formatNodeKey(skillID: string, version: string): string {
+  return `${skillID}@${version}`;
 }
 
 function parseSkillIDParts(skillID: string): { authorFromID: string; nameFromID: string } {
@@ -46,6 +93,72 @@ function parseSkillIDParts(skillID: string): { authorFromID: string; nameFromID:
   };
 }
 
+function unquoteYaml(v: string): string {
+  if ((v.startsWith("\"") && v.endsWith("\"")) || (v.startsWith("'") && v.endsWith("'"))) {
+    return v.slice(1, -1).trim();
+  }
+  return v.trim();
+}
+
+function parseSkillFrontmatter(content: string): {
+  name: string;
+  description: string;
+  metadataVersion: string;
+  metadataAuthor: string;
+} {
+  const lines = content.split(/\r?\n/);
+  if (lines[0]?.trim() !== "---") {
+    return { name: "", description: "", metadataVersion: "", metadataAuthor: "" };
+  }
+  let fmEnd = -1;
+  for (let i = 1; i < lines.length; i += 1) {
+    if (lines[i].trim() === "---") {
+      fmEnd = i;
+      break;
+    }
+  }
+  if (fmEnd < 0) {
+    return { name: "", description: "", metadataVersion: "", metadataAuthor: "" };
+  }
+
+  let name = "";
+  let description = "";
+  let metadataVersion = "";
+  let metadataAuthor = "";
+  let metadataIndent = -1;
+  for (const rawLine of lines.slice(1, fmEnd)) {
+    const line = rawLine.trim();
+    const indent = rawLine.length - rawLine.trimStart().length;
+    if (!line) {
+      continue;
+    }
+    if (line === "metadata:") {
+      metadataIndent = indent;
+      continue;
+    }
+    if (metadataIndent >= 0) {
+      if (indent <= metadataIndent) {
+        metadataIndent = -1;
+      } else if (line.startsWith("version:")) {
+        metadataVersion = unquoteYaml(line.slice("version:".length).trim());
+        continue;
+      } else if (line.startsWith("author:")) {
+        metadataAuthor = unquoteYaml(line.slice("author:".length).trim());
+        continue;
+      }
+    }
+    if (line.startsWith("name:")) {
+      name = unquoteYaml(line.slice("name:".length).trim());
+      continue;
+    }
+    if (line.startsWith("description:")) {
+      description = unquoteYaml(line.slice("description:".length).trim());
+      continue;
+    }
+  }
+  return { name, description, metadataVersion, metadataAuthor };
+}
+
 function parseMetadataAuthorFromSkillFiles(filesValue: JsonValue | undefined): string {
   if (!Array.isArray(filesValue)) {
     return "";
@@ -59,48 +172,9 @@ function parseMetadataAuthorFromSkillFiles(filesValue: JsonValue | undefined): s
     if (path !== "SKILL.md") {
       continue;
     }
-    const content = String(file.content || "");
-    const lines = content.split(/\r?\n/);
-    if (lines[0]?.trim() !== "---") {
-      continue;
-    }
-    let fmEnd = -1;
-    for (let i = 1; i < lines.length; i += 1) {
-      if (lines[i].trim() === "---") {
-        fmEnd = i;
-        break;
-      }
-    }
-    if (fmEnd < 0) {
-      continue;
-    }
-    let metadataIndent = -1;
-    for (const rawLine of lines.slice(1, fmEnd)) {
-      const line = rawLine.trim();
-      const indent = rawLine.length - rawLine.trimStart().length;
-      if (line === "metadata:") {
-        metadataIndent = indent;
-        continue;
-      }
-      if (metadataIndent >= 0) {
-        if (line && indent <= metadataIndent) {
-          metadataIndent = -1;
-          continue;
-        }
-        if (line.startsWith("author:")) {
-          return unquoteYaml(line.slice("author:".length).trim());
-        }
-      }
-    }
+    return parseSkillFrontmatter(String(file.content || "")).metadataAuthor;
   }
   return "";
-}
-
-function unquoteYaml(v: string): string {
-  if ((v.startsWith("\"") && v.endsWith("\"")) || (v.startsWith("'") && v.endsWith("'"))) {
-    return v.slice(1, -1).trim();
-  }
-  return v.trim();
 }
 
 function buildDisplayIdentity(input: {
@@ -290,6 +364,44 @@ async function resolveDetailSkillDir(context: CommandContext, skillRef: string):
   throw new Error(`detail skill not found in ${skillsRoot}: ${trimmed}`);
 }
 
+function parseGetInput(input: string): ParsedGetInput {
+  const trimmed = input.trim();
+  const atIndex = trimmed.indexOf("@");
+
+  if (atIndex > 0) {
+    const beforeAt = trimmed.slice(0, atIndex);
+    const version = trimmed.slice(atIndex + 1).trim();
+    const slashIndex = beforeAt.indexOf("/");
+
+    if (slashIndex > 0) {
+      return {
+        type: "full",
+        author: beforeAt.slice(0, slashIndex).trim(),
+        name: beforeAt.slice(slashIndex + 1).trim(),
+        version,
+      };
+    }
+
+    return {
+      type: "full",
+      author: "",
+      name: beforeAt.trim(),
+      version,
+    };
+  }
+
+  const slashIndex = trimmed.indexOf("/");
+  if (slashIndex > 0) {
+    return {
+      type: "author-name",
+      author: trimmed.slice(0, slashIndex).trim(),
+      name: trimmed.slice(slashIndex + 1).trim(),
+    };
+  }
+
+  return { type: "name-only", name: trimmed };
+}
+
 /**
  * 列出技能命令
  */
@@ -472,81 +584,411 @@ export class PeekCommand extends BaseCommand {
   }
 }
 
-function parseGetInput(input: string): ParsedGetInput {
-  const trimmed = input.trim();
-  const atIndex = trimmed.indexOf("@");
-  
-  if (atIndex > 0) {
-    const beforeAt = trimmed.slice(0, atIndex);
-    const version = trimmed.slice(atIndex + 1).trim();
-    const slashIndex = beforeAt.indexOf("/");
-    
-    if (slashIndex > 0) {
-      return {
-        type: "full",
-        author: beforeAt.slice(0, slashIndex).trim(),
-        name: beforeAt.slice(slashIndex + 1).trim(),
-        version,
-      };
+abstract class DependencyAwareCommand extends BaseCommand {
+  protected resolvePrimaryTool(llmTools: string[]): string {
+    const first = (llmTools || []).map((v) => v.trim()).find(Boolean);
+    if (!first) {
+      this.fail("No llmTools configured. Run `skr init` and select at least one tool");
     }
-    
+    return first;
+  }
+
+  protected resolveInstallTargetRoot(cwd: string, tool: string, isGlobal: boolean): string {
+    return isGlobal
+      ? join(homedir(), `.${tool}`, "skills")
+      : join(cwd, `.${tool}`, "skills");
+  }
+
+  protected onDependencyCycle(context: DependencyCycleContext): never {
+    this.fail(`Detected circular dependency: ${context.cyclePath.join(" -> ")}`);
+  }
+
+  protected onDependencyVersionConflict(skillID: string, existingVersion: string, nextVersion: string): never {
+    this.fail(`Conflicting dependency versions for ${skillID}: ${existingVersion} vs ${nextVersion}`);
+  }
+
+  protected parseDependencyRefs(files: RemoteFile[], sourceLabel: string): DependencyRef[] {
+    const lock = files.find((f) => normalizePath(f.path) === "skill-deps.lock.json");
+    const plain = files.find((f) => normalizePath(f.path) === "skill-deps.json");
+    const depFile = lock || plain;
+    if (!depFile) {
+      return [];
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(depFile.content) as unknown;
+    } catch {
+      this.fail(`Invalid dependency file JSON in ${sourceLabel}: ${depFile.path}`);
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      this.fail(`Invalid dependency file in ${sourceLabel}: ${depFile.path}`);
+    }
+    const deps = (parsed as { dependencies?: unknown }).dependencies;
+    if (!Array.isArray(deps)) {
+      this.fail(`Invalid dependencies format in ${sourceLabel}: ${depFile.path}`);
+    }
+    return deps.map((row) => this.parseDependencyRef(row, sourceLabel, !!lock));
+  }
+
+  protected parseDependencyRef(item: unknown, sourceLabel: string, fromLockFile: boolean): DependencyRef {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      this.fail(`Invalid dependency item in ${sourceLabel}`);
+    }
+    const row = item as { skill?: unknown; version?: unknown; resolved?: unknown; alias?: unknown };
+    const skillID = String(row.skill || "").trim();
+    const requestedVersion = String(row.version || "").trim();
+    const resolvedVersion = fromLockFile ? String(row.resolved || row.version || "").trim() : requestedVersion;
+    const aliasRaw = row.alias;
+    const alias = aliasRaw === undefined ? "" : String(aliasRaw).trim();
+    if (!skillID || !requestedVersion) {
+      this.fail(`Dependency item requires skill/version in ${sourceLabel}`);
+    }
+    if (aliasRaw !== undefined && !alias) {
+      this.fail(`Dependency alias must be a non-empty string in ${sourceLabel}`);
+    }
     return {
-      type: "full",
-      author: "",
-      name: beforeAt.trim(),
-      version,
+      skillID,
+      version: resolvedVersion || requestedVersion,
+      requestedVersion,
+      ...(alias ? { alias } : {}),
     };
   }
-  
-  const slashIndex = trimmed.indexOf("/");
-  if (slashIndex > 0) {
+
+  protected async resolveVersion(context: CommandContext, skillID: string, preferred?: string): Promise<string> {
+    if (preferred) {
+      return preferred;
+    }
+    const resp = await callApi({
+      method: "GET",
+      path: `/api/v1/skills/${encodeURIComponent(skillID)}`,
+      server: context.server,
+      silent: true,
+    });
+    const data = (resp.data && typeof resp.data === "object" && !Array.isArray(resp.data))
+      ? (resp.data as { versions?: JsonValue }).versions
+      : undefined;
+    const versions = Array.isArray(data) ? data.map((v) => String(v)).filter(Boolean) : [];
+    if (versions.length === 0) {
+      this.fail(`No versions found for skill: ${skillID}`);
+    }
+    return versions[versions.length - 1];
+  }
+
+  protected async fetchRemoteSkillNode(context: CommandContext, skillID: string, preferredVersion?: string): Promise<SkillGraphNode> {
+    const version = await this.resolveVersion(context, skillID, preferredVersion);
+    const resp = await callApi({
+      method: "GET",
+      path: `/api/v1/skills/${encodeURIComponent(skillID)}/${encodeURIComponent(version)}`,
+      server: context.server,
+      silent: true,
+    });
+    const row = (resp.data && typeof resp.data === "object" && !Array.isArray(resp.data))
+      ? (resp.data as Record<string, JsonValue>)
+      : {};
+    const filesRaw = Array.isArray(row.files) ? row.files : [];
+    const files: RemoteFile[] = [];
+    for (const entry of filesRaw) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        continue;
+      }
+      const file = entry as Record<string, JsonValue>;
+      const path = String(file.path || "").trim();
+      if (!path) {
+        continue;
+      }
+      files.push({ path, content: String(file.content || "") });
+    }
+    if (files.length === 0) {
+      this.fail(`Skill ${skillID}@${version} does not contain downloadable files`);
+    }
+    const skillFile = files.find((file) => normalizePath(file.path) === "SKILL.md");
+    const metadata = skillFile ? parseSkillFrontmatter(skillFile.content) : { name: "", description: "", metadataVersion: "", metadataAuthor: "" };
     return {
-      type: "author-name",
-      author: trimmed.slice(0, slashIndex).trim(),
-      name: trimmed.slice(slashIndex + 1).trim(),
+      skillID: String(row.skill_id || skillID).trim() || skillID,
+      version: String(row.version || version).trim() || version,
+      description: String(row.description || "").trim() || metadata.description,
+      files,
+      dependencies: this.parseDependencyRefs(files, `${skillID}@${version}`),
     };
   }
-  
-  return { type: "name-only", name: trimmed };
+
+  protected async buildDependencyGraph(context: CommandContext, root: SkillGraphNode): Promise<DependencyGraph> {
+    const nodes = new Map<string, SkillGraphNode>();
+    const loaded = new Map<string, SkillGraphNode>();
+    const completed = new Set<string>();
+    const active = new Set<string>();
+    const stack: string[] = [];
+    const versionsBySkillID = new Map<string, string>();
+
+    const visit = async (node: SkillGraphNode): Promise<void> => {
+      const nodeKey = formatNodeKey(node.skillID, node.version);
+      const existingVersion = versionsBySkillID.get(node.skillID);
+      if (existingVersion && existingVersion !== node.version) {
+        this.onDependencyVersionConflict(node.skillID, existingVersion, node.version);
+      }
+      versionsBySkillID.set(node.skillID, node.version);
+
+      if (completed.has(nodeKey)) {
+        nodes.set(nodeKey, node);
+        return;
+      }
+      if (active.has(nodeKey)) {
+        const cycleStart = stack.indexOf(nodeKey);
+        const cyclePath = cycleStart >= 0 ? [...stack.slice(cycleStart), nodeKey] : [...stack, nodeKey];
+        this.onDependencyCycle({ cyclePath, skillID: node.skillID, version: node.version });
+      }
+
+      nodes.set(nodeKey, node);
+      active.add(nodeKey);
+      stack.push(nodeKey);
+      try {
+        for (const dep of node.dependencies) {
+          const depKey = formatNodeKey(dep.skillID, dep.version);
+          let depNode = loaded.get(depKey);
+          if (!depNode) {
+            depNode = await this.fetchRemoteSkillNode(context, dep.skillID, dep.version);
+            loaded.set(depKey, depNode);
+          }
+          await visit(depNode);
+        }
+        completed.add(nodeKey);
+      } finally {
+        stack.pop();
+        active.delete(nodeKey);
+      }
+    };
+
+    await visit(root);
+    return { root, nodes };
+  }
+
+  protected collectSubtree(graph: DependencyGraph, rootSkillID: string): SkillGraphNode[] {
+    const out: SkillGraphNode[] = [];
+    const visited = new Set<string>();
+    const rootNode = Array.from(graph.nodes.values()).find((node) => node.skillID === rootSkillID);
+    if (!rootNode) {
+      this.fail(`Skill not found in dependency graph: ${rootSkillID}`);
+    }
+
+    const walk = (node: SkillGraphNode): void => {
+      const nodeKey = formatNodeKey(node.skillID, node.version);
+      if (visited.has(nodeKey)) {
+        return;
+      }
+      visited.add(nodeKey);
+      out.push(node);
+      for (const dep of node.dependencies) {
+        const depNode = graph.nodes.get(formatNodeKey(dep.skillID, dep.version));
+        if (depNode) {
+          walk(depNode);
+        }
+      }
+    };
+
+    walk(rootNode);
+    return out;
+  }
+
+  protected async writeSkillFiles(
+    targetRoot: string,
+    skillID: string,
+    files: RemoteFile[],
+    options?: { sharedLocalDir: boolean }
+  ): Promise<string[]> {
+    const skillDir = join(targetRoot, skillID);
+    await mkdir(skillDir, { recursive: true });
+    const conflicts: string[] = [];
+    for (const file of files) {
+      const rel = normalizePath(file.path).replace(/^(\.\.\/)+/, "");
+      const dest = join(skillDir, rel);
+      await mkdir(dirname(dest), { recursive: true });
+      let oldContent: string | undefined;
+      try {
+        oldContent = await readFile(dest, "utf8");
+      } catch (err) {
+        if (!(err && typeof err === "object" && (err as { code?: string }).code === "ENOENT")) {
+          throw err;
+        }
+      }
+      if (oldContent === file.content) {
+        continue;
+      }
+      if (options?.sharedLocalDir && oldContent !== undefined) {
+        conflicts.push(normalizePath(join(skillID, rel)));
+      }
+      await writeFile(dest, file.content, "utf8");
+    }
+    return conflicts;
+  }
+
+  protected async installGraphNodes(
+    targetRoot: string,
+    nodes: SkillGraphNode[],
+    options?: { sharedLocalDir: boolean }
+  ): Promise<InstallResult> {
+    const installed = new Set<string>();
+    const conflicts = new Set<string>();
+    for (const node of nodes) {
+      const changed = await this.writeSkillFiles(targetRoot, node.skillID, node.files, options);
+      installed.add(node.skillID);
+      for (const path of changed) {
+        conflicts.add(path);
+      }
+    }
+    return {
+      skills: Array.from(installed),
+      conflictFiles: Array.from(conflicts),
+    };
+  }
+
+  protected async readWrapMetadata(skillDir: string): Promise<WrapMetadata | undefined> {
+    const filePath = join(skillDir, WRAP_METADATA_FILE);
+    const info = await stat(filePath).catch(() => undefined);
+    if (!info?.isFile()) {
+      return undefined;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await readFile(filePath, "utf8")) as unknown;
+    } catch {
+      this.fail(`Invalid wrap metadata JSON: ${filePath}`);
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      this.fail(`Invalid wrap metadata: ${filePath}`);
+    }
+    const row = parsed as Record<string, unknown>;
+    const metadata: WrapMetadata = {
+      version: Number(row.version) === 1 ? 1 : 1,
+      mode: row.mode === "wrap" ? "wrap" : "wrap",
+      tool: String(row.tool || "").trim(),
+      root_skill_id: String(row.root_skill_id || "").trim(),
+      root_version: String(row.root_version || "").trim(),
+      install_root: String(row.install_root || "").trim(),
+      global: row.global === true,
+    };
+    if (!metadata.tool || !metadata.root_skill_id || !metadata.root_version || !metadata.install_root) {
+      this.fail(`Wrap metadata is missing required fields: ${filePath}`);
+    }
+    return metadata;
+  }
+
+  protected async loadLocalRootDescriptor(rootSkillDir: string): Promise<LocalRootDescriptor> {
+    const rootDir = resolve(rootSkillDir);
+    const skillPath = join(rootDir, "SKILL.md");
+    const skillInfo = await stat(skillPath).catch(() => undefined);
+    if (!skillInfo?.isFile()) {
+      this.fail(`rootSkillDir does not contain SKILL.md: ${rootSkillDir}`);
+    }
+
+    const skillContent = await readFile(skillPath, "utf8");
+    const skillMeta = parseSkillFrontmatter(skillContent);
+    const wrapMetadata = await this.readWrapMetadata(rootDir);
+    const files: RemoteFile[] = [{ path: "SKILL.md", content: skillContent }];
+    const lockPath = join(rootDir, "skill-deps.lock.json");
+    const plainPath = join(rootDir, "skill-deps.json");
+
+    const lockInfo = await stat(lockPath).catch(() => undefined);
+    if (lockInfo?.isFile()) {
+      files.push({ path: "skill-deps.lock.json", content: await readFile(lockPath, "utf8") });
+    }
+    const plainInfo = await stat(plainPath).catch(() => undefined);
+    if (plainInfo?.isFile()) {
+      files.push({ path: "skill-deps.json", content: await readFile(plainPath, "utf8") });
+    }
+
+    const rootSkillID = wrapMetadata?.root_skill_id || skillMeta.name || basename(rootDir);
+    const rootVersion = wrapMetadata?.root_version || skillMeta.metadataVersion;
+    if (!rootSkillID || !rootVersion) {
+      this.fail(`Cannot resolve root skill identity/version from ${rootSkillDir}`);
+    }
+
+    return {
+      rootDir,
+      rootSkillID,
+      rootVersion,
+      description: skillMeta.description,
+      tool: wrapMetadata?.tool || undefined,
+      installRoot: wrapMetadata?.install_root || dirname(rootDir),
+      metadata: wrapMetadata,
+      files,
+      dependencies: this.parseDependencyRefs(files, rootDir),
+    };
+  }
+
+  protected async buildGraphFromLocalRoot(context: CommandContext, rootSkillDir: string): Promise<{ descriptor: LocalRootDescriptor; graph: DependencyGraph }> {
+    const descriptor = await this.loadLocalRootDescriptor(rootSkillDir);
+    const rootNode: SkillGraphNode = {
+      skillID: descriptor.rootSkillID,
+      version: descriptor.rootVersion,
+      description: descriptor.description,
+      files: descriptor.files,
+      dependencies: descriptor.dependencies,
+    };
+    const graph = await this.buildDependencyGraph(context, rootNode);
+    return { descriptor, graph };
+  }
+
+  protected resolveDepsInstallRoot(context: CommandContext, descriptor: LocalRootDescriptor, isGlobal: boolean): string {
+    if (isGlobal) {
+      const tool = descriptor.tool || this.resolvePrimaryTool(context.llmTools);
+      return this.resolveInstallTargetRoot(context.cwd, tool, true);
+    }
+    return descriptor.installRoot || dirname(descriptor.rootDir);
+  }
 }
 
-export class GetCommand extends BaseCommand {
+export class GetCommand extends DependencyAwareCommand {
   readonly name = "get";
   readonly description = "Install skill to local partial repository";
 
   async execute(context: CommandContext): Promise<void> {
     const isGlobal = context.args.includes("--global");
+    const wrapMode = context.args.includes("--wrap");
     const regexPattern = parseRegexOption(context.args);
-    const positional = stripOptionsWithValues(stripRegexOptions(context.args), []).filter(arg => arg !== "--global");
-    
+    const positional = stripRegexOptions(context.args).filter((arg) => arg !== "--global" && arg !== "--wrap");
+
     let skillID: string;
     let versionArg: string | undefined;
-    
+
     if (regexPattern) {
       if (positional.length > 1) {
-        this.fail("Usage: skuare get --rgx <pattern> [version] [--global]");
+        this.fail("Usage: skuare get --rgx <pattern> [version] [--global] [--wrap]");
       }
       skillID = await this.resolveSkillIDByRegex(context, regexPattern);
       versionArg = positional[0];
     } else {
       const [input, version] = positional;
       if (!input) {
-        this.fail("Missing <skillID>. Usage: skuare get <skillID> [version] [--rgx <pattern>] [--global]");
+        this.fail("Missing <skillID>. Usage: skuare get <skillID> [version] [--rgx <pattern>] [--global] [--wrap]");
       }
       if (positional.length > 2) {
-        this.fail("Usage: skuare get <skillID> [version] [--rgx <pattern>] [--global]");
+        this.fail("Usage: skuare get <skillID> [version] [--rgx <pattern>] [--global] [--wrap]");
       }
-      
+
       const parsed = parseGetInput(input);
       const resolved = await this.resolveSkillByPattern(context, parsed);
       skillID = resolved.skillID;
       versionArg = version || resolved.version;
     }
-    
-    const tool = this.resolveTargetTool(context.llmTools);
+
+    const tool = this.resolvePrimaryTool(context.llmTools);
     const targetRoot = this.resolveInstallTargetRoot(context.cwd, tool, isGlobal);
+    const rootNode = await this.fetchRemoteSkillNode(context, skillID, versionArg);
+    const graph = await this.buildDependencyGraph(context, rootNode);
     const sharedLocalDir = false;
-    const result = await this.installWithDependencies(context, targetRoot, skillID, versionArg, { sharedLocalDir });
+    const nodesToInstall = wrapMode ? [graph.root] : this.collectSubtree(graph, graph.root.skillID);
+    const result = await this.installGraphNodes(targetRoot, nodesToInstall, { sharedLocalDir });
+    if (wrapMode) {
+      await this.writeWrapMetadata(targetRoot, graph.root.skillID, {
+        version: 1,
+        mode: "wrap",
+        tool,
+        root_skill_id: graph.root.skillID,
+        root_version: graph.root.version,
+        install_root: targetRoot,
+        global: isGlobal,
+      });
+    }
     if (sharedLocalDir && result.conflictFiles.length > 0) {
       console.log(
         `${this.yellow("[WARN]")} local mode shared repository detected, overwrite ${result.conflictFiles.length} file(s) during install`
@@ -554,12 +996,18 @@ export class GetCommand extends BaseCommand {
     }
     console.log(JSON.stringify({
       global: isGlobal,
+      wrap: wrapMode,
       llm_tool: tool,
       target: targetRoot,
       shared_local_dir: sharedLocalDir,
       conflicts: result.conflictFiles.sort((a, b) => a.localeCompare(b)),
       skills: result.skills.sort((a, b) => a.localeCompare(b)),
     }, null, 2));
+  }
+
+  private async writeWrapMetadata(targetRoot: string, skillID: string, metadata: WrapMetadata): Promise<void> {
+    const filePath = join(targetRoot, skillID, WRAP_METADATA_FILE);
+    await writeFile(filePath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
   }
 
   private compileRegex(pattern: string): RegExp {
@@ -648,169 +1096,98 @@ export class GetCommand extends BaseCommand {
     }));
     const selected = await selectSkillWithScroll(
       options,
-      `Multiple skills found, select one (use ↑/↓, Enter to confirm):`
+      "Multiple skills found, select one (use ↑/↓, Enter to confirm):"
     );
     return { skillID: selected.skillID, version: selected.version };
   }
+}
 
-  private resolveTargetTool(llmTools: string[]): string {
-    const first = (llmTools || []).map((v) => v.trim()).find(Boolean);
-    if (!first) {
-      this.fail("No llmTools configured. Run `skr init` and select at least one tool");
+export class DepsCommand extends DependencyAwareCommand {
+  readonly name = "deps";
+  readonly description = "Inspect or install wrapped skill dependencies";
+
+  async execute(context: CommandContext): Promise<void> {
+    const actionFlags = ["--brief", "--content", "--tree", "--install"].filter((flag) => context.args.includes(flag));
+    if (actionFlags.length !== 1) {
+      this.fail("Usage: skuare deps (--brief|--content|--tree|--install) <rootSkillDir> [depSkillID] [--global]");
     }
-    return first;
+    const isGlobal = context.args.includes("--global");
+    const positional = context.args.filter((arg) =>
+      arg !== "--brief" && arg !== "--content" && arg !== "--tree" && arg !== "--install" && arg !== "--global"
+    );
+    const [action] = actionFlags;
+
+    if (action === "--brief") {
+      const [rootSkillDir] = positional;
+      if (!rootSkillDir || positional.length !== 1) {
+        this.fail("Usage: skuare deps --brief <rootSkillDir>");
+      }
+      const { descriptor, graph } = await this.buildGraphFromLocalRoot(context, rootSkillDir);
+      const dependencies = this.collectDescendants(graph, descriptor.rootSkillID)
+        .map((node) => ({
+          skill_id: node.skillID,
+          version: node.version,
+          description: node.description,
+        }))
+        .sort((a, b) => a.skill_id.localeCompare(b.skill_id));
+      console.log(JSON.stringify({
+        root_skill_id: descriptor.rootSkillID,
+        root_version: descriptor.rootVersion,
+        dependencies,
+      }, null, 2));
+      return;
+    }
+
+    const [rootSkillDir, depSkillID] = positional;
+    if (!rootSkillDir || !depSkillID || positional.length !== 2) {
+      this.fail("Usage: skuare deps (--content|--tree|--install) <rootSkillDir> <depSkillID> [--global]");
+    }
+
+    const { descriptor, graph } = await this.buildGraphFromLocalRoot(context, rootSkillDir);
+    const targetNode = this.findDescendant(graph, descriptor.rootSkillID, depSkillID);
+    if (!targetNode) {
+      this.fail(`Dependency ${depSkillID} is not part of ${descriptor.rootSkillID}`);
+    }
+
+    if (action === "--content") {
+      const skillFile = targetNode.files.find((file) => normalizePath(file.path) === "SKILL.md");
+      if (!skillFile) {
+        this.fail(`Dependency ${depSkillID}@${targetNode.version} does not contain SKILL.md`);
+      }
+      process.stdout.write(skillFile.content);
+      return;
+    }
+
+    if (action === "--tree") {
+      const files = targetNode.files
+        .map((file) => normalizePath(file.path))
+        .sort((a, b) => a.localeCompare(b));
+      console.log(JSON.stringify({
+        skill_id: targetNode.skillID,
+        version: targetNode.version,
+        files,
+      }, null, 2));
+      return;
+    }
+
+    const installRoot = this.resolveDepsInstallRoot(context, descriptor, isGlobal);
+    const result = await this.installGraphNodes(installRoot, this.collectSubtree(graph, targetNode.skillID), { sharedLocalDir: false });
+    console.log(JSON.stringify({
+      global: isGlobal,
+      root_skill_id: descriptor.rootSkillID,
+      target_skill_id: targetNode.skillID,
+      install_root: installRoot,
+      skills: result.skills.sort((a, b) => a.localeCompare(b)),
+      conflicts: result.conflictFiles.sort((a, b) => a.localeCompare(b)),
+    }, null, 2));
   }
 
-  private resolveInstallTargetRoot(cwd: string, tool: string, isGlobal: boolean): string {
-    return isGlobal 
-      ? join(homedir(), `.${tool}`, "skills")
-      : join(cwd, `.${tool}`, "skills");
+  private collectDescendants(graph: DependencyGraph, rootSkillID: string): SkillGraphNode[] {
+    return this.collectSubtree(graph, rootSkillID).filter((node) => node.skillID !== rootSkillID);
   }
 
-  private async installWithDependencies(
-    context: CommandContext,
-    targetRoot: string,
-    rootSkill: string,
-    versionArg?: string,
-    options?: { sharedLocalDir: boolean }
-  ): Promise<InstallResult> {
-    const queue: string[] = [rootSkill];
-    const installed = new Set<string>();
-    const visiting = new Set<string>();
-    const conflicts = new Set<string>();
-    const sharedLocalDir = options?.sharedLocalDir === true;
-
-    while (queue.length > 0) {
-      const skill = queue.shift() as string;
-      if (installed.has(skill)) {
-        continue;
-      }
-      if (visiting.has(skill)) {
-        continue;
-      }
-      visiting.add(skill);
-
-      const version = await this.resolveVersion(context, skill, skill === rootSkill ? versionArg : undefined);
-      const files = await this.fetchRemoteFiles(context, skill, version);
-      const deps = this.parseDependenciesFromFiles(files);
-
-      const changed = await this.writeSkillFiles(targetRoot, skill, files, { sharedLocalDir });
-      for (const path of changed) {
-        conflicts.add(path);
-      }
-      installed.add(skill);
-      visiting.delete(skill);
-
-      for (const dep of deps) {
-        if (!installed.has(dep)) {
-          queue.push(dep);
-        }
-      }
-    }
-
-    return { skills: Array.from(installed), conflictFiles: Array.from(conflicts) };
-  }
-
-  private async resolveVersion(context: CommandContext, skillID: string, preferred?: string): Promise<string> {
-    if (preferred) {
-      return preferred;
-    }
-    const resp = await callApi({
-      method: "GET",
-      path: `/api/v1/skills/${encodeURIComponent(skillID)}`,
-      server: context.server,
-      silent: true,
-    });
-    const data = (resp.data && typeof resp.data === "object" && !Array.isArray(resp.data))
-      ? (resp.data as { versions?: JsonValue }).versions
-      : undefined;
-    const versions = Array.isArray(data) ? data.map((v) => String(v)).filter(Boolean) : [];
-    if (versions.length === 0) {
-      this.fail(`No versions found for skill: ${skillID}`);
-    }
-    return versions[versions.length - 1];
-  }
-
-  private async fetchRemoteFiles(context: CommandContext, skillID: string, version: string): Promise<RemoteFile[]> {
-    const resp = await callApi({
-      method: "GET",
-      path: `/api/v1/skills/${encodeURIComponent(skillID)}/${encodeURIComponent(version)}`,
-      server: context.server,
-      silent: true,
-    });
-    const data = (resp.data && typeof resp.data === "object" && !Array.isArray(resp.data))
-      ? (resp.data as { files?: JsonValue }).files
-      : undefined;
-    const rows = Array.isArray(data) ? data : [];
-    const files: RemoteFile[] = [];
-    for (const row of rows) {
-      if (!row || typeof row !== "object" || Array.isArray(row)) {
-        continue;
-      }
-      const obj = row as Record<string, JsonValue>;
-      const path = String(obj.path || "").trim();
-      const content = String(obj.content || "");
-      if (!path) {
-        continue;
-      }
-      files.push({ path, content });
-    }
-    if (files.length === 0) {
-      this.fail(`Skill ${skillID}@${version} does not contain downloadable files`);
-    }
-    return files;
-  }
-
-  private parseDependenciesFromFiles(files: RemoteFile[]): string[] {
-    const lock = files.find((f) => normalizePath(f.path) === "skill-deps.lock.json");
-    const plain = files.find((f) => normalizePath(f.path) === "skill-deps.json");
-    const depFile = lock || plain;
-    if (!depFile) {
-      return [];
-    }
-    const parsed = JSON.parse(depFile.content) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return [];
-    }
-    const deps = (parsed as { dependencies?: unknown }).dependencies;
-    if (!Array.isArray(deps)) {
-      return [];
-    }
-    return deps
-      .map((row) => (row && typeof row === "object" ? String((row as { skill?: unknown }).skill || "").trim() : ""))
-      .filter(Boolean);
-  }
-
-  private async writeSkillFiles(
-    targetRoot: string,
-    skillID: string,
-    files: RemoteFile[],
-    options?: { sharedLocalDir: boolean }
-  ): Promise<string[]> {
-    const skillDir = join(targetRoot, skillID);
-    await mkdir(skillDir, { recursive: true });
-    const conflicts: string[] = [];
-    for (const file of files) {
-      const rel = normalizePath(file.path).replace(/^(\.\.\/)+/, "");
-      const dest = join(skillDir, rel);
-      await mkdir(dirname(dest), { recursive: true });
-      let oldContent: string | undefined;
-      try {
-        oldContent = await readFile(dest, "utf8");
-      } catch (err) {
-        if (!(err && typeof err === "object" && (err as { code?: string }).code === "ENOENT")) {
-          throw err;
-        }
-      }
-      if (oldContent === file.content) {
-        continue;
-      }
-      if (options?.sharedLocalDir && oldContent !== undefined) {
-        conflicts.push(normalizePath(join(skillID, rel)));
-      }
-      await writeFile(dest, file.content, "utf8");
-    }
-    return conflicts;
+  private findDescendant(graph: DependencyGraph, rootSkillID: string, depSkillID: string): SkillGraphNode | undefined {
+    return this.collectDescendants(graph, rootSkillID).find((node) => node.skillID === depSkillID);
   }
 }
 

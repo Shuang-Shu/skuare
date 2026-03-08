@@ -14,8 +14,9 @@
   - 不依赖 server，可直接修改本地配置、Skill 文件和依赖文件。
 - server 只读命令：`health`、`list`、`peek`、`validate`
   - 会访问 server，但不会写远程仓库。
-- 混合命令：`get`
-  - 先访问 server 拉取 Skill，再写入本地局部仓库。
+- 混合命令：`get`、`deps`
+  - `get`：先访问 server 拉取 Skill，再写入本地局部仓库。
+  - `deps`：围绕 wrap 根 Skill 查看或安装依赖子树。
 - server 写命令：`publish`、`create`、`delete`
   - 会写远程仓库；CLI 仅在提供签名凭证时附加签名，最终是否接受无签名写入由服务端决定。
 
@@ -54,13 +55,14 @@
   - `peek --rgx <pattern> [version]` -> 先查询列表，再正则筛选唯一 skill
   - `validate <skillID> <version>` -> `POST /api/v1/skills/:skillID/:version/validate`
 - 混合命令：
-  - `get <skillID> [version] [--rgx] [--scope] [--repo-dir] [--tool]`
-  - 行为：先从远程仓库拉取，再安装到本地局部仓库
-  - 默认 scope=`workspace`
-  - global 默认仓库根：`~/.skuare`
-  - workspace 默认仓库根：`<cwd>/.skuare`
-  - 实际安装目标：`<repoRoot>/repos/<scope>/<tool>/<skillID>/...`
-  - CLI 不根据本地配置推断服务端存储目录；服务端仓库根仅由服务端启动参数决定
+  - `get <skillID> [version] [--rgx] [--global] [--wrap]`
+  - 默认安装到 `<cwd>/.{llmTool}/skills/<skillID>/`
+  - `--global`：安装到 `~/.{llmTool}/skills/<skillID>/`
+  - 默认模式会把完整依赖图平铺安装；`--wrap` 只安装根 Skill，并写入本地 wrap 元数据供后续 `deps` 使用
+  - `deps --brief <rootSkillDir>`：列出全部后代依赖的 `skill_id/version/description`
+  - `deps --content <rootSkillDir> <depSkillID>`：输出目标依赖的 `SKILL.md`
+  - `deps --tree <rootSkillDir> <depSkillID>`：输出目标依赖的文件列表
+  - `deps --install <rootSkillDir> <depSkillID> [--global]`：按需安装目标依赖子树
 - server 写命令：
   - `publish --file <json> [--force|-f]` -> `POST /api/v1/skills`
   - `publish --skill <SKILL.md> [--skill-id] [--version] [--force|-f]` -> `POST /api/v1/skills`
@@ -104,6 +106,7 @@ skr help
 - 只读查询时，使用 `health/list/peek/validate`。
 - 涉及远程发布或删除时，使用 `publish/create/delete`；是否要求签名由服务端决定。
 - 需要把远程 Skill 安装到本地局部仓库时，使用 `get`。
+- 需要先只落根 Skill、后续再按需查看或安装依赖时，使用 `get --wrap` 配合 `deps`。
 
 - 根目录 `skr` 会优先执行自动重建；若本地缺少 TypeScript 工具链但仓库中已存在 `skuare-cli/dist/index.js`，则会输出 `WARN` 并回退到现有预构建产物继续运行。
 - 若该回退产物仍停留在旧命令集，`skr publish ...` 会在包装脚本层桥接为 `create ...` 以保持基础兼容；桥接发生时会额外输出 `WARN`。
@@ -191,8 +194,11 @@ skuare --server http://127.0.0.1:15657 publish --dir ./skills/pdf-reader --versi
 skuare --server http://127.0.0.1:15657 publish --dir ./skills/pdf-reader --force
 
 # 拉取到本地局部仓库
-skuare get pdf-reader --scope workspace
-skuare get pdf-reader --scope global --repo-dir ~/.skuare
+skuare get pdf-reader
+skuare get pdf-reader --global
+skuare get pdf-reader --wrap
+skuare deps --brief ./.codex/skills/pdf-reader
+skuare deps --install ./.codex/skills/pdf-reader skuare/text-splitter
 
 # 本地构建依赖文件（add 语义，存量依赖会保留并增量更新）
 skuare build report-generator data-normalizer schema-validator
@@ -245,6 +251,14 @@ skuare detail skuare/report-generator references/details.md notes.txt
 - 不带 `--global`：安装到 `<cwd>/.{llmTool}/skills/<skillID>/`
 - 带 `--global`：安装到 `~/.{llmTool}/skills/<skillID>/`
 - `llmTool` 取值为配置文件中第一个工具（codex/claudecode/custom）
+- 带 `--wrap`：只安装根 Skill，并在根目录下写入 `.skuare-wrap.json` 供 `deps` 读取
+- 遇到循环依赖时，`get` 会直接报错，不再静默跳过回边
+
+`deps` wrap 依赖行为：
+- `deps --brief <rootSkillDir>`：列出全部后代依赖的 `skill_id`、`version`、`description`
+- `deps --content <rootSkillDir> <depSkillID>`：输出目标依赖的 `SKILL.md`
+- `deps --tree <rootSkillDir> <depSkillID>`：输出目标依赖的文件列表
+- `deps --install <rootSkillDir> <depSkillID> [--global]`：默认安装到 wrap 根 Skill 同级目录；带 `--global` 时安装到 `~/.{tool}/skills/`
 
 写操作示例（携带公钥）：
 ```bash
@@ -287,3 +301,4 @@ skuare --server http://127.0.0.1:15657 \
 - 2026-03-02：`get` 简化参数：移除 `--scope/--repo-dir/--tool`，改用 `--global` 标志位；不带 `--global` 安装到 `<cwd>/.{llmTool}/skills/`，带 `--global` 安装到 `~/.{llmTool}/skills/`。
 - 2026-03-02：修复发布后作者字段丢失问题；当 `metadata.author` 存在时，服务端索引、`publish` 返回及 `list/peek` 展示都会保留 `author`。
 - 2026-03-02：将 `detail` 修正为 `detail <skillName|skillID> [relativePath...]`；先定位本地已安装 skill，再默认输出其 `SKILL.md`，支持多文件查看并拒绝越界路径。
+- 2026-03-08：新增 `get --wrap` 与 `deps` 命令族，支持大型 skill group 先只安装根 Skill，再按需查看/安装依赖；`get` 与 `deps` 都会显式检测循环依赖。
