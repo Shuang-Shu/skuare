@@ -2,7 +2,7 @@
 
 > 文档类型：README
 > 状态：已完成
-> 更新时间：2026-03-04
+> 更新时间：2026-03-08
 > 适用范围：skuare-cli
 
 ## 目标与范围
@@ -19,6 +19,8 @@
   - `deps`：围绕 wrap 根 Skill 查看或安装依赖子树。
 - server 写命令：`publish`、`create`、`delete`
   - 会写远程仓库；CLI 仅在提供签名凭证时附加签名，最终是否接受无签名写入由服务端决定。
+- 统一资源切换：`list`、`peek`、`get`、`detail`、`publish`、`create`、`delete`
+  - 默认操作 Skill；传入 `--type agentsmd` 或 `--type agmd` 时切换为 AGENTS.md 资源。
 
 ## 架构与 API 设计
 - 运行时：Node.js（>=20），入口文件 `src/index.ts`。
@@ -48,10 +50,13 @@
   - `build <skillName> [refSkill...] [--all]`：本地生成/追加 `<skillName>/skill-deps.json` 与 `<skillName>/skill-deps.lock.json`；若目标 skill 缺失，会先交互式创建最小 `SKILL.md`
   - `format [skillDir...]` / `format --all`：本地格式化 `SKILL.md`
   - `detail <skillName|skillID> [relativePath...]`：本地展示目标已安装 skill 目录下的文件内容；不传文件路径时默认读取该 skill 的 `SKILL.md`
+  - `detail --type agentsmd` / `detail --type agmd`：本地展示 `<cwd>/.{tool}/AGENTS.md` 或 `~/.{tool}/AGENTS.md`
 - server 只读命令：
   - `health` -> `GET /healthz`
   - `list [--q] [--rgx]` -> `GET /api/v1/skills`
+  - `list --type agentsmd|agmd [--q] [--rgx]` -> `GET /api/v1/agentsmd`
   - `peek <skillID> [version]` -> `GET /api/v1/skills/:skillID[/version]`
+  - `peek --type agentsmd|agmd <agentsmd-id> [version]` -> `GET /api/v1/agentsmd/:agentsmdID[/version]`
   - `peek --rgx <pattern> [version]` -> 先查询列表，再正则筛选唯一 skill
   - `validate <skillID> <version>` -> `POST /api/v1/skills/:skillID/:version/validate`
 - 混合命令：
@@ -59,6 +64,8 @@
   - 默认安装到 `<cwd>/.{llmTool}/skills/<skillID>/`
   - `--global`：安装到 `~/.{llmTool}/skills/<skillID>/`
   - 默认模式会把完整依赖图平铺安装；`--wrap` 只安装根 Skill，并写入本地 wrap 元数据供后续 `deps` 使用
+  - `get --type agentsmd|agmd <agentsmd-id> [version] [--global]`
+  - 默认安装到 `<cwd>/.{llmTool}/AGENTS.md`；`--global` 时安装到 `~/.{llmTool}/AGENTS.md`
   - `deps --brief <rootSkillDir>`：列出全部后代依赖的 `skill_id/version/description`
   - `deps --content <rootSkillDir> <depSkillID>`：输出目标依赖的 `SKILL.md`
   - `deps --tree <rootSkillDir> <depSkillID>`：输出目标依赖的文件列表
@@ -68,8 +75,11 @@
   - `publish --skill <SKILL.md> [--skill-id] [--version] [--force|-f]` -> `POST /api/v1/skills`
   - `publish --dir <skillDir> [--skill-id] [--version] [--force|-f]` -> `POST /api/v1/skills`
   - `publish <path...> [--all] [--skill-id] [--version] [--force|-f]` -> 自动检测每个 path：`SKILL.md` 文件 -> 目录 -> JSON 回退
+  - `publish --type agentsmd|agmd --file <AGENTS.md> --agentsmd-id <id> --version <v>` -> `POST /api/v1/agentsmd`
+  - `publish --type agentsmd|agmd --dir <dir>` -> 自动读取 `<dir>/AGENTS.md` 与可选 `<dir>/agentsmd-meta.json`
   - `create ... [--force|-f]` -> `publish` 的兼容别名，保留但标记弃用
   - `delete <skillID> <version>` -> `DELETE /api/v1/skills/:skillID/:version`
+  - `delete --type agentsmd|agmd <agentsmd-id> <version>` -> `DELETE /api/v1/agentsmd/:agentsmdID/:version`
 
 ## 鉴权机制说明
 - 写操作（`publish/create`、`delete`）若提供 `--key-id` 与 `--privkey-file` 会附加数字签名；是否允许免签写入由服务端决定。
@@ -213,6 +223,14 @@ skuare get pdf-reader --global
 skuare get pdf-reader --wrap
 skuare deps --brief ./.codex/skills/pdf-reader
 skuare deps --install ./.codex/skills/pdf-reader skuare/text-splitter
+
+# AGENTS.md 资源统一走 --type
+skuare --server http://127.0.0.1:15657 publish --type agentsmd --file ./agents/AGENTS.md --agentsmd-id team/agents --version 1.0.0
+skuare --server http://127.0.0.1:15657 list --type agmd --rgx '^team/'
+skuare --server http://127.0.0.1:15657 peek --type agentsmd team/agents 1.0.0
+skuare --server http://127.0.0.1:15657 get --type agmd team/agents --global
+skuare detail --type agentsmd
+skuare --server http://127.0.0.1:15657 delete --type agentsmd team/agents 1.0.0
 
 # 本地构建依赖文件（add 语义，存量依赖会保留并增量更新）
 skuare build report-generator data-normalizer schema-validator

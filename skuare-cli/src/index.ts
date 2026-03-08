@@ -18,7 +18,8 @@ import { resolveConfig } from "./config/resolver";
 import { createCommandRegistry } from "./commands/registry";
 import { buildHelpText } from "./commands/help_text";
 import type { CommandContext } from "./commands/types";
-import { formatDomainError, normalizeUnknownError } from "./domain/errors";
+import { DomainError, formatDomainError, normalizeUnknownError } from "./domain/errors";
+import { getRemovedCommandSuggestion } from "./commands/resource_type";
 
 /**
  * 主函数
@@ -46,6 +47,10 @@ async function main(): Promise<void> {
     // 查找命令
     const command = registry.get(name);
     if (!command) {
+      const migration = commandName ? getRemovedCommandSuggestion(commandName, rest) : undefined;
+      if (migration && commandName) {
+        throw new DomainError("CLI_INVALID_ARGUMENT", `Command '${commandName}' was removed. Use: ${migration}`);
+      }
       console.error(`${Status.Error} [CLI_INVALID_ARGUMENT] Unknown command: ${[commandName, ...rest].filter(Boolean).join(" ")}`);
       console.log(buildHelpText());
       process.exit(1);

@@ -23,6 +23,24 @@ test("buildHelpText keeps global flags", () => {
   assert.match(helpText, /--privkey-file <path>/);
 });
 
+test("buildHelpText uses unified --type entry and hides removed suffix commands", () => {
+  const helpText = buildHelpText();
+
+  assert.match(helpText, /--type <skill\|agentsmd\|agmd>/);
+  assert.doesNotMatch(helpText, /publish-agentsmd/);
+  assert.doesNotMatch(helpText, /publish-agmd/);
+  assert.doesNotMatch(helpText, /list-agentsmd/);
+  assert.doesNotMatch(helpText, /list-agmd/);
+  assert.doesNotMatch(helpText, /peek-agentsmd/);
+  assert.doesNotMatch(helpText, /peek-agmd/);
+  assert.doesNotMatch(helpText, /get-agentsmd/);
+  assert.doesNotMatch(helpText, /get-agmd/);
+  assert.doesNotMatch(helpText, /detail-agentsmd/);
+  assert.doesNotMatch(helpText, /detail-agmd/);
+  assert.doesNotMatch(helpText, /delete-agentsmd/);
+  assert.doesNotMatch(helpText, /delete-agmd/);
+});
+
 function escapeRegex(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
