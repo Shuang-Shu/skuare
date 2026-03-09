@@ -7,6 +7,33 @@
 > 更新时间：2026-03-07  
 > 适用范围：project-wide
 
+## 示例准备
+
+本文档中的命令示例统一配套仓库根目录下的 `examples/` 样例。
+
+- 纯本地命令：直接针对 `./examples/` 执行。
+- 远程相关命令（`list`、`peek`、`get`、`validate`、`delete`）：先启动本地 `skuare-svc`，再执行：
+
+```bash
+skr publish --dir ./examples/observability-orchestrator
+```
+
+这条命令会递归发布 `observability-orchestrator` 及其依赖链，后续远程示例都以该样例集为基础。
+
+- 若需要测试 `publish --file`，使用仓库自带请求文件：
+
+```bash
+skr publish --file ./examples/requests/publish-pdf-reader.json
+```
+
+- 若需要测试 `detail` 的多文件读取，先执行一次：
+
+```bash
+skr get observability-orchestrator
+```
+
+随后可读取该样例自带的 `references/details.md` 与 `notes.txt`。
+
 ## 命令分类
 
 ### 纯本地命令
@@ -135,7 +162,7 @@ Skills 的 JSON 数组，包含字段：
 **示例：**
 ```bash
 skr list --q observability
-skr list --rgx "^skuare/.*@1\.0\.0$"
+skr list --rgx "^ShuangShu/.*@0\.0\.1$"
 ```
 
 ---
@@ -145,7 +172,7 @@ skr list --rgx "^skuare/.*@1\.0\.0$"
 
 **用法：**
 ```bash
-skr peek <skillID> [version]
+skr peek <skillRef> [version]
 skr peek --rgx <pattern> [version]
 ```
 
@@ -155,6 +182,7 @@ skr peek --rgx <pattern> [version]
 **行为：**
 - 不带版本：显示 skill 的所有版本
 - 带版本：显示该版本的详细文件列表
+- `skillRef` 支持 `skillID`、`name`、`author/name`
 
 **输出：**
 包含 skill 元数据和文件信息的 JSON。
@@ -162,8 +190,9 @@ skr peek --rgx <pattern> [version]
 **示例：**
 ```bash
 skr peek observability-orchestrator
-skr peek observability-orchestrator 1.0.0
-skr peek --rgx "^skuare/report-generator@"
+skr peek observability-orchestrator 0.0.1
+skr peek ShuangShu/report-generator 0.0.1
+skr peek --rgx "^ShuangShu/report-generator@"
 ```
 
 ---
@@ -173,7 +202,7 @@ skr peek --rgx "^skuare/report-generator@"
 
 **用法：**
 ```bash
-skr get <skillID> [version] [--global]
+skr get <skillRef> [version] [--global]
 skr get --rgx <pattern> [version] [--global]
 ```
 
@@ -192,6 +221,7 @@ skr get --rgx <pattern> [version] [--global]
 - 从 `skill-deps.lock.json` 解析依赖树
 - 将所有依赖作为同级目录安装（平铺结构）
 - 如果未指定版本则使用最新版本
+- `skillRef` 支持 `skillID`、`name`、`author/name`
 
 **输出：**
 包含安装摘要的 JSON：
@@ -204,7 +234,8 @@ skr get --rgx <pattern> [version] [--global]
 **示例：**
 ```bash
 skr get observability-orchestrator
-skr get observability-orchestrator 1.0.0
+skr get observability-orchestrator 0.0.1
+skr get ShuangShu/observability-orchestrator 0.0.1
 skr get observability-orchestrator --global
 skr get --rgx "observability"
 ```
@@ -236,7 +267,7 @@ skr detail <skillName|skillID> [relativePath...]
 ```bash
 skr detail observability-orchestrator
 skr detail observability-orchestrator SKILL.md
-skr detail skuare/observability-orchestrator references/details.md notes.txt
+skr detail observability-orchestrator references/details.md notes.txt
 ```
 
 ---
@@ -257,7 +288,7 @@ skr validate <skillID> <version>
 
 **示例：**
 ```bash
-skr validate observability-orchestrator 1.0.0
+skr validate observability-orchestrator 0.0.1
 ```
 
 ---
@@ -284,6 +315,7 @@ skr build <skillName> --all
 
 **示例：**
 ```bash
+cd ./examples
 skr build observability-orchestrator api-ingest-pipeline report-generator
 skr build report-generator validator=schema-validator
 skr build observability-orchestrator --all
@@ -310,9 +342,9 @@ skr format --all
 
 **示例：**
 ```bash
-skr format ./skills/observability-orchestrator
-skr format ./skills/skill-a ./skills/skill-b
-skr format --all
+skr format ./examples/observability-orchestrator
+skr format ./examples/report-generator ./examples/schema-validator
+cd ./examples && skr format --all
 ```
 
 ---
@@ -349,9 +381,10 @@ skr publish <path...> [--all] [--skill-id <id>] [--version <v>]
 
 **示例：**
 ```bash
-skr publish --dir ./skills/observability-orchestrator
-skr publish --skill ./skills/observability-orchestrator/SKILL.md
-skr publish ./skills/skill-a ./skills/skill-b --all
+skr publish --file ./examples/requests/publish-pdf-reader.json
+skr publish --dir ./examples/observability-orchestrator
+skr publish --skill ./examples/observability-orchestrator/SKILL.md
+skr publish ./examples/pdf-reader ./examples/api-debugger --all
 ```
 
 ---
@@ -369,6 +402,11 @@ skr create ...
 
 **建议：**
 改用 `skr publish`。
+
+**可复现示例：**
+```bash
+skr create --dir ./examples/pdf-reader
+```
 
 ---
 
@@ -388,7 +426,7 @@ skr delete <skillID> <version>
 
 **示例：**
 ```bash
-skr delete observability-orchestrator 1.0.0
+skr delete observability-orchestrator 0.0.1
 ```
 
 ---
@@ -448,3 +486,4 @@ CLI 参数 > 工作区配置 > 全局配置 > 默认值
 - 依赖格式：`docs/skill_deps_format_zh.md`
 - 存储层次结构：`docs/storage_hierarchy_zh.md`
 - Skill 引用：`docs/skill_reference_zh.md`
+- 示例技能目录：`examples/`

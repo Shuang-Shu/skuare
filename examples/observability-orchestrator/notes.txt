@@ -1,0 +1,1 @@
+This file is bundled with the observability-orchestrator example so `skr detail` can demonstrate reading multiple files beyond SKILL.md.
