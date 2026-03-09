@@ -12,6 +12,7 @@ import * as readlinePromises from "node:readline/promises";
 import { collectPositionalArgs } from "../utils/command_args";
 import { parseSkillFrontmatter, parseSkillMarkdown, readSkillMetadataDefaults, renderSkillTemplate, withUpdatedSkillMetadata } from "../utils/skill_manifest";
 import { discoverSkillDirs } from "../utils/skill_workspace";
+import { compareVersions, maxVersion, suggestNextVersion } from "../utils/versioning";
 import { DeleteAgentsMDCommand, PublishAgentsMDCommand } from "./agentsmd";
 import { normalizeResourceContext } from "./resource_type";
 
@@ -25,6 +26,11 @@ type CreateSource =
 type SkillDependency = {
   skill: string;
   version: string;
+};
+
+type RemoteSkillListItem = {
+  skill_id?: JsonValue;
+  author?: JsonValue;
 };
 
 /**
@@ -420,6 +426,160 @@ export class CreateCommand extends PublishCommand {
   async execute(context: CommandContext): Promise<void> {
     console.log(`${this.yellow("[WARN]")} command 'create' is deprecated, use 'publish' instead`);
     await super.execute(context);
+  }
+}
+
+export class UpdateCommand extends BaseCommand {
+  readonly name = "update";
+  readonly description = "Publish a new version for an existing remote skill";
+
+  async execute(context: CommandContext): Promise<void> {
+    const normalized = normalizeResourceContext(context);
+    if (normalized.resourceType === "agentsmd") {
+      this.fail("update currently only supports skill resources");
+    }
+
+    const [targetRef, newSkillDir] = normalized.context.args;
+    if (!targetRef || !newSkillDir || normalized.context.args.length !== 2) {
+      this.fail("Usage: skuare update <author>/<skillName> <newSkillDir>");
+    }
+
+    const { author, skillName } = this.parseAuthorSkillRef(targetRef);
+    const skillFile = await this.resolveSkillFilePath(newSkillDir);
+    const raw = await readFile(skillFile, "utf8");
+    const frontmatter = parseSkillFrontmatter(raw);
+    if (frontmatter.name !== skillName) {
+      this.fail(`Local SKILL.md name (${frontmatter.name || "(empty)"}) must match command skillName (${skillName})`);
+    }
+    if (frontmatter.metadataAuthor !== author) {
+      this.fail(`Local SKILL.md metadata.author (${frontmatter.metadataAuthor || "(empty)"}) must match command author (${author})`);
+    }
+
+    const remote = await this.loadRemoteSkill(normalized.context, author, skillName);
+    const suggestedVersion = suggestNextVersion(remote.maxVersion);
+    const chosenVersion = await this.resolveUpdatedVersion(skillName, frontmatter.metadataVersion, remote.maxVersion, suggestedVersion);
+
+    if (compareVersions(chosenVersion, remote.maxVersion) <= 0) {
+      this.fail(`metadata.version (${chosenVersion}) must be greater than remote maxVersion (${remote.maxVersion})`);
+    }
+
+    if (chosenVersion !== frontmatter.metadataVersion) {
+      await writeFile(skillFile, withUpdatedSkillMetadata(raw, chosenVersion, frontmatter.metadataAuthor), "utf8");
+    }
+
+    await new PublishCommand().execute({
+      ...normalized.context,
+      args: ["--dir", newSkillDir],
+    });
+  }
+
+  protected async askForUpdatedVersion(skillID: string, maxRemoteVersion: string, suggestedVersion: string): Promise<string> {
+    const rl = readlinePromises.createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      while (true) {
+        const raw = (await rl.question(`metadata.version for ${skillID} [${suggestedVersion}]: `)).trim();
+        const chosen = raw || suggestedVersion;
+        if (compareVersions(chosen, maxRemoteVersion) > 0) {
+          return chosen;
+        }
+        console.log(`${this.yellow("[WARN]")} version must be greater than remote maxVersion ${maxRemoteVersion}`);
+      }
+    } finally {
+      rl.close();
+    }
+  }
+
+  protected isInteractiveTerminal(): boolean {
+    return !!process.stdin.isTTY && !!process.stdout.isTTY;
+  }
+
+  private async resolveUpdatedVersion(
+    skillID: string,
+    localVersion: string,
+    remoteMaxVersion: string,
+    suggestedVersion: string
+  ): Promise<string> {
+    if (this.isInteractiveTerminal()) {
+      const preferred = compareVersions(localVersion, remoteMaxVersion) > 0 ? localVersion : suggestedVersion;
+      return this.askForUpdatedVersion(skillID, remoteMaxVersion, preferred);
+    }
+    if (compareVersions(localVersion, remoteMaxVersion) > 0) {
+      return localVersion;
+    }
+    this.fail(`Local metadata.version (${localVersion || "(empty)"}) must be greater than remote maxVersion (${remoteMaxVersion}). Suggested: ${suggestedVersion}`);
+  }
+
+  private parseAuthorSkillRef(input: string): { author: string; skillName: string } {
+    const parts = input.split("/");
+    if (parts.length !== 2 || !parts[0].trim() || !parts[1].trim()) {
+      this.fail(`Invalid target skill ref: ${input}. Expected <author>/<skillName>`);
+    }
+    return {
+      author: parts[0].trim(),
+      skillName: parts[1].trim(),
+    };
+  }
+
+  private async resolveSkillFilePath(skillDir: string): Promise<string> {
+    const abs = resolve(skillDir);
+    const info = await stat(abs).catch(() => undefined);
+    if (!info?.isDirectory()) {
+      this.fail(`Directory not found: ${skillDir}`);
+    }
+    const skillFile = join(abs, "SKILL.md");
+    const skillInfo = await stat(skillFile).catch(() => undefined);
+    if (!skillInfo?.isFile()) {
+      this.fail(`SKILL.md not found in directory: ${skillDir}`);
+    }
+    return skillFile;
+  }
+
+  private async loadRemoteSkill(
+    context: CommandContext,
+    author: string,
+    skillName: string
+  ): Promise<{ skillID: string; maxVersion: string }> {
+    const listResp = await callApi({
+      method: "GET",
+      path: `/api/v1/skills?q=${encodeURIComponent(skillName)}`,
+      server: context.server,
+      silent: true,
+    });
+    const itemsRaw = (listResp.data && typeof listResp.data === "object" && !Array.isArray(listResp.data))
+      ? (listResp.data as { items?: JsonValue }).items
+      : undefined;
+    const items = Array.isArray(itemsRaw) ? itemsRaw : [];
+    const matches = items
+      .filter((item): item is RemoteSkillListItem => !!item && typeof item === "object" && !Array.isArray(item))
+      .filter((item) => String(item.skill_id || "").trim() === skillName && String(item.author || "").trim() === author);
+
+    if (matches.length === 0) {
+      this.fail(`Remote skill not found for ${author}/${skillName}`);
+    }
+
+    const overviewResp = await callApi({
+      method: "GET",
+      path: `/api/v1/skills/${encodeURIComponent(skillName)}`,
+      server: context.server,
+      silent: true,
+    });
+    const overview = (overviewResp.data && typeof overviewResp.data === "object" && !Array.isArray(overviewResp.data))
+      ? (overviewResp.data as { versions?: JsonValue; author?: JsonValue; skill_id?: JsonValue })
+      : {};
+    const remoteAuthor = String(overview.author || "").trim();
+    if (remoteAuthor && remoteAuthor !== author) {
+      this.fail(`Remote skill ${skillName} belongs to author ${remoteAuthor}, not ${author}`);
+    }
+    const versions = Array.isArray(overview.versions)
+      ? overview.versions.map((item) => String(item).trim()).filter(Boolean)
+      : [];
+    if (versions.length === 0) {
+      this.fail(`No versions found for remote skill: ${skillName}`);
+    }
+    return {
+      skillID: String(overview.skill_id || skillName).trim() || skillName,
+      maxVersion: maxVersion(versions),
+    };
   }
 }
 

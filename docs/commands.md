@@ -4,7 +4,7 @@
 
 > Document Type: REFERENCE  
 > Status: Completed  
-> Last Updated: 2026-03-07  
+> Last Updated: 2026-03-10  
 > Scope: project-wide
 
 ## Example Setup
@@ -19,6 +19,12 @@ skr publish --dir ./examples/observability-orchestrator
 ```
 
 That single publish command recursively uploads `observability-orchestrator` and its dependency chain, which becomes the fixture set for the remote examples below.
+
+- To test `update`, reuse that published remote sample together with the local example directory:
+
+```bash
+skr update ShuangShu/observability-orchestrator ./examples/observability-orchestrator
+```
 
 - To test `publish --file`, use the bundled request payload:
 
@@ -63,6 +69,7 @@ Access server and write to local repository.
 Write to remote repository. May require authentication in remote mode.
 
 - `publish` - Publish skill with dependencies
+- `update` - Publish a higher version for an existing remote skill
 - `create` - Deprecated alias of publish
 - `delete` - Delete skill version
 
@@ -385,6 +392,33 @@ skr publish --file ./examples/requests/publish-pdf-reader.json
 skr publish --dir ./examples/observability-orchestrator
 skr publish --skill ./examples/observability-orchestrator/SKILL.md
 skr publish ./examples/pdf-reader ./examples/api-debugger --all
+```
+
+---
+
+### update
+Publish a higher new version for an existing remote skill.
+
+**Usage:**
+```bash
+skr update <author>/<skillName> <newSkillDir>
+```
+
+**Behavior:**
+- Queries the remote skill's existing versions.
+- Computes the remote `maxVersion` and only allows a strictly greater new version.
+- In interactive mode, shows a suggested version greater than `maxVersion` as the default value.
+- Writes the chosen version back to `<newSkillDir>/SKILL.md` as `metadata.version`.
+- Then reuses the existing `publish --dir` flow to upload that directory and its dependencies.
+
+**Limits:**
+- Currently supports Skill only, not `agentsmd/agmd`.
+- Local `SKILL.md` `name` and `metadata.author` must match the command arguments.
+- In non-interactive mode, the command fails when local `metadata.version` is not greater than remote `maxVersion`.
+
+**Example:**
+```bash
+skr update ShuangShu/observability-orchestrator ./examples/observability-orchestrator
 ```
 
 ---

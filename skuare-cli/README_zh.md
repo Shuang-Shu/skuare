@@ -2,7 +2,7 @@
 
 > 文档类型：README
 > 状态：已完成
-> 更新时间：2026-03-08
+> 更新时间：2026-03-10
 > 适用范围：skuare-cli
 
 ## 目标与范围
@@ -17,7 +17,7 @@
 - 混合命令：`get`、`deps`
   - `get`：先访问 server 拉取 Skill，再写入本地局部仓库。
   - `deps`：围绕 wrap 根 Skill 查看或安装依赖子树。
-- server 写命令：`publish`、`create`、`delete`
+- server 写命令：`publish`、`update`、`create`、`delete`
   - 会写远程仓库；CLI 仅在提供签名凭证时附加签名，最终是否接受无签名写入由服务端决定。
 - 统一资源切换：`list`、`peek`、`get`、`detail`、`publish`、`create`、`delete`
   - 默认操作 Skill；传入 `--type agentsmd` 或 `--type agmd` 时切换为 AGENTS.md 资源。
@@ -76,6 +76,7 @@
   - `publish --skill <SKILL.md> [--skill-id] [--version] [--force|-f]` -> `POST /api/v1/skills`
   - `publish --dir <skillDir> [--skill-id] [--version] [--force|-f]` -> `POST /api/v1/skills`
   - `publish <path...> [--all] [--skill-id] [--version] [--force|-f]` -> 自动检测每个 path：`SKILL.md` 文件 -> 目录 -> JSON 回退
+  - `update <author>/<skillName> <newSkillDir>` -> 先查询远端 `maxVersion`，再以更大版本回写本地 `metadata.version` 并复用 `publish --dir`
   - `publish --type agentsmd|agmd --file <AGENTS.md> --agentsmd-id <id> --version <v>` -> `POST /api/v1/agentsmd`
   - `publish --type agentsmd|agmd --dir <dir>` -> 自动读取 `<dir>/AGENTS.md` 与可选 `<dir>/agentsmd-meta.json`
   - `create ... [--force|-f]` -> `publish` 的兼容别名，保留但标记弃用
@@ -83,7 +84,7 @@
   - `delete --type agentsmd|agmd <agentsmd-id> <version>` -> `DELETE /api/v1/agentsmd/:agentsmdID/:version`
 
 ## 鉴权机制说明
-- 写操作（`publish/create`、`delete`）若提供 `--key-id` 与 `--privkey-file` 会附加数字签名；是否允许免签写入由服务端决定。
+- 写操作（`publish/update/create`、`delete`）若提供 `--key-id` 与 `--privkey-file` 会附加数字签名；是否允许免签写入由服务端决定。
 - `remote.mode` 仅用于 CLI 保存服务端连接配置；是否允许免签写操作由服务端自身模式决定。
 - CLI 签名参数：
   - 参数：`--key-id <id>`、`--privkey-file <path>`
@@ -115,7 +116,7 @@ skr help
 - 先看根 README 的 Quick Start，理解 server、本地仓库与 `skr` 的关系。
 - 只想改本地 Skill 文件时，优先使用 `build`、`format`，不需要先启动 server。
 - 只读查询时，使用 `health/list/peek/validate`。
-- 涉及远程发布或删除时，使用 `publish/create/delete`；是否要求签名由服务端决定。
+- 涉及远程发布、更新或删除时，使用 `publish/update/create/delete`；是否要求签名由服务端决定。
 - 需要把远程 Skill 安装到本地局部仓库时，使用 `get`。
 - 需要先只落根 Skill、后续再按需查看或安装依赖时，使用 `get --wrap` 配合 `deps`。
 

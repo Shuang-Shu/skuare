@@ -2,7 +2,7 @@ import type { Command } from "./types";
 import { HealthCommand } from "./admin";
 import { InitCommand } from "./init";
 import { DepsCommand, DetailCommand, GetCommand, ListCommand, PeekCommand, ValidateCommand } from "./query";
-import { BuildCommand, CreateCommand, DeleteCommand, FormatCommand, PublishCommand } from "./write";
+import { BuildCommand, CreateCommand, DeleteCommand, FormatCommand, PublishCommand, UpdateCommand } from "./write";
 
 export type HelpEntry = {
   usage: string[];
@@ -102,6 +102,16 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
         "publish --type <agentsmd|agmd> --file <AGENTS.md> --agentsmd-id <id> --version <v>",
         "publish --type <agentsmd|agmd> --dir <dir>",
         "                                       Publish AGENTS.md via /api/v1/agentsmd",
+      ],
+    },
+  },
+  {
+    create: () => new UpdateCommand(),
+    help: {
+      usage: ["update <author>/<skillName> <newSkillDir>", "Publish a new version for an existing remote skill"],
+      details: [
+        "                                       Queries remote maxVersion, prompts with a greater suggested version,",
+        "                                       then writes metadata.version back to <newSkillDir>/SKILL.md before publish",
       ],
     },
   },
