@@ -4,7 +4,7 @@
 
 > 文档类型：REFERENCE  
 > 状态：已完成  
-> 更新时间：2026-03-07  
+> 更新时间：2026-03-10  
 > 适用范围：project-wide
 
 ## 示例准备
@@ -19,6 +19,12 @@ skr publish --dir ./examples/observability-orchestrator
 ```
 
 这条命令会递归发布 `observability-orchestrator` 及其依赖链，后续远程示例都以该样例集为基础。
+
+- 若需要测试 `update`，可直接基于已发布的远端样例与本地目录执行：
+
+```bash
+skr update ShuangShu/observability-orchestrator ./examples/observability-orchestrator
+```
 
 - 若需要测试 `publish --file`，使用仓库自带请求文件：
 
@@ -63,6 +69,7 @@ skr get observability-orchestrator
 写入远程仓库。在 remote 模式下可能需要认证。
 
 - `publish` - 发布 skill 及依赖
+- `update` - 为远端已有 skill 发布更大版本
 - `create` - publish 的已弃用别名
 - `delete` - 删除 skill 版本
 
@@ -385,6 +392,33 @@ skr publish --file ./examples/requests/publish-pdf-reader.json
 skr publish --dir ./examples/observability-orchestrator
 skr publish --skill ./examples/observability-orchestrator/SKILL.md
 skr publish ./examples/pdf-reader ./examples/api-debugger --all
+```
+
+---
+
+### update
+为远端已存在的 skill 发布一个更大的新版本。
+
+**用法：**
+```bash
+skr update <author>/<skillName> <newSkillDir>
+```
+
+**行为：**
+- 查询服务端中目标 skill 的现有版本。
+- 计算远端 `maxVersion`，只允许使用更大的新版本。
+- 交互模式下会给出一个大于 `maxVersion` 的推荐版本作为默认值。
+- 将最终选择的新版本写回 `<newSkillDir>/SKILL.md` 的 `metadata.version`。
+- 随后复用既有 `publish --dir` 流程上传该目录与依赖。
+
+**限制：**
+- 当前仅支持 Skill，不支持 `agentsmd/agmd`。
+- 本地 `SKILL.md` 的 `name` 与 `metadata.author` 必须与命令参数一致。
+- 非交互模式下，若本地 `metadata.version` 不大于远端 `maxVersion`，命令会直接失败。
+
+**示例：**
+```bash
+skr update ShuangShu/observability-orchestrator ./examples/observability-orchestrator
 ```
 
 ---

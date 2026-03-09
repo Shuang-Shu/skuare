@@ -4,7 +4,7 @@
 
 > Document Type: TECH  
 > Status: Completed  
-> Last Updated: 2026-03-09  
+> Last Updated: 2026-03-10  
 > Scope: project-wide
 
 ## Objectives and Scope
@@ -16,7 +16,7 @@
 ## Current Status and Factual Basis
 - Modules:
   - `skuare-svc`: Filesystem storage model `<specDir>/<skillID>/<version>`.
-  - `skuare-cli`: Command-line frontend, supports `init/health/list/peek/get/deps/publish/create/build/format/delete/validate`; `list/peek/get/detail/publish/create/delete` switch between Skill and AGENTS.md via `--type skill|agentsmd|agmd`.
+  - `skuare-cli`: Command-line frontend, supports `init/health/list/peek/get/deps/publish/update/create/build/format/delete/validate`; `list/peek/get/detail/publish/create/delete` switch between Skill and AGENTS.md via `--type skill|agentsmd|agmd`.
 - Key Configuration:
   - Backend default `spec-dir`: `$HOME/.skuare` (can be overridden by `SKUARE_SPEC_DIR` or `--spec-dir`).
   - `scripts/dev-up.sh` and `make start-be` default `SPEC_DIR` unified to `$HOME/.skuare`.
@@ -44,6 +44,7 @@
   - When `SKILL.md metadata.author` exists, the server returns `author` directly in `publish/list/peek` related responses.
   - When `author` is missing, defaults to `undefined`.
   - `skr publish` output does not include server local paths.
+  - `skr update` reads the remote `maxVersion`, requires a strictly greater new version, and in interactive mode prefills a suggested version before rewriting local `metadata.version`.
   - `skr format [skillDir...]` interactively supports `All/Each`, and uniformly writes `metadata.version`/`metadata.author`; `skr format --all` automatically scans current directory sub-skills.
   - `make format` only passes through CLI `format` command, no longer incorrectly requires additional `VERSION` parameter.
   - Examples in `docs/commands*.md` are now backed by real fixtures under `examples/`; remote command examples use the `observability-orchestrator` sample chain by default.

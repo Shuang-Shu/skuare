@@ -2,7 +2,7 @@
 
 > 文档类型：TECH
 > 状态：已完成
-> 更新时间：2026-03-09
+> 更新时间：2026-03-10
 > 适用范围：project-wide
 
 ## 目标与范围
@@ -14,7 +14,7 @@
 ## 现状与事实依据
 - 模块：
   - `skuare-svc`：文件系统存储模型 `<specDir>/<skillID>/<version>`。
-  - `skuare-cli`：命令式前端，支持 `init/health/list/peek/get/deps/publish/create/build/format/delete/validate`；其中 `list/peek/get/detail/publish/create/delete` 通过 `--type skill|agentsmd|agmd` 在 Skill 与 AGENTS.md 间切换。
+  - `skuare-cli`：命令式前端，支持 `init/health/list/peek/get/deps/publish/update/create/build/format/delete/validate`；其中 `list/peek/get/detail/publish/create/delete` 通过 `--type skill|agentsmd|agmd` 在 Skill 与 AGENTS.md 间切换。
 - 关键配置：
   - 后端默认 `spec-dir`：`$HOME/.skuare`（可由 `SKUARE_SPEC_DIR` 或 `--spec-dir` 覆盖）。
   - `scripts/dev-up.sh` 与 `make start-be` 默认 `SPEC_DIR` 已统一为 `$HOME/.skuare`。
@@ -42,6 +42,7 @@
   - 当 `SKILL.md metadata.author` 存在时，服务端会在 `publish/list/peek` 相关返回中直接透出 `author`。
   - `author` 缺失时默认回退为 `undefined`。
   - `skr publish` 输出不包含服务端本地路径。
+  - `skr update` 会先读取远端 `maxVersion`，再要求新版本严格更大；交互模式下会给出推荐版本默认值，并在发布前回写本地 `metadata.version`。
   - `skr format [skillDir...]` 交互式支持 `All/Each`，并统一写入 `metadata.version`/`metadata.author`；`skr format --all` 自动扫描当前目录子技能。
   - `make format` 仅透传 CLI `format` 命令，不再错误要求额外 `VERSION` 参数。
   - `docs/commands*.md` 中的命令示例现已统一绑定仓库 `examples/` 目录中的真实样例；远程命令示例默认围绕 `observability-orchestrator` 样例链路复现。

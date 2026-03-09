@@ -1,0 +1,228 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { UpdateCommand } from "./commands/write";
+import type { CommandContext, JsonValue } from "./commands/types";
+
+test("update prompts with a version greater than remote maxVersion and reuses publish flow", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "skuare-update-"));
+  const skillDir = join(workspace, "demo-skill");
+  await createSkillDir(skillDir, {
+    name: "demo-skill",
+    author: "demo",
+    version: "1.0.0",
+    description: "Demo description",
+  });
+
+  const requests: string[] = [];
+  const requestBodies: JsonValue[] = [];
+  let prompted: { skillID: string; maxVersion: string; suggestedVersion: string } | undefined;
+  const restore = mockFetch(async (input, init) => {
+    const url = new URL(String(input));
+    const key = `${String(init?.method || "GET").toUpperCase()} ${url.pathname}`;
+    requests.push(key);
+    if (key === "GET /api/v1/skills") {
+      return jsonResponse({
+        items: [
+          { skill_id: "demo-skill", version: "1.2.0", name: "demo-skill", author: "demo", description: "old" },
+          { skill_id: "demo-skill", version: "1.10.0", name: "demo-skill", author: "demo", description: "new" },
+        ],
+      });
+    }
+    if (key === "GET /api/v1/skills/demo-skill") {
+      return jsonResponse({
+        skill_id: "demo-skill",
+        author: "demo",
+        versions: ["1.2.0", "1.10.0"],
+      });
+    }
+    if (key === "POST /api/v1/skills") {
+      requestBodies.push(JSON.parse(String(init?.body ?? "{}")) as JsonValue);
+      return jsonResponse({
+        skill_id: "demo-skill",
+        version: "1.10.1",
+        name: "demo-skill",
+        author: "demo",
+        description: "Demo description",
+      }, 201);
+    }
+    throw new Error(`Unexpected request: ${key}`);
+  });
+
+  class TestUpdateCommand extends UpdateCommand {
+    protected override isInteractiveTerminal(): boolean {
+      return true;
+    }
+
+    protected override async askForUpdatedVersion(
+      skillID: string,
+      maxVersion: string,
+      suggestedVersion: string
+    ): Promise<string> {
+      prompted = { skillID, maxVersion, suggestedVersion };
+      return suggestedVersion;
+    }
+  }
+
+  try {
+    const logs = await captureConsole(async () => {
+      await new TestUpdateCommand().execute(createContext(workspace, ["demo/demo-skill", skillDir]));
+    });
+
+    assert.deepEqual(prompted, {
+      skillID: "demo-skill",
+      maxVersion: "1.10.0",
+      suggestedVersion: "1.10.1",
+    });
+    assert.deepEqual(requests, [
+      "GET /api/v1/skills",
+      "GET /api/v1/skills/demo-skill",
+      "POST /api/v1/skills",
+    ]);
+    const body = requestBodies[0] as Record<string, JsonValue>;
+    assert.equal(body.version, "1.10.1");
+    assert.match(logs.join("\n"), /"version": "1.10.1"/);
+    const updatedSkill = await readFile(join(skillDir, "SKILL.md"), "utf8");
+    assert.match(updatedSkill, /version: "1.10.1"/);
+  } finally {
+    restore();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("update fails in non-interactive mode when local version is not greater than remote maxVersion", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "skuare-update-non-tty-"));
+  const skillDir = join(workspace, "demo-skill");
+  await createSkillDir(skillDir, {
+    name: "demo-skill",
+    author: "demo",
+    version: "1.0.0",
+    description: "Demo description",
+  });
+
+  const restore = mockFetch(async (input, init) => {
+    const url = new URL(String(input));
+    const key = `${String(init?.method || "GET").toUpperCase()} ${url.pathname}`;
+    if (key === "GET /api/v1/skills") {
+      return jsonResponse({
+        items: [{ skill_id: "demo-skill", version: "1.10.0", name: "demo-skill", author: "demo", description: "new" }],
+      });
+    }
+    if (key === "GET /api/v1/skills/demo-skill") {
+      return jsonResponse({
+        skill_id: "demo-skill",
+        author: "demo",
+        versions: ["1.10.0"],
+      });
+    }
+    throw new Error(`Unexpected request: ${key}`);
+  });
+
+  class TestUpdateCommand extends UpdateCommand {
+    protected override isInteractiveTerminal(): boolean {
+      return false;
+    }
+  }
+
+  try {
+    await assert.rejects(
+      () => new TestUpdateCommand().execute(createContext(workspace, ["demo/demo-skill", skillDir])),
+      /Local metadata\.version \(1\.0\.0\) must be greater than remote maxVersion \(1\.10\.0\)\. Suggested: 1\.10\.1/
+    );
+  } finally {
+    restore();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("update rejects mismatched local author or name", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "skuare-update-mismatch-"));
+  const skillDir = join(workspace, "demo-skill");
+  await createSkillDir(skillDir, {
+    name: "another-skill",
+    author: "demo",
+    version: "1.0.0",
+    description: "Demo description",
+  });
+
+  try {
+    await assert.rejects(
+      () => new UpdateCommand().execute(createContext(workspace, ["demo/demo-skill", skillDir])),
+      /Local SKILL\.md name \(another-skill\) must match command skillName \(demo-skill\)/
+    );
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+async function createSkillDir(
+  skillDir: string,
+  input: { name: string; author: string; version: string; description: string }
+): Promise<void> {
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(
+    join(skillDir, "SKILL.md"),
+    [
+      "---",
+      `name: "${input.name}"`,
+      "metadata:",
+      `  version: "${input.version}"`,
+      `  author: "${input.author}"`,
+      `description: "${input.description}"`,
+      "---",
+      "",
+      `# ${input.name}`,
+      "",
+      "## Overview",
+      input.description,
+      "",
+    ].join("\n"),
+    "utf8"
+  );
+}
+
+function createContext(cwd: string, args: string[]): CommandContext {
+  return {
+    server: "http://127.0.0.1:15657",
+    localMode: true,
+    cwd,
+    llmTools: ["codex"],
+    toolSkillDirs: {},
+    auth: {
+      keyId: "",
+      privateKeyFile: "",
+    },
+    args,
+  };
+}
+
+function jsonResponse(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function mockFetch(handler: (input: string | URL | Request, init?: RequestInit) => Promise<Response>): () => void {
+  const original = globalThis.fetch;
+  globalThis.fetch = handler as typeof fetch;
+  return () => {
+    globalThis.fetch = original;
+  };
+}
+
+async function captureConsole(run: () => Promise<void>): Promise<string[]> {
+  const logs: string[] = [];
+  const original = console.log;
+  console.log = (...args: unknown[]) => {
+    logs.push(args.map((arg) => String(arg)).join(" "));
+  };
+  try {
+    await run();
+    return logs;
+  } finally {
+    console.log = original;
+  }
+}
