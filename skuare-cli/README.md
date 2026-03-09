@@ -55,15 +55,16 @@
   - `health` -> `GET /healthz`
   - `list [--q] [--rgx]` -> `GET /api/v1/skills`
   - `list --type agentsmd|agmd [--q] [--rgx]` -> `GET /api/v1/agentsmd`
-  - `peek <skillID> [version]` -> `GET /api/v1/skills/:skillID[/version]`
+  - `peek <skillRef> [version]` -> shared selector supporting `skillID` / `name` / `author/name` (also accepts `@version` inside `skillRef`) -> `GET /api/v1/skills/:skillID[/version]`
   - `peek --type agentsmd|agmd <agentsmd-id> [version]` -> `GET /api/v1/agentsmd/:agentsmdID[/version]`
   - `peek --rgx <pattern> [version]` -> 先查询列表，再正则筛选唯一 skill
   - `validate <skillID> <version>` -> `POST /api/v1/skills/:skillID/:version/validate`
 - 混合命令：
-  - `get <skillID> [version] [--rgx] [--global] [--wrap]`
+  - `get <skillRef> [version] [--rgx] [--global] [--wrap]`
   - 默认安装到 `<cwd>/.{llmTool}/skills/<skillID>/`
   - `--global`：安装到 `~/.{llmTool}/skills/<skillID>/`
   - 默认模式会把完整依赖图平铺安装；`--wrap` 只安装根 Skill，并写入本地 wrap 元数据供后续 `deps` 使用
+  - When a command directly targets one skill, `peek/get/deps` now reuse the same selector flow: `skillID`, `name`, and `author/name`, with the same multi-match interaction
   - `get --type agentsmd|agmd <agentsmd-id> [version] [--global]`
   - 默认安装到 `<cwd>/.{llmTool}/AGENTS.md`；`--global` 时安装到 `~/.{llmTool}/AGENTS.md`
   - `deps --brief <rootSkillDir>`：列出全部后代依赖的 `skill_id/version/description`
@@ -275,8 +276,8 @@ skuare detail skuare/report-generator references/details.md notes.txt
 - `skr list --rgx <pattern>` 会在 `id/skill_id/name/author/description` 上执行正则匹配。
 
 `peek` 输出字段：
-- `skr peek <skillID> <version>` 展示：`id`、`name`、`author` 及该版本详情字段。
-- `skr peek <skillID>` 展示：`id`（latest）、`name`、`author`、`versions` 与 `ids`（每个版本对应的完整 id）。
+- `skr peek <skillRef> <version>` 展示：`id`、`name`、`author` 及该版本详情字段；`skillRef` 支持 `skillID/name/author/name`。
+- `skr peek <skillRef>` 展示：`id`（latest）、`name`、`author`、`versions` 与 `ids`（每个版本对应的完整 id）。
 - `skr peek --rgx <pattern> [version]` 要求正则命中唯一 skill；0 命中或多命中会报错并提示。
 - `skr get --rgx <pattern> [version]` 会先正则筛选唯一 skill，再执行既有安装流程。
 
@@ -292,7 +293,7 @@ skuare detail skuare/report-generator references/details.md notes.txt
 - `deps --content <rootSkillDir> <depSkillID|author/name@version|author/name|name>`：输出目标依赖的 `SKILL.md`
 - `deps --tree <rootSkillDir> <depSkillID|author/name@version|author/name|name>`：输出目标依赖的文件列表
 - `deps --install <rootSkillDir> <depSkillID|author/name@version|author/name|name> [--global]`：默认安装到 wrap 根 Skill 同级目录；带 `--global` 时安装到 `~/.{tool}/skills/`
-- 依赖目标选择已与 `get` 对齐，支持 `<author>/<name>@<version>`、`<author>/<name>`、`<name>`；若候选不唯一，会复用 `get` 的交互选择逻辑
+- 依赖目标选择已与 `peek/get` 对齐，统一支持 `skillID`、`name`、`author/name` 三种模式，并兼容 `@version`；若候选不唯一，会复用同一交互选择逻辑
 
 写操作示例（携带公钥）：
 ```bash

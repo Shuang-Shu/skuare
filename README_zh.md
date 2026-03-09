@@ -36,12 +36,12 @@
 - `skr publish --dir <skill-dir> [--force|-f]`：读取依赖描述并递归上传依赖 Skill 到远程仓库；`--force/-f` 可覆盖已存在版本。
 - `skr build <skillName> [refSkill...] [--all]`：为本地 skill 自动创建或追加更新依赖文件（`skill-deps.json` / `skill-deps.lock.json`），当目标 skill 不存在时会先交互式创建最小 `SKILL.md` 模板，支持 `alias=refSkill`；`--all` 会将当前目录下全部合法 skillDir 作为引用 skill。
 - `skr detail <skillName|skillID> [relativePath...]`：展示本地已安装 skill 下的文件内容；不传文件路径时默认输出目标 skill 的 `SKILL.md`。
-- `skr get <skill-id> [--global] [--wrap]`：从远程仓库拉取 Skill。
+- `skr get <skill-ref> [version] [--global] [--wrap]`：从远程仓库拉取 Skill；直接指定目标时支持 `skillID`、`name`、`author/name` 三种 selector，并与 `peek/deps` 复用同一交互逻辑。
   - 不带 `--global`：安装到 `<cwd>/.{llmTool}/skills/<skillID>/`
   - 带 `--global`：安装到 `~/.{llmTool}/skills/<skillID>/`
   - `llmTool` 取值为配置文件中第一个工具（codex/claudecode/custom）
   - 默认会把完整依赖图平铺安装；带 `--wrap` 时只安装根 Skill，依赖留给 `skr deps` 按需查看和安装
-- `skr deps --brief|--content|--tree|--install <rootSkillDir> ...`：围绕 wrap 根 Skill 查看依赖摘要、内容、文件树，并按需安装子树。
+- `skr deps --brief|--content|--tree|--install <rootSkillDir> ...`：围绕 wrap 根 Skill 查看依赖摘要、内容、文件树，并按需安装子树；目标依赖支持 `skillID/name/author/name` 与 `@version`。
 
 示例：
 - 若 `a` 依赖 `b` 和 `c`，执行 `skr get a` 后，目标工具目录下会得到 `a`、`b`、`c` 三个技能目录。

@@ -9,6 +9,12 @@ import type { CommandContext } from "./commands/types";
 test("get --wrap installs only the root skill and writes wrap metadata", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "skuare-get-wrap-"));
   const restore = mockFetch({
+    "GET /api/v1/skills": new Response(JSON.stringify({
+      items: [{ skill_id: "demo/root", version: "1.0.0", name: "root", author: "demo", description: "Root description" }],
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
     "GET /api/v1/skills/demo%2Froot/1.0.0": skillDetail("demo/root", "1.0.0", "Root description", [
       { skill: "demo/child", version: "2.0.0", resolved: "2.0.0" },
     ]),
@@ -42,6 +48,12 @@ test("get --wrap installs only the root skill and writes wrap metadata", async (
 test("get reports circular dependencies instead of silently skipping them", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "skuare-get-cycle-"));
   const restore = mockFetch({
+    "GET /api/v1/skills": new Response(JSON.stringify({
+      items: [{ skill_id: "demo/root", version: "1.0.0", name: "root", author: "demo", description: "Root description" }],
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
     "GET /api/v1/skills/demo%2Froot/1.0.0": skillDetail("demo/root", "1.0.0", "Root description", [
       { skill: "demo/child", version: "2.0.0", resolved: "2.0.0" },
     ]),
