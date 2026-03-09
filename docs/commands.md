@@ -7,6 +7,33 @@
 > Last Updated: 2026-03-07  
 > Scope: project-wide
 
+## Example Setup
+
+All command examples in this document are backed by the repository's `examples/` directory.
+
+- Pure local commands operate directly on `./examples/`.
+- Remote-related commands (`list`, `peek`, `get`, `validate`, `delete`) assume a local `skuare-svc` is already running, then use:
+
+```bash
+skr publish --dir ./examples/observability-orchestrator
+```
+
+That single publish command recursively uploads `observability-orchestrator` and its dependency chain, which becomes the fixture set for the remote examples below.
+
+- To test `publish --file`, use the bundled request payload:
+
+```bash
+skr publish --file ./examples/requests/publish-pdf-reader.json
+```
+
+- To test multi-file `detail`, install the sample once:
+
+```bash
+skr get observability-orchestrator
+```
+
+Then read the bundled `references/details.md` and `notes.txt` files from that installed skill.
+
 ## Command Categories
 
 ### Pure Local Commands
@@ -135,7 +162,7 @@ JSON array of skills with fields:
 **Examples:**
 ```bash
 skr list --q observability
-skr list --rgx "^skuare/.*@1\.0\.0$"
+skr list --rgx "^ShuangShu/.*@0\.0\.1$"
 ```
 
 ---
@@ -145,7 +172,7 @@ Peek skill overview or detailed version information.
 
 **Usage:**
 ```bash
-skr peek <skillID> [version]
+skr peek <skillRef> [version]
 skr peek --rgx <pattern> [version]
 ```
 
@@ -155,6 +182,7 @@ skr peek --rgx <pattern> [version]
 **Behavior:**
 - Without version: shows all versions of the skill
 - With version: shows detailed file list for that version
+- `skillRef` accepts `skillID`, `name`, and `author/name`
 
 **Output:**
 JSON with skill metadata and file information.
@@ -162,8 +190,9 @@ JSON with skill metadata and file information.
 **Examples:**
 ```bash
 skr peek observability-orchestrator
-skr peek observability-orchestrator 1.0.0
-skr peek --rgx "^skuare/report-generator@"
+skr peek observability-orchestrator 0.0.1
+skr peek ShuangShu/report-generator 0.0.1
+skr peek --rgx "^ShuangShu/report-generator@"
 ```
 
 ---
@@ -173,7 +202,7 @@ Install skill and its dependencies to local partial repository.
 
 **Usage:**
 ```bash
-skr get <skillID> [version] [--global]
+skr get <skillRef> [version] [--global]
 skr get --rgx <pattern> [version] [--global]
 ```
 
@@ -192,6 +221,7 @@ Where `<tool>` is the first configured LLM tool (codex/claudecode/custom).
 - Resolves dependency tree from `skill-deps.lock.json`
 - Installs all dependencies as sibling directories (flat structure)
 - Uses latest version if version not specified
+- `skillRef` accepts `skillID`, `name`, and `author/name`
 
 **Output:**
 JSON with installation summary:
@@ -204,7 +234,8 @@ JSON with installation summary:
 **Examples:**
 ```bash
 skr get observability-orchestrator
-skr get observability-orchestrator 1.0.0
+skr get observability-orchestrator 0.0.1
+skr get ShuangShu/observability-orchestrator 0.0.1
 skr get observability-orchestrator --global
 skr get --rgx "observability"
 ```
@@ -236,7 +267,7 @@ File contents with path headers.
 ```bash
 skr detail observability-orchestrator
 skr detail observability-orchestrator SKILL.md
-skr detail skuare/observability-orchestrator references/details.md notes.txt
+skr detail observability-orchestrator references/details.md notes.txt
 ```
 
 ---
@@ -257,7 +288,7 @@ Validation result from server.
 
 **Example:**
 ```bash
-skr validate observability-orchestrator 1.0.0
+skr validate observability-orchestrator 0.0.1
 ```
 
 ---
@@ -284,6 +315,7 @@ skr build <skillName> --all
 
 **Examples:**
 ```bash
+cd ./examples
 skr build observability-orchestrator api-ingest-pipeline report-generator
 skr build report-generator validator=schema-validator
 skr build observability-orchestrator --all
@@ -310,9 +342,9 @@ skr format --all
 
 **Examples:**
 ```bash
-skr format ./skills/observability-orchestrator
-skr format ./skills/skill-a ./skills/skill-b
-skr format --all
+skr format ./examples/observability-orchestrator
+skr format ./examples/report-generator ./examples/schema-validator
+cd ./examples && skr format --all
 ```
 
 ---
@@ -349,9 +381,10 @@ skr publish <path...> [--all] [--skill-id <id>] [--version <v>]
 
 **Examples:**
 ```bash
-skr publish --dir ./skills/observability-orchestrator
-skr publish --skill ./skills/observability-orchestrator/SKILL.md
-skr publish ./skills/skill-a ./skills/skill-b --all
+skr publish --file ./examples/requests/publish-pdf-reader.json
+skr publish --dir ./examples/observability-orchestrator
+skr publish --skill ./examples/observability-orchestrator/SKILL.md
+skr publish ./examples/pdf-reader ./examples/api-debugger --all
 ```
 
 ---
@@ -369,6 +402,11 @@ Forwards to `publish` command with deprecation warning.
 
 **Recommendation:**
 Use `skr publish` instead.
+
+**Reproducible example:**
+```bash
+skr create --dir ./examples/pdf-reader
+```
 
 ---
 
@@ -388,7 +426,7 @@ Requires authentication in remote mode.
 
 **Example:**
 ```bash
-skr delete observability-orchestrator 1.0.0
+skr delete observability-orchestrator 0.0.1
 ```
 
 ---
@@ -448,3 +486,4 @@ CLI arguments > workspace config > global config > defaults
 - Dependency Format: `docs/skill_deps_format.md`
 - Storage Hierarchy: `docs/storage_hierarchy.md`
 - Skill Reference: `docs/skill_reference.md`
+- Example skill directory: `examples/`

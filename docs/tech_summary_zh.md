@@ -2,7 +2,7 @@
 
 > 文档类型：TECH
 > 状态：已完成
-> 更新时间：2026-03-08
+> 更新时间：2026-03-09
 > 适用范围：project-wide
 
 ## 目标与范围
@@ -44,6 +44,7 @@
   - `skr publish` 输出不包含服务端本地路径。
   - `skr format [skillDir...]` 交互式支持 `All/Each`，并统一写入 `metadata.version`/`metadata.author`；`skr format --all` 自动扫描当前目录子技能。
   - `make format` 仅透传 CLI `format` 命令，不再错误要求额外 `VERSION` 参数。
+  - `docs/commands*.md` 中的命令示例现已统一绑定仓库 `examples/` 目录中的真实样例；远程命令示例默认围绕 `observability-orchestrator` 样例链路复现。
 - 维护说明：
   - CLI 共享解析能力已收敛到独立工具模块（`utils/command_args`、`utils/skill_manifest`、`utils/install_paths`、`utils/skill_workspace`）以及 `commands/resource_type`；`query.ts` 内部的 `get` / `deps` 也已共享同一套 Skill 目标解析流程，不再维护分叉的匹配逻辑。
   - 后端 handler/store 仅采用轻量辅助方法收敛重复 JSON 响应与版本化资源文件流程，刻意避免引入过重的统一资源框架。

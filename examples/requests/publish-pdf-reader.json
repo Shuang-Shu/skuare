@@ -1,0 +1,14 @@
+{
+  "skill_id": "pdf-reader",
+  "version": "0.0.1",
+  "skill": {
+    "description": "Read and analyze PDF files, extract text by page range, and produce structured summaries with citations.",
+    "overview": "Read local PDFs page by page, then return a concise answer with supporting page references.",
+    "sections": [
+      {
+        "title": "Output Contract",
+        "content": "Return conclusion, evidence with page numbers, uncertainty, and follow-up suggestions when needed."
+      }
+    ]
+  }
+}

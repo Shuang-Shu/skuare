@@ -4,7 +4,7 @@
 
 > Document Type: TECH  
 > Status: Completed  
-> Last Updated: 2026-03-08  
+> Last Updated: 2026-03-09  
 > Scope: project-wide
 
 ## Objectives and Scope
@@ -46,6 +46,7 @@
   - `skr publish` output does not include server local paths.
   - `skr format [skillDir...]` interactively supports `All/Each`, and uniformly writes `metadata.version`/`metadata.author`; `skr format --all` automatically scans current directory sub-skills.
   - `make format` only passes through CLI `format` command, no longer incorrectly requires additional `VERSION` parameter.
+  - Examples in `docs/commands*.md` are now backed by real fixtures under `examples/`; remote command examples use the `observability-orchestrator` sample chain by default.
 - Maintainer Notes:
   - CLI shared parsing logic now lives in dedicated helper modules (`utils/command_args`, `utils/skill_manifest`, `utils/install_paths`, `utils/skill_workspace`) plus `commands/resource_type`; inside `query.ts`, `peek/get/deps` now share one skill selector flow instead of maintaining separate target-matching branches.
   - Backend handler/store layers use lightweight helper methods for repeated JSON response and versioned-resource filesystem flows; the project intentionally avoids introducing a heavy generic resource framework.
