@@ -517,6 +517,7 @@ CLI 参数 > 工作区配置 > 全局配置 > 默认值
 ## 相关文档
 - 项目 README：`README.md`
 - 技术总结：`docs/tech_summary_zh.md`
+- 演进路线图：`docs/roadmap_zh.md`
 - 依赖格式：`docs/skill_deps_format_zh.md`
 - 存储层次结构：`docs/storage_hierarchy_zh.md`
 - Skill 引用：`docs/skill_reference_zh.md`

@@ -142,6 +142,7 @@ skr delete observability-orchestrator 1.0.0
 
 ## Documentation Navigation
 - Technical Summary: `docs/tech_summary.md`
+- Roadmap: `docs/roadmap.md`
 - Server Documentation: `skuare-svc/README.md`
 - CLI Documentation: `skuare-cli/README.md`
 

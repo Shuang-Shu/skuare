@@ -77,3 +77,9 @@
   - Shared `SPEC_DIR` may cause multi-environment pollution, need clear directory isolation strategy.
 - Compatibility boundaries:
   - Existing clients depend on simplified output fields, extensions should use explicit switches rather than default changes.
+
+## Related Documentation
+- Command Reference: `docs/commands.md`
+- Roadmap: `docs/roadmap.md`
+- Server Documentation: `skuare-svc/README.md`
+- CLI Documentation: `skuare-cli/README.md`

@@ -75,3 +75,9 @@
   - 共享 `SPEC_DIR` 可能导致多环境污染，需要明确目录隔离策略。
 - 兼容边界：
   - 现有客户端依赖精简输出字段，如需扩展应通过显式开关而非默认变更。
+
+## 相关文档
+- 命令参考：`docs/commands_zh.md`
+- 演进路线图：`docs/roadmap_zh.md`
+- 服务端说明：`skuare-svc/README.md`
+- CLI 说明：`skuare-cli/README.md`
