@@ -517,6 +517,7 @@ CLI arguments > workspace config > global config > defaults
 ## Related Documentation
 - Project README: `README.md`
 - Technical Summary: `docs/tech_summary.md`
+- Roadmap: `docs/roadmap.md`
 - Dependency Format: `docs/skill_deps_format.md`
 - Storage Hierarchy: `docs/storage_hierarchy.md`
 - Skill Reference: `docs/skill_reference.md`

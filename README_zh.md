@@ -139,7 +139,8 @@ skr delete observability-orchestrator 1.0.0
 - CLI 是否附加签名只取决于是否提供 `--key-id` 与 `--privkey-file`。
 
 ## 文档导航
-- 技术综述：`docs/tech_summary.md`
+- 技术综述：`docs/tech_summary_zh.md`
+- 演进路线图：`docs/roadmap_zh.md`
 - 服务端说明：`skuare-svc/README.md`
 - CLI 说明：`skuare-cli/README.md`
 
