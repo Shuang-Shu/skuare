@@ -44,8 +44,10 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
   {
     create: () => new PeekCommand(),
     help: {
-      usage: ["peek [--type <skill|agentsmd|agmd>] <resourceID> [version]", "Peek skill or AGENTS.md overview/detail"],
+      usage: ["peek [--type <skill|agentsmd|agmd>] <author>/<name>@<version> | <author>/<name> | <name> [version]", "Peek skill or AGENTS.md overview/detail"],
       details: [
+        "                                       - <author>/<name>@<version> or <name>@<version>: exact version detail",
+        "                                       - <author>/<name> or <name>: resolve the target skill, then show overview",
         "peek --rgx <re> [version]            Peek skill by regex (must match exactly one skill)",
         "peek --type <agentsmd|agmd> <id> [version]",
       ],

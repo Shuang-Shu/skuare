@@ -41,6 +41,14 @@ test("buildHelpText uses unified --type entry and hides removed suffix commands"
   assert.doesNotMatch(helpText, /delete-agmd/);
 });
 
+test("buildHelpText describes aligned peek selector forms", () => {
+  const helpText = buildHelpText();
+
+  assert.match(helpText, /peek \[--type <skill\|agentsmd\|agmd>] <author>\/<name>@<version> \| <author>\/<name> \| <name> \[version]/);
+  assert.match(helpText, /<author>\/<name>@<version> or <name>@<version>: exact version detail/);
+  assert.match(helpText, /<author>\/<name> or <name>: resolve the target skill, then show overview/);
+});
+
 function escapeRegex(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

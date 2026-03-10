@@ -55,7 +55,7 @@
   - `health` -> `GET /healthz`
   - `list [--q] [--rgx]` -> `GET /api/v1/skills`
   - `list --type agentsmd|agmd [--q] [--rgx]` -> `GET /api/v1/agentsmd`
-  - `peek <skillRef> [version]` -> shared selector supporting `skillID` / `name` / `author/name` (also accepts `@version` inside `skillRef`) -> `GET /api/v1/skills/:skillID[/version]`
+  - `peek <skillRef> [version]` -> shared selector supporting `skillID` / `name` / `author/name` (also accepts `name@version` / `author/name@version` inside `skillRef`); when version is omitted, `peek` resolves the target skill first and then shows the skill overview -> `GET /api/v1/skills/:skillID[/version]`
   - `peek --type agentsmd|agmd <agentsmd-id> [version]` -> `GET /api/v1/agentsmd/:agentsmdID[/version]`
   - `peek --rgx <pattern> [version]` -> 先查询列表，再正则筛选唯一 skill
   - `validate <skillID> <version>` -> `POST /api/v1/skills/:skillID/:version/validate`
@@ -277,8 +277,8 @@ skuare detail skuare/report-generator references/details.md notes.txt
 - `skr list --rgx <pattern>` 会在 `id/skill_id/name/author/description` 上执行正则匹配。
 
 `peek` 输出字段：
-- `skr peek <skillRef> <version>` 展示：`id`、`name`、`author` 及该版本详情字段；`skillRef` 支持 `skillID/name/author/name`。
-- `skr peek <skillRef>` 展示：`id`（latest）、`name`、`author`、`versions` 与 `ids`（每个版本对应的完整 id）。
+- `skr peek <skillRef> <version>` 展示：`id`、`name`、`author` 及该版本详情字段；`skillRef` 支持 `skillID/name/author/name`，也兼容 `name@version` / `author/name@version`。
+- `skr peek <skillRef>` 展示：`id`（latest）、`name`、`author`、`versions` 与 `ids`（每个版本对应的完整 id）；当目录里同一 skill 存在多个版本时，会先按 skill 解析，不会因为版本分叉要求先选版本。
 - `skr peek --rgx <pattern> [version]` 要求正则命中唯一 skill；0 命中或多命中会报错并提示。
 - `skr get --rgx <pattern> [version]` 会先正则筛选唯一 skill，再执行既有安装流程。
 

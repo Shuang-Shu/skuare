@@ -66,6 +66,49 @@ test("peek reuses shared selector logic for name and author/name inputs", async 
   }
 });
 
+test("peek collapses multi-version matches to one skill when version is omitted", async () => {
+  const requests: string[] = [];
+  const restore = mockFetch((input) => {
+    const url = new URL(String(input));
+    const key = `GET ${url.pathname}`;
+    requests.push(key);
+    const routes: Record<string, Response> = {
+      "GET /api/v1/skills": jsonResponse({
+        items: [
+          { skill_id: "demo/tool-root", version: "1.0.0", name: "root-skill", author: "demo", description: "Root description v1" },
+          { skill_id: "demo/tool-root", version: "2.0.0", name: "root-skill", author: "demo", description: "Root description v2" },
+        ],
+      }),
+      "GET /api/v1/skills/demo%2Ftool-root": jsonResponse({
+        skill_id: "demo/tool-root",
+        author: "demo",
+        versions: ["1.0.0", "2.0.0"],
+      }),
+    };
+    const response = routes[key];
+    if (!response) {
+      throw new Error(`Unexpected request: ${key}`);
+    }
+    return response.clone();
+  });
+
+  try {
+    const logs = await captureConsole(async () => {
+      await new PeekCommand().execute(createContext(process.cwd(), ["root-skill"]));
+    });
+    const overview = JSON.parse(logs.join("\n")) as { skill_id: string; latest_version: string; versions: string[] };
+    assert.equal(overview.skill_id, "demo/tool-root");
+    assert.equal(overview.latest_version, "2.0.0");
+    assert.deepEqual(overview.versions, ["1.0.0", "2.0.0"]);
+    assert.deepEqual(requests, [
+      "GET /api/v1/skills",
+      "GET /api/v1/skills/demo%2Ftool-root",
+    ]);
+  } finally {
+    restore();
+  }
+});
+
 test("get resolves name selector with explicit version via shared catalog selector", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "skuare-get-selector-"));
   const requests: string[] = [];
