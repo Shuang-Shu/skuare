@@ -31,9 +31,9 @@ func Load() Config {
 	if defaultSpecDir == "" {
 		home, homeErr := os.UserHomeDir()
 		if homeErr == nil && home != "" {
-			defaultSpecDir = filepath.Join(home, ".skuare")
+			defaultSpecDir = filepath.Join(home, ".skuare", "skills")
 		} else {
-			defaultSpecDir = filepath.Join(wd, ".skuare")
+			defaultSpecDir = filepath.Join(wd, ".skuare", "skills")
 		}
 	}
 

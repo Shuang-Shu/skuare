@@ -22,6 +22,8 @@ var (
 	ErrNotFound      = errors.New("skill/version not found")
 )
 
+const anonymousSkillAuthorDir = "_anonymous"
+
 type FSStore struct {
 	specDir string
 	fs      FileSystem
@@ -81,6 +83,10 @@ func (s *FSStore) Create(req model.CreateSkillVersionRequest) (model.SkillEntry,
 	if err != nil {
 		return model.SkillEntry{}, err
 	}
+	authorDir, err := resolveSkillAuthorDir(author)
+	if err != nil {
+		return model.SkillEntry{}, err
+	}
 
 	unlock, err := s.lockSkill(req.SkillID)
 	if err != nil {
@@ -88,13 +94,12 @@ func (s *FSStore) Create(req model.CreateSkillVersionRequest) (model.SkillEntry,
 	}
 	defer unlock()
 
-	targetDir := s.versionDir(req.SkillID, req.Version)
-	targetExists := false
-	if _, err := s.fs.Stat(targetDir); err == nil {
-		targetExists = true
-	} else if !errors.Is(err, os.ErrNotExist) {
+	targetDir := s.versionDir(authorDir, req.SkillID, req.Version)
+	existingDir, err := s.findSkillVersionDir(req.SkillID, req.Version)
+	if err != nil && !errors.Is(err, ErrNotFound) {
 		return model.SkillEntry{}, err
 	}
+	targetExists := existingDir != ""
 	if targetExists && !req.Force {
 		return model.SkillEntry{}, ErrAlreadyExists
 	}
@@ -130,15 +135,15 @@ func (s *FSStore) Create(req model.CreateSkillVersionRequest) (model.SkillEntry,
 
 	backupDir := ""
 	if targetExists {
-		backupDir = filepath.Join(skillDir, req.Version+".bak-"+fmt.Sprintf("%d", time.Now().UnixNano()))
-		if err := s.fs.Rename(targetDir, backupDir); err != nil {
+		backupDir = filepath.Join(filepath.Dir(existingDir), req.Version+".bak-"+fmt.Sprintf("%d", time.Now().UnixNano()))
+		if err := s.fs.Rename(existingDir, backupDir); err != nil {
 			return model.SkillEntry{}, err
 		}
 	}
 
 	if err := s.fs.Rename(tmpDir, targetDir); err != nil {
 		if backupDir != "" {
-			_ = s.fs.Rename(backupDir, targetDir)
+			_ = s.fs.Rename(backupDir, existingDir)
 		}
 		return model.SkillEntry{}, err
 	}
@@ -147,6 +152,7 @@ func (s *FSStore) Create(req model.CreateSkillVersionRequest) (model.SkillEntry,
 		if err := s.fs.RemoveAll(backupDir); err != nil {
 			return model.SkillEntry{}, err
 		}
+		s.cleanupEmptyParents(existingDir, s.specDir)
 	}
 
 	entry := model.SkillEntry{
@@ -237,7 +243,14 @@ func (s *FSStore) GetVersion(skillID string, version string) (model.SkillDetail,
 		return model.SkillDetail{}, ErrNotFound
 	}
 
-	versionDir := s.versionDir(skillID, version)
+	versionDir := entry.Path
+	if versionDir == "" {
+		var err error
+		versionDir, err = s.findSkillVersionDir(skillID, version)
+		if err != nil {
+			return model.SkillDetail{}, err
+		}
+	}
 	files, err := s.listFiles(versionDir)
 	if err != nil {
 		return model.SkillDetail{}, err
@@ -263,7 +276,10 @@ func (s *FSStore) Delete(skillID string, version string) error {
 	}
 	defer unlock()
 
-	versionDir := s.versionDir(skillID, version)
+	versionDir, err := s.findSkillVersionDir(skillID, version)
+	if err != nil {
+		return err
+	}
 	if err := s.removeVersionDir(versionDir); err != nil {
 		return err
 	}
@@ -272,7 +288,7 @@ func (s *FSStore) Delete(skillID string, version string) error {
 		return err
 	}
 
-	s.cleanupParentDir(versionDir)
+	s.cleanupEmptyParents(versionDir, s.specDir)
 	return nil
 }
 
@@ -283,7 +299,15 @@ func (s *FSStore) Validate(skillID string, version string) (model.SkillEntry, er
 	if err := validator.ValidateVersion(version); err != nil {
 		return model.SkillEntry{}, err
 	}
-	skillMDPath := filepath.Join(s.versionDir(skillID, version), "SKILL.md")
+	versionDir, err := s.findSkillVersionDir(skillID, version)
+	if err != nil {
+		return model.SkillEntry{}, err
+	}
+	return s.validateVersionDir(skillID, version, versionDir)
+}
+
+func (s *FSStore) validateVersionDir(skillID string, version string, versionDir string) (model.SkillEntry, error) {
+	skillMDPath := filepath.Join(versionDir, "SKILL.md")
 	b, err := s.fs.ReadFile(skillMDPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -301,7 +325,7 @@ func (s *FSStore) Validate(skillID string, version string) (model.SkillEntry, er
 		Name:        name,
 		Author:      author,
 		Description: desc,
-		Path:        s.versionDir(skillID, version),
+		Path:        versionDir,
 		UpdatedAt:   time.Now().UTC().Format(time.RFC3339),
 	}
 	return entry, nil
@@ -309,29 +333,41 @@ func (s *FSStore) Validate(skillID string, version string) (model.SkillEntry, er
 
 func (s *FSStore) Reindex() (int, error) {
 	entries := make([]model.SkillEntry, 0)
-	skillDirs, err := s.fs.ReadDir(s.specDir)
+	authorDirs, err := s.fs.ReadDir(s.specDir)
 	if err != nil {
 		return 0, err
 	}
-	for _, sd := range skillDirs {
-		if !sd.IsDir() || strings.HasPrefix(sd.Name(), ".") {
+	for _, ad := range authorDirs {
+		if !ad.IsDir() || strings.HasPrefix(ad.Name(), ".") || ad.Name() == "agentsmd" {
 			continue
 		}
-		skillID := sd.Name()
-		if err := validator.ValidateSkillID(skillID); err != nil {
-			continue
-		}
-		versions, err := s.fs.ReadDir(filepath.Join(s.specDir, skillID))
+		skillDirs, err := s.fs.ReadDir(filepath.Join(s.specDir, ad.Name()))
 		if err != nil {
 			continue
 		}
-		for _, vd := range versions {
-			if !vd.IsDir() || strings.Contains(vd.Name(), ".tmp-") {
+		for _, sd := range skillDirs {
+			if !sd.IsDir() {
 				continue
 			}
-			entry, err := s.Validate(skillID, vd.Name())
-			if err == nil {
-				entries = append(entries, entry)
+			skillID := sd.Name()
+			if err := validator.ValidateSkillID(skillID); err != nil {
+				continue
+			}
+			versions, err := s.fs.ReadDir(filepath.Join(s.specDir, ad.Name(), skillID))
+			if err != nil {
+				continue
+			}
+			for _, vd := range versions {
+				if !vd.IsDir() || strings.Contains(vd.Name(), ".tmp-") || strings.Contains(vd.Name(), ".bak-") {
+					continue
+				}
+				if err := validator.ValidateVersion(vd.Name()); err != nil {
+					continue
+				}
+				entry, err := s.validateVersionDir(skillID, vd.Name(), filepath.Join(s.specDir, ad.Name(), skillID, vd.Name()))
+				if err == nil {
+					entries = append(entries, entry)
+				}
 			}
 		}
 	}
@@ -342,8 +378,8 @@ func (s *FSStore) Reindex() (int, error) {
 	return len(entries), nil
 }
 
-func (s *FSStore) versionDir(skillID string, version string) string {
-	return filepath.Join(s.specDir, skillID, version)
+func (s *FSStore) versionDir(authorDir string, skillID string, version string) string {
+	return filepath.Join(s.specDir, authorDir, skillID, version)
 }
 
 func (s *FSStore) systemDir() string {
@@ -628,7 +664,7 @@ func (s *FSStore) DeleteAgentsMD(agentsmdID string, version string) error {
 		return err
 	}
 
-	s.cleanupParentDir(versionDir)
+	s.cleanupEmptyParents(versionDir, s.agentsmdDir())
 	return nil
 }
 
@@ -649,11 +685,16 @@ func (s *FSStore) removeVersionDir(versionDir string) error {
 	return s.fs.RemoveAll(versionDir)
 }
 
-func (s *FSStore) cleanupParentDir(versionDir string) {
-	parent := filepath.Dir(versionDir)
-	empty, err := s.isDirEmpty(parent)
-	if err == nil && empty {
-		_ = s.fs.Remove(parent)
+func (s *FSStore) cleanupEmptyParents(versionDir string, stopDir string) {
+	stopDir = filepath.Clean(stopDir)
+	for parent := filepath.Dir(versionDir); parent != stopDir && parent != "." && parent != string(filepath.Separator); parent = filepath.Dir(parent) {
+		empty, err := s.isDirEmpty(parent)
+		if err != nil || !empty {
+			return
+		}
+		if err := s.fs.Remove(parent); err != nil {
+			return
+		}
 	}
 }
 
@@ -692,4 +733,34 @@ func (s *FSStore) readTextFile(path string) (string, error) {
 		return "", err
 	}
 	return string(b), nil
+}
+
+func (s *FSStore) findSkillVersionDir(skillID string, version string) (string, error) {
+	authorDirs, err := s.fs.ReadDir(s.specDir)
+	if err != nil {
+		return "", err
+	}
+	for _, ad := range authorDirs {
+		if !ad.IsDir() || strings.HasPrefix(ad.Name(), ".") || ad.Name() == "agentsmd" {
+			continue
+		}
+		versionDir := filepath.Join(s.specDir, ad.Name(), skillID, version)
+		if _, err := s.fs.Stat(versionDir); err == nil {
+			return versionDir, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+	}
+	return "", ErrNotFound
+}
+
+func resolveSkillAuthorDir(author string) (string, error) {
+	author = strings.TrimSpace(author)
+	if author == "" {
+		return anonymousSkillAuthorDir, nil
+	}
+	if author == "." || author == ".." || strings.Contains(author, "/") || strings.Contains(author, `\`) {
+		return "", errors.New("invalid metadata.author: must be a single path segment")
+	}
+	return author, nil
 }

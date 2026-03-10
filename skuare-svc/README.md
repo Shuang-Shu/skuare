@@ -2,13 +2,13 @@
 
 > 文档类型：README
 > 状态：已完成
-> 更新时间：2026-03-02
+> 更新时间：2026-03-11
 > 适用范围：skuare-svc
 
 ## 目标与范围
 - 提供 SkillHub 后端 HTTP 服务。
 - 作为远程存储仓库（Remote Registry）提供 Skill 规格读写能力。
-- 基于文件系统存储 Skill 规格，目录模型为 `<specDir>/<skillID>/<version>`，默认远程仓库根目录为 `~/.skuare`。
+- 基于文件系统存储 Skill 规格，目录模型为 `<specDir>/<author>/<skillID>/<version>`，默认远程仓库根目录为 `~/.skuare/skills`。
 
 ## 架构与 API 设计
 - 技术栈：Go + Hertz。
@@ -18,13 +18,13 @@
   - `store.FileSystem`：文件系统操作接口，`FSStore` 默认使用 `OSFileSystem`，可扩展为其它 FS 实现（如分布式 FS）。
 - 启动参数：
   - `--addr`：监听地址，默认 `:15657`（可由 `SKUARE_SVC_ADDR` 覆盖）
-  - `--spec-dir`：远程仓库根目录，默认 `~/.skuare`（可由 `SKUARE_SPEC_DIR` 覆盖）
+  - `--spec-dir`：远程仓库根目录，默认 `~/.skuare/skills`（可由 `SKUARE_SPEC_DIR` 覆盖）
   - `--authorized-keys-file`：已注册公钥文件路径（可由 `SKUARE_AUTHORIZED_KEYS_FILE` 覆盖），默认 `<specDir>/.skuare/authorized_keys`
   - `--local`：本地模式，启用后写接口跳过签名鉴权（可由 `SKUARE_LOCAL_MODE` 覆盖，默认 `false`）
   - `--auth-max-skew-sec`：签名时间戳允许偏移秒数（可由 `SKUARE_AUTH_MAX_SKEW_SEC` 覆盖，默认 `300`）
 - LOCAL 模式：
-  - 允许服务端目录与 CLI 本地局部仓库共用同一个 `~/.skuare` 根目录。
-  - 建议 CLI 在该场景写入 `repos/<scope>/<tool>/...` 子目录，避免与服务端 `<skillID>/<version>` 结构冲突。
+  - 服务端 Skill 默认写入 `~/.skuare/skills`，CLI 本地局部仓库仍可使用 `~/.skuare` 作为父目录。
+  - 建议 CLI 在该场景写入 `repos/<scope>/<tool>/...` 子目录，避免与服务端 `skills/<author>/<skillID>/<version>` 结构冲突。
 - API：
   - `GET /healthz`
   - `POST /api/v1/skills`
@@ -36,6 +36,7 @@
 - `POST /api/v1/reindex`
 - OpenAPI：`skuare-svc/docs/openapi.yaml`
 - 查询/创建返回：当上传的 `SKILL.md` 含 `metadata.author` 时，`POST/GET /api/v1/skills*` 返回体会包含 `author` 字段。
+- 当 `metadata.author` 缺失时，服务端使用 `_anonymous` 作为保留作者目录名进行落盘，但接口返回的 `author` 仍保持空字符串。
 - 创建请求支持可选 `force: true`；传入后会覆盖相同 `skill_id@version` 的已有版本。
 - 错误响应：统一为 `{ "code": "...", "message": "..." }`
 - 错误码定义：统一收敛到 `internal/util/errcode.go`
@@ -80,7 +81,7 @@
 cd skuare-svc
 go test ./...
 go build ./...
-go run ./cmd/skuare-svc --addr :15657 --spec-dir "$HOME/.skuare"
+go run ./cmd/skuare-svc --addr :15657 --spec-dir "$HOME/.skuare/skills"
 ```
 
 项目根目录也提供本地一键启动脚本（后台启动并健康检查）：
@@ -90,8 +91,8 @@ make start-be DAEMON=true
 make start-be ADDR=127.0.0.1:18080
 make start-be DAEMON=true ADDR=127.0.0.1:18080
 make start-be LOCAL_MODE=false
-make start-be SPEC_DIR="$HOME/.skuare" GOCACHE=/tmp/go-cache-skuare
-make start-be AUTHORIZED_KEYS_FILE="$HOME/.skuare/authorized_keys" AUTH_MAX_SKEW_SEC=300
+make start-be SPEC_DIR="$HOME/.skuare/skills" GOCACHE=/tmp/go-cache-skuare
+make start-be AUTHORIZED_KEYS_FILE="$HOME/.skuare/skills/.skuare/authorized_keys" AUTH_MAX_SKEW_SEC=300
 make start-be BE_ARGS="--auth-max-skew-sec 120"
 make stop-be
 ```
@@ -149,3 +150,4 @@ When `force` is `true`, the server replaces the existing version directory under
 - 2026-02-24：新增 `--auth-max-skew-sec` / `SKUARE_AUTH_MAX_SKEW_SEC`，并增强 `make start-be` 参数透传能力。
 - 2026-03-01：对齐仓库入口风格：`scripts/dev-up.sh` 默认 `SPEC_DIR` 与 `make start-be`、SVC 默认仓库根统一为 `~/.skuare`。
 - 2026-03-02：发布链路开始解析并持久化 `SKILL.md metadata.author`，`create/list/get/validate/reindex` 返回体补充 `author` 字段。
+- 2026-03-11：Skill 默认存储根目录调整为 `~/.skuare/skills`，并改为 `<author>/<skillID>/<version>` 分层结构；无作者时落盘到 `_anonymous` 目录。
