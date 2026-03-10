@@ -9,7 +9,7 @@ import type { JsonValue } from "./types";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { resolveToolSkillsDir } from "../config/resolver";
-import { parseRegexOption, stripRegexOptions } from "../utils/command_args";
+import { collectPositionalArgs, parseRegexOption, stripRegexOptions } from "../utils/command_args";
 import { resolveInstallTargetRoot, resolvePrimaryTool } from "../utils/install_paths";
 import { parseSkillFrontmatter } from "../utils/skill_manifest";
 import { compareVersions } from "../utils/versioning";
@@ -557,6 +557,10 @@ export class ListCommand extends BaseCommand {
     }
 
     const args = resourceContext.context.args;
+    const positional = collectPositionalArgs(args, ["--q", "--rgx", "--regex"]);
+    if (positional.length > 0) {
+      this.fail("Usage: skuare list [--type <skill|agentsmd|agmd>] [--q <keyword>] [--rgx <re>]. Bare positional arguments are not allowed; use --q or --rgx.");
+    }
     const q = this.parseOptionValue(args, "--q");
     const regexPattern = parseRegexOption(args);
     const regex = regexPattern ? this.compileRegex(regexPattern) : undefined;

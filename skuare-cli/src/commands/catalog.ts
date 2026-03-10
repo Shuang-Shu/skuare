@@ -39,6 +39,9 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
     create: () => new ListCommand(),
     help: {
       usage: ["list [--type <skill|agentsmd|agmd>] [--q <keyword>] [--rgx <re>]", "List skills or AGENTS.md"],
+      details: [
+        "                                       Search input must be passed via --q or --rgx; bare positional arguments are rejected",
+      ],
     },
   },
   {

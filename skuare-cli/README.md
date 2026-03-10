@@ -53,8 +53,8 @@
   - `detail --type agentsmd` / `detail --type agmd`：本地展示 `<cwd>/.{tool}/AGENTS.md` 或 `~/.{tool}/AGENTS.md`
 - server 只读命令：
   - `health` -> `GET /healthz`
-  - `list [--q] [--rgx]` -> `GET /api/v1/skills`
-  - `list --type agentsmd|agmd [--q] [--rgx]` -> `GET /api/v1/agentsmd`
+  - `list [--q] [--rgx]` -> `GET /api/v1/skills` (search text must be passed via `--q` or `--rgx`; bare positional arguments are rejected)
+  - `list --type agentsmd|agmd [--q] [--rgx]` -> `GET /api/v1/agentsmd` (same rule: no bare positional arguments)
   - `peek <skillRef> [version]` -> shared selector supporting `skillID` / `name` / `author/name` (also accepts `name@version` / `author/name@version` inside `skillRef`); when version is omitted, `peek` resolves the target skill first and then shows the skill overview -> `GET /api/v1/skills/:skillID[/version]`
   - `peek --type agentsmd|agmd <agentsmd-id> [version]` -> `GET /api/v1/agentsmd/:agentsmdID[/version]`
   - `peek --rgx <pattern> [version]` -> 先查询列表，再正则筛选唯一 skill
@@ -275,6 +275,7 @@ skuare detail skuare/report-generator references/details.md notes.txt
 - 其中 `id` 格式为：`<author>/<name>@<version>`，并固定先于 `name` 展示。
 - 当作者信息缺失时，`author` 回退为 `undefined`。
 - `skr list --rgx <pattern>` 会在 `id/skill_id/name/author/description` 上执行正则匹配。
+- `skr list` 不接受裸位置参数；例如 `skr list aaa` 会直接报错，提示改用 `skr list --q aaa` 或 `skr list --rgx aaa`。
 
 `peek` 输出字段：
 - `skr peek <skillRef> <version>` 展示：`id`、`name`、`author` 及该版本详情字段；`skillRef` 支持 `skillID/name/author/name`，也兼容 `name@version` / `author/name@version`。
