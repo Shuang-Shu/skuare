@@ -41,8 +41,8 @@ Default repository root path: `$HOME/.skuare`
 - `skr detail <skillName|skillID> [relativePath...]`: show files under a local installed skill. Defaults to the target skill's `SKILL.md` when no path is provided.
 - `skr get <skill-ref> [version] [--global] [--wrap]`: fetch Skill from remote repository. When directly targeting one skill, `peek/get/deps` share the same selector logic for `skillID`, `name`, and `author/name`.
   - Without `--global`: install to `<cwd>/.{llmTool}/skills/<skillID>/`
-  - With `--global`: install to `~/.{llmTool}/skills/<skillID>/`
-  - `llmTool` is the first tool in config file (codex/claudecode/custom)
+  - With `--global`: install to every configured global tool skill directory; each default target is `~/.{llmTool}/skills/<skillID>/`
+  - Without `--global`, `llmTool` is the first tool in the config file; with `--global`, all configured tools are targeted
   - Default mode installs the full dependency graph flatly; `--wrap` installs only the root skill and leaves dependencies queryable via `skr deps`
 - `skr deps --brief|--content|--tree|--install <rootSkillDir> ...`: inspect or install wrapped dependency subtrees on demand; dependency targets also accept `skillID/name/author/name` plus optional `@version`.
 

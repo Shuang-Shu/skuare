@@ -73,6 +73,89 @@ test("get reports circular dependencies instead of silently skipping them", asyn
   }
 });
 
+test("get --global installs the same skill into all configured tools' global skill directories", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "skuare-get-global-multi-"));
+  const home = await mkdtemp(join(tmpdir(), "skuare-home-"));
+  const originalHome = process.env.HOME;
+  process.env.HOME = home;
+  const restore = mockFetch({
+    "GET /api/v1/skills": new Response(JSON.stringify({
+      items: [{ skill_id: "demo/root", version: "1.0.0", name: "root", author: "demo", description: "Root description" }],
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+    "GET /api/v1/skills/demo%2Froot/1.0.0": skillDetail("demo/root", "1.0.0", "Root description"),
+  });
+
+  try {
+    const logs = await captureConsole(async () => {
+      await new GetCommand().execute(createContext(workspace, ["demo/root@1.0.0", "--global"], {
+        llmTools: ["codex", "qwen", "trae", "cursor-cli", "kiro", "claudecode"],
+      }));
+    });
+
+    const output = JSON.parse(logs.join("\n")) as {
+      global: boolean;
+      llm_tools: string[];
+      targets: Array<{ target: string; tools: string[] }>;
+      skills: string[];
+    };
+
+    assert.equal(output.global, true);
+    assert.deepEqual(output.llm_tools, ["codex", "qwen", "trae", "cursor-cli", "kiro", "claudecode"]);
+    assert.equal(output.targets.length, 6);
+    assert.deepEqual(output.skills, ["demo/root"]);
+
+    for (const tool of output.llm_tools) {
+      assert.equal((await stat(join(home, `.${tool}`, "skills", "demo", "root", "SKILL.md"))).isFile(), true);
+    }
+  } finally {
+    restore();
+    process.env.HOME = originalHome;
+    await rm(workspace, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("get --global respects explicit global toolSkillDirs and ignores workspace-relative ones", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "skuare-get-global-custom-"));
+  const home = await mkdtemp(join(tmpdir(), "skuare-home-"));
+  const explicitGlobalDir = join(home, "custom-cursor-skills");
+  const originalHome = process.env.HOME;
+  process.env.HOME = home;
+  const restore = mockFetch({
+    "GET /api/v1/skills": new Response(JSON.stringify({
+      items: [{ skill_id: "demo/root", version: "1.0.0", name: "root", author: "demo", description: "Root description" }],
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+    "GET /api/v1/skills/demo%2Froot/1.0.0": skillDetail("demo/root", "1.0.0", "Root description"),
+  });
+
+  try {
+    await captureConsole(async () => {
+      await new GetCommand().execute(createContext(workspace, ["demo/root@1.0.0", "--global"], {
+        llmTools: ["codex", "cursor-cli"],
+        toolSkillDirs: {
+          codex: "workspace-codex-skills",
+          "cursor-cli": explicitGlobalDir,
+        },
+      }));
+    });
+
+    assert.equal((await stat(join(home, ".codex", "skills", "demo", "root", "SKILL.md"))).isFile(), true);
+    assert.equal((await stat(join(explicitGlobalDir, "demo", "root", "SKILL.md"))).isFile(), true);
+    await assert.rejects(stat(join(workspace, "workspace-codex-skills", "demo", "root", "SKILL.md")), /ENOENT/);
+  } finally {
+    restore();
+    process.env.HOME = originalHome;
+    await rm(workspace, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 test("deps can inspect and install wrapped dependency subtrees with get-like skill selectors", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "skuare-deps-"));
   const installRoot = join(workspace, ".codex", "skills");
@@ -204,13 +287,17 @@ function renderSkill(skillID: string, version: string, description: string): str
   ].join("\n");
 }
 
-function createContext(cwd: string, args: string[]): CommandContext {
+function createContext(
+  cwd: string,
+  args: string[],
+  overrides?: Partial<Pick<CommandContext, "llmTools" | "toolSkillDirs">>
+): CommandContext {
   return {
     server: "http://127.0.0.1:15657",
     localMode: true,
     cwd,
-    llmTools: ["codex"],
-    toolSkillDirs: {},
+    llmTools: overrides?.llmTools || ["codex"],
+    toolSkillDirs: overrides?.toolSkillDirs || {},
     auth: {
       keyId: "",
       privateKeyFile: "",

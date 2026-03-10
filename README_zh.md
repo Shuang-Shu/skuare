@@ -39,8 +39,8 @@
 - `skr detail <skillName|skillID> [relativePath...]`：展示本地已安装 skill 下的文件内容；不传文件路径时默认输出目标 skill 的 `SKILL.md`。
 - `skr get <skill-ref> [version] [--global] [--wrap]`：从远程仓库拉取 Skill；直接指定目标时支持 `skillID`、`name`、`author/name` 三种 selector，并与 `peek/deps` 复用同一交互逻辑。
   - 不带 `--global`：安装到 `<cwd>/.{llmTool}/skills/<skillID>/`
-  - 带 `--global`：安装到 `~/.{llmTool}/skills/<skillID>/`
-  - `llmTool` 取值为配置文件中第一个工具（codex/claudecode/custom）
+  - 带 `--global`：同时安装到所有已配置工具的全局 skill 目录；每个默认目标为 `~/.{llmTool}/skills/<skillID>/`
+  - 不带 `--global` 时，`llmTool` 仍取配置文件中的第一个工具；带 `--global` 时会覆盖全部已配置工具
   - 默认会把完整依赖图平铺安装；带 `--wrap` 时只安装根 Skill，依赖留给 `skr deps` 按需查看和安装
 - `skr deps --brief|--content|--tree|--install <rootSkillDir> ...`：围绕 wrap 根 Skill 查看依赖摘要、内容、文件树，并按需安装子树；目标依赖支持 `skillID/name/author/name` 与 `@version`。
 

@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { DomainError } from "../domain/errors";
 
 export function resolvePrimaryTool(llmTools: string[]): string {
@@ -14,6 +14,19 @@ export function resolveToolHomeDir(cwd: string, tool: string, isGlobal: boolean)
   return isGlobal ? join(homedir(), `.${tool}`) : join(cwd, `.${tool}`);
 }
 
-export function resolveInstallTargetRoot(cwd: string, tool: string, isGlobal: boolean): string {
+function isExplicitPath(input: string): boolean {
+  return input === "~" || input.startsWith("~/") || isAbsolute(input);
+}
+
+export function resolveInstallTargetRoot(cwd: string, tool: string, isGlobal: boolean, configured?: string): string {
+  const raw = String(configured || "").trim();
+  if (raw) {
+    if (!isGlobal) {
+      return raw === "~" ? homedir() : raw.startsWith("~/") ? join(homedir(), raw.slice(2)) : isAbsolute(raw) ? raw : join(cwd, raw);
+    }
+    if (isExplicitPath(raw)) {
+      return raw === "~" ? homedir() : raw.startsWith("~/") ? join(homedir(), raw.slice(2)) : raw;
+    }
+  }
   return join(resolveToolHomeDir(cwd, tool, isGlobal), "skills");
 }

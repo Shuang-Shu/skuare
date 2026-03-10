@@ -271,8 +271,8 @@ skuare detail skuare/report-generator references/details.md notes.txt
 
 `get` 安装路径：
 - 不带 `--global`：安装到 `<cwd>/.{llmTool}/skills/<skillID>/`
-- 带 `--global`：安装到 `~/.{llmTool}/skills/<skillID>/`
-- `llmTool` 取值为配置文件中第一个工具（codex/claudecode/custom）
+- 带 `--global`：同时安装到所有已配置工具的全局 skill 目录；每个默认目标为 `~/.{llmTool}/skills/<skillID>/`
+- 不带 `--global` 时，`llmTool` 取值为配置文件中第一个工具；带 `--global` 时覆盖全部已配置工具
 - 带 `--wrap`：只安装根 Skill，并在根目录下写入 `.skuare-wrap.json` 供 `deps` 读取
 - 遇到循环依赖时，`get` 会直接报错，不再静默跳过回边
 
