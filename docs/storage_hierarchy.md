@@ -4,7 +4,7 @@
 
 > Document Type: TECH  
 > Status: Completed  
-> Last Updated: 2026-03-01  
+> Last Updated: 2026-03-11  
 > Scope: project-wide
 
 ## Objectives and Scope
@@ -12,20 +12,20 @@
 - Separately describe three easily confused tiers:
   - Server-side remote repository tier
   - CLI configuration tier
-  - CLI local partial repository tier
+  - CLI local installation tier
 - Supplement main data flows for `publish` / `get`, clarify boundaries and common misconceptions.
 
 ## One-Sentence Summary
 - Where server stores: determined only by `skuare-svc` startup parameters.
 - How CLI connects to server: jointly determined by CLI args, workspace config, global config, and defaults.
-- Where CLI installs skills locally: determined by `scope`, local repository root, and `tool`.
+- Where CLI installs skills locally: determined by current `cwd`, target `tool`, and `--global`.
 - CLI no longer maintains or infers server's actual storage directory.
 
 ## 1. Server-Side Remote Repository Tier
 
 ### 1.1 Repository Root Directory
 - `skuare-svc` parses remote repository root directory `SpecDir` at startup.
-- Default value is `$HOME/.skuare`.
+- Default value is `$HOME/.skuare/skills`.
 - Can be overridden by environment variable `SKUARE_SPEC_DIR` or startup parameter `--spec-dir`.
 - Related implementation: `skuare-svc/internal/config/config.go`.
 
@@ -34,26 +34,34 @@ Actual file structure under remote repository root directory:
 
 ```text
 <specDir>/
-  .system/
+  .skuare/
     index.json
     locks/
       <skillID>.lock
-  <skillID>/
-    <version>/
-      SKILL.md
-      <other files...>
+  agentsmd/
+    <agentsmdID>/
+      <version>/
+        AGENTS.md
+        meta.json
+  <authorDir>/
+    <skillID>/
+      <version>/
+        SKILL.md
+        <other files...>
 ```
 
-- `<skillID>/<version>/` is the actual storage directory for skill versions.
-- `.system/index.json` is the server-side index file.
-- `.system/locks/` stores file locks by `skillID` dimension.
+- `<authorDir>/<skillID>/<version>/` is the actual storage directory for skill versions.
+- Missing `metadata.author` falls back to `_anonymous` for filesystem placement.
+- `.skuare/index.json` is the server-side index file.
+- `.skuare/locks/` stores file locks by `skillID` dimension.
 - Related implementation: `skuare-svc/internal/store/fs_store.go`.
 
 ### 1.3 Server Write Behavior
-- `publish/create` ultimately writes to `<specDir>/<skillID>/<version>/`.
+- `publish/create` ultimately writes to `<specDir>/<authorDir>/<skillID>/<version>/`.
 - When creating versions, first writes to temporary directory, then renames to official directory, reducing half-written state exposure risk.
-- `delete` removes a specific `<skillID>/<version>` directory.
+- `delete` removes a specific `<authorDir>/<skillID>/<version>` directory and cleans empty parent directories on the way back up.
 - `list/get/peek/validate` all read from this remote repository.
+- If files are manually migrated on disk, run `POST /api/v1/reindex` once so the server rebuilds `.skuare/index.json`.
 
 ## 2. CLI Configuration Tier
 
@@ -109,54 +117,52 @@ Explanation:
 - Server-side remote repository root directory is determined only by server startup parameters, CLI no longer declares this value.
 - If this field remains in historical configs, current CLI no longer depends on it to infer server directory.
 
-## 3. CLI Local Partial Repository Tier
+## 3. CLI Local Installation Tier
 
-### 3.1 Local Repository Root
-When CLI fetches skills locally, it also has two repository roots:
+### 3.1 Tool Home Root
+When CLI fetches skills locally, it writes into the selected tool's home directory:
 
-- global local repository root: `~/.skuare`
-- workspace local repository root: `<cwd>/.skuare`
+- workspace tool home (default): `<cwd>/.<tool>`
+- global tool home: `~/.<tool>`
 
 By default:
-- `skr get`'s `scope` is `workspace`
-- Can switch to global via `--scope global`
-- Can explicitly override local repository root via `--repo-dir <path>`
+- `skr get` installs into the workspace tool home
+- `--global` switches installation to the user's home directory
+- The target `tool` is the first configured LLM tool
 
 ### 3.2 Final Installation Directory
 `skr get` final installation target is:
 
 ```text
-<repoRoot>/repos/<scope>/<tool>/<skillID>/
+<toolHome>/skills/<skillID>/
 ```
 
 For example:
 
 ```text
-~/.skuare/repos/global/codex/pdf-reader/
-<project>/.skuare/repos/workspace/codex/pdf-reader/
+<project>/.codex/skills/pdf-reader/
+~/.codex/skills/pdf-reader/
 ```
 
-These four tiers represent:
-- `repoRoot`: local repository root
-- `scope`: `global` or `workspace`
-- `tool`: target LLM tool, e.g., `codex`
+These two tiers represent:
+- `toolHome`: tool-specific local root
 - `skillID`: specific skill ID
 
 ### 3.3 Why Still Separate by `tool`
-The same machine may serve multiple LLM tools simultaneously, so local partial repository needs to continue tiering by `tool` to avoid installation result pollution between different tools.
+The same machine may serve multiple LLM tools simultaneously, so local installation still needs to tier by `tool` to avoid installation result pollution between different tools.
 
 ## 4. tool Directory Tier
 
-Besides the partial repository used by `skr get`, CLI also maintains the concept of "tool's own skills directory".
+CLI maintains the concept of a "tool's own home directory", and `skr get` installs under that directory's `skills/` subdirectory.
 
 Default rules:
-- `codex` -> `<cwd>/skills`
+- `codex` -> `<cwd>/.codex/skills`
 - `claudecode` -> `~/.claudecode/skills`
 - custom tool -> `~/.<tool>/skills`
 
 If `toolSkillDirs[tool]` is provided in config, prioritize explicit config value.
 
-This line's purpose is to tell CLI where a tool defaults to read or place local skill working directory, it's not the same concept as `skr get`'s partial repository.
+This line's purpose is to tell CLI where a tool defaults to read or place local skill working directory. For current `get`, this is also the installation root family, unlike the earlier `repos/<scope>/<tool>` model which has been removed.
 
 ## 5. Main Data Flows
 
@@ -168,7 +174,7 @@ local skill directory / SKILL.md / request.json
   -> CLI parse and package
   -> HTTP write request
   -> skuare-svc
-  -> <specDir>/<skillID>/<version>/
+  -> <specDir>/<authorDir>/<skillID>/<version>/
 ```
 
 Key points:
@@ -183,11 +189,11 @@ Key points:
 skuare-svc remote version files
   -> CLI fetch files
   -> parse dependencies
-  -> write to <repoRoot>/repos/<scope>/<tool>/<skillID>/
+  -> write to <toolHome>/skills/<skillID>/
 ```
 
 Key points:
-- `get` writes to CLI local partial repository, not server-side remote repository.
+- `get` writes to CLI local installation directory, not server-side remote repository.
 - If skill has dependencies, CLI continues to recursively download dependencies and write them locally together.
 - Current implementation no longer guesses whether server shares same directory with local based on client config.
 
@@ -197,24 +203,24 @@ Key points:
 False.
 
 Actual rule:
-- CLI only determines "where to connect" and "how to organize local config/partial repository".
+- CLI only determines "where to connect" and "how to organize local config/install directories".
 - Server storage directory is determined only by `skuare-svc --spec-dir` or `SKUARE_SPEC_DIR`.
 
-### 6.2 Common Misconception 2: global/workspace Is Just a Config Switch
+### 6.2 Common Misconception 2: `--global` Means Server Global Storage
 Incomplete.
 
-`global/workspace` simultaneously affects two things:
-- CLI config source
-- `skr get` local partial repository installation location
+`--global` only affects the CLI local installation target:
+- without `--global`: `<cwd>/.<tool>/skills/`
+- with `--global`: `~/.<tool>/skills/`
 
 But it doesn't affect server-side remote repository root directory.
 
-### 6.3 Common Misconception 3: tool Directory and Partial Repository Are the Same Thing
+### 6.3 Common Misconception 3: tool Directory and Installed Skill Directory Are the Same Thing
 False.
 
 They solve different problems:
 - `toolSkillDirs`: tool's own skill working directory
-- `<repoRoot>/repos/<scope>/<tool>/<skillID>/...`: partial repository after `skr get` installation
+- `<toolHome>/skills/<skillID>/...`: installed local skill directory after `skr get`
 
 ### 6.4 Common Misconception 4: local Mode Equals Client Local Write Mode
 False.

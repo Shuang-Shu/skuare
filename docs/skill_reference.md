@@ -4,7 +4,7 @@
 
 > Document Type: TECH  
 > Status: Completed  
-> Last Updated: 2026-03-07  
+> Last Updated: 2026-03-11  
 > Scope: project-wide
 
 ## Objectives
@@ -127,7 +127,7 @@ skr publish --dir ./skills/observability-orchestrator
 # Install to workspace (./<tool>/skills/)
 skr get observability-orchestrator
 
-# Install to global (~/.skuare/<tool>/skills/)
+# Install to global (~/.<tool>/skills/)
 skr get observability-orchestrator --global
 ```
 

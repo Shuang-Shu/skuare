@@ -4,7 +4,7 @@
 
 > 文档类型：TECH  
 > 状态：已完成  
-> 更新时间：2026-03-07  
+> 更新时间：2026-03-11  
 > 适用范围：project-wide
 
 ## 目标
@@ -127,7 +127,7 @@ skr publish --dir ./skills/observability-orchestrator
 # 安装到工作区 (./<tool>/skills/)
 skr get observability-orchestrator
 
-# 安装到全局 (~/.skuare/<tool>/skills/)
+# 安装到全局 (~/.<tool>/skills/)
 skr get observability-orchestrator --global
 ```
 

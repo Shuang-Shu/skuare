@@ -4,7 +4,7 @@
 
 > 文档类型：REFERENCE  
 > 状态：已完成  
-> 更新时间：2026-03-10  
+> 更新时间：2026-03-11  
 > 适用范围：project-wide
 
 ## 示例准备
@@ -205,7 +205,7 @@ skr peek --rgx "^ShuangShu/report-generator@"
 ---
 
 ### get
-安装 skill 及其依赖到本地局部仓库。
+安装 skill 及其依赖到本地工具 skill 目录。
 
 **用法：**
 ```bash
@@ -219,7 +219,7 @@ skr get --rgx <pattern> [version] [--global]
 
 **安装目录：**
 - 工作区（默认）：`<cwd>/.<tool>/skills/<skillID>/`
-- 全局：`~/.skuare/.<tool>/skills/<skillID>/`
+- 全局：`~/.<tool>/skills/<skillID>/`
 
 其中 `<tool>` 是配置的第一个 LLM 工具（codex/claudecode/custom）。
 
@@ -265,7 +265,7 @@ skr detail <skillName|skillID> [relativePath...]
 
 **解析顺序：**
 1. 在 `<cwd>/.<tool>/skills/` 中搜索
-2. 在 `~/.skuare/.<tool>/skills/` 中搜索
+2. 在 `~/.<tool>/skills/` 中搜索
 
 **输出：**
 带路径标题的文件内容。

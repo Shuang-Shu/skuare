@@ -4,7 +4,7 @@
 
 > Document Type: TECH  
 > Status: Completed  
-> Last Updated: 2026-03-10  
+> Last Updated: 2026-03-11  
 > Scope: project-wide
 
 ## Objectives and Scope
@@ -15,11 +15,11 @@
 
 ## Current Status and Factual Basis
 - Modules:
-  - `skuare-svc`: Filesystem storage model `<specDir>/<skillID>/<version>`.
+  - `skuare-svc`: Filesystem storage model `<specDir>/<author>/<skillID>/<version>`.
   - `skuare-cli`: Command-line frontend, supports `init/health/list/peek/get/deps/publish/update/create/build/format/delete/validate`; `list/peek/get/detail/publish/create/delete` switch between Skill and AGENTS.md via `--type skill|agentsmd|agmd`.
 - Key Configuration:
-  - Backend default `spec-dir`: `$HOME/.skuare` (can be overridden by `SKUARE_SPEC_DIR` or `--spec-dir`).
-  - `scripts/dev-up.sh` and `make start-be` default `SPEC_DIR` unified to `$HOME/.skuare`.
+  - Backend default `spec-dir`: `$HOME/.skuare/skills` (can be overridden by `SKUARE_SPEC_DIR` or `--spec-dir`).
+  - `scripts/dev-up.sh` and `make start-be` default `SPEC_DIR` unified to `$HOME/.skuare/skills`.
   - Startup parameters: `--addr`, `--spec-dir`, `--authorized-keys-file`, `--local`, `--auth-max-skew-sec`.
   - CLI config priority: `CLI args > workspace > global > defaults`.
   - CLI `remote.mode`: `local` / `remote`, only describes target server mode, not responsible for declaring server storage directory.
@@ -42,7 +42,7 @@
   - `skr get --wrap` installs only the root skill and persists `.skuare-wrap.json`; `skr deps` inspects or installs wrapped dependency subtrees on demand, and `peek/get/deps` now share one direct-skill selector flow (`skillID | name | author/name`, with optional `@version`).
   - AGENTS.md resources now reuse the base command entry via `--type agentsmd|agmd`; removed suffix commands such as `list-agmd` and `publish-agentsmd` return migration hints instead of remaining registered commands.
   - When `SKILL.md metadata.author` exists, the server returns `author` directly in `publish/list/peek` related responses.
-  - When `author` is missing, defaults to `undefined`.
+  - When `metadata.author` is missing, server stores the version under `_anonymous/<skillID>/<version>` but keeps API `author` empty; a literal `author: undefined` remains `undefined`.
   - `skr publish` output does not include server local paths.
   - `skr update` reads the remote `maxVersion`, requires a strictly greater new version, and in interactive mode prefills a suggested version before rewriting local `metadata.version`.
   - `skr format [skillDir...]` interactively supports `All/Each`, and uniformly writes `metadata.version`/`metadata.author`; `skr format --all` automatically scans current directory sub-skills.
