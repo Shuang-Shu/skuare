@@ -20,6 +20,7 @@ import { buildHelpText } from "./commands/help_text";
 import type { CommandContext } from "./commands/types";
 import { DomainError, formatDomainError, normalizeUnknownError } from "./domain/errors";
 import { getRemovedCommandSuggestion } from "./commands/resource_type";
+import { APP_NAME, APP_VERSION } from "./app_meta";
 
 /**
  * 主函数
@@ -40,7 +41,7 @@ async function main(): Promise<void> {
 
     // 版本命令特殊处理
     if (name === "version" || name === "--version" || name === "-v") {
-      console.log("skuare v0.1.0");
+      console.log(`${APP_NAME} v${APP_VERSION}`);
       return;
     }
 

@@ -117,63 +117,6 @@ test("build fails clearly when target skill is missing in non-tty mode", async (
   }
 });
 
-test("build --skr-skill initializes cwd as a skill-builder-style skill and writes dependency files", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "skuare-build-skr-skill-"));
-  try {
-    await createSkill(workspace, "github-deep-research", "1.2.3");
-    const skillRoot = join(workspace, "workspace-agent");
-    await mkdir(skillRoot, { recursive: true });
-
-    const command = new MockBuildCommand([
-      "Use when the user asks to maintain the workspace-agent package and deliver its workflow output.",
-      "ShuangShu",
-      "0.1.0",
-    ]);
-    command.tty = true;
-    await command.execute(createContext(skillRoot, ["--skr-skill", "github-deep-research"]));
-
-    const skillMD = await readFile(join(skillRoot, "SKILL.md"), "utf8");
-    const workflowRef = await readFile(join(skillRoot, "references", "skuare-workflow.md"), "utf8");
-    const deps = JSON.parse(await readFile(join(skillRoot, "skill-deps.json"), "utf8")) as {
-      dependencies: Array<{ skill: string; version: string }>;
-    };
-
-    assert.match(skillMD, /name: "workspace-agent"/);
-    assert.match(skillMD, /description: "Use when the user asks to maintain the workspace-agent package and deliver its workflow output\."/);
-    assert.match(skillMD, /Read `references\/skuare-workflow\.md` before editing/);
-    assert.match(workflowRef, /skr build --skr-skill \[refSkill...\] \[--all\]/);
-    assert.deepEqual(deps.dependencies, [{ skill: "github-deep-research", version: "1.2.3" }]);
-  } finally {
-    await rm(workspace, { recursive: true, force: true });
-  }
-});
-
-test("build --skr-skill --all scans child skill dirs under cwd", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "skuare-build-skr-skill-all-"));
-  try {
-    await createSkill(workspace, "ref-a", "1.0.0");
-    await createSkill(workspace, "ref-b", "2.0.0");
-
-    const command = new MockBuildCommand([
-      "Use when the user asks to orchestrate the whole workspace package.",
-      "ShuangShu",
-      "0.0.1",
-    ]);
-    command.tty = true;
-    await command.execute(createContext(workspace, ["--skr-skill", "--all"]));
-
-    const deps = JSON.parse(await readFile(join(workspace, "skill-deps.json"), "utf8")) as {
-      dependencies: Array<{ skill: string; version: string }>;
-    };
-    assert.deepEqual(deps.dependencies, [
-      { skill: "ref-a", version: "1.0.0" },
-      { skill: "ref-b", version: "2.0.0" },
-    ]);
-  } finally {
-    await rm(workspace, { recursive: true, force: true });
-  }
-});
-
 async function createSkill(root: string, skillID: string, version: string): Promise<void> {
   const dir = join(root, skillID);
   await mkdir(dir, { recursive: true });

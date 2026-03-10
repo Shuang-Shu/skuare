@@ -4,6 +4,7 @@
 
 import { BaseCommand } from "./base";
 import { buildHelpText } from "./help_text";
+import { APP_NAME, APP_VERSION } from "../app_meta";
 
 export class HelpCommand extends BaseCommand {
   readonly name = "help";
@@ -22,6 +23,6 @@ export class VersionCommand extends BaseCommand {
   readonly description = "Show version";
 
   async execute(): Promise<void> {
-    console.log("skuare v0.1.0");
+    console.log(`${APP_NAME} v${APP_VERSION}`);
   }
 }

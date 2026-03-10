@@ -2,6 +2,7 @@ import type { Command } from "./types";
 import { HealthCommand } from "./admin";
 import { InitCommand } from "./init";
 import { DepsCommand, DetailCommand, GetCommand, ListCommand, PeekCommand, ValidateCommand } from "./query";
+import { SkillCommand } from "./skill";
 import { BuildCommand, CreateCommand, DeleteCommand, FormatCommand, PublishCommand, UpdateCommand } from "./write";
 
 export type HelpEntry = {
@@ -23,6 +24,10 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
   {
     create: () => new InitCommand(),
     help: { usage: ["init", "Interactive init for global/workspace config"] },
+  },
+  {
+    create: () => new SkillCommand(),
+    help: { usage: ["skill", "Install the embedded skuare skill into cwd"] },
   },
   {
     create: () => new HealthCommand(),
@@ -127,10 +132,9 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
   {
     create: () => new BuildCommand(),
     help: {
-      usage: ["build <skillName> [refSkill...] [--all] | build --skr-skill [refSkill...] [--all]", ""],
+      usage: ["build <skillName> [refSkill...] [--all]", ""],
       details: [
         "                                       Build deps files, scans current skill dirs with --all, initializes missing target interactively",
-        "                                       --skr-skill treats cwd as the target skill dir and scaffolds a skill-builder-style SKILL.md plus references/",
       ],
     },
   },
