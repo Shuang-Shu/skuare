@@ -2,7 +2,7 @@
 
 > 文档类型：TECH
 > 状态：已完成
-> 更新时间：2026-03-10
+> 更新时间：2026-03-11
 > 适用范围：project-wide
 
 ## 目标与范围
@@ -13,11 +13,11 @@
 
 ## 现状与事实依据
 - 模块：
-  - `skuare-svc`：文件系统存储模型 `<specDir>/<skillID>/<version>`。
+  - `skuare-svc`：文件系统存储模型 `<specDir>/<author>/<skillID>/<version>`。
   - `skuare-cli`：命令式前端，支持 `init/health/list/peek/get/deps/publish/update/create/build/format/delete/validate`；其中 `list/peek/get/detail/publish/create/delete` 通过 `--type skill|agentsmd|agmd` 在 Skill 与 AGENTS.md 间切换。
 - 关键配置：
-  - 后端默认 `spec-dir`：`$HOME/.skuare`（可由 `SKUARE_SPEC_DIR` 或 `--spec-dir` 覆盖）。
-  - `scripts/dev-up.sh` 与 `make start-be` 默认 `SPEC_DIR` 已统一为 `$HOME/.skuare`。
+  - 后端默认 `spec-dir`：`$HOME/.skuare/skills`（可由 `SKUARE_SPEC_DIR` 或 `--spec-dir` 覆盖）。
+  - `scripts/dev-up.sh` 与 `make start-be` 默认 `SPEC_DIR` 已统一为 `$HOME/.skuare/skills`。
   - 启动参数：`--addr`、`--spec-dir`、`--authorized-keys-file`、`--local`、`--auth-max-skew-sec`。
   - CLI 配置优先级：`CLI 参数 > workspace > global > defaults`。
   - CLI `remote.mode`：`local` / `remote`，仅描述目标服务端模式，不负责声明服务端存储目录。
@@ -40,7 +40,7 @@
   - `skr get --wrap` 只安装根 Skill，并落盘 `.skuare-wrap.json`；`skr deps` 用于按需查看或安装被包装的依赖子树，且依赖目标已复用 `get` 的 Skill 选择形式（`<author>/<name>@<version> | <author>/<name> | <name>`）。
   - AGENTS.md 资源已统一复用基础命令入口，通过 `--type agentsmd|agmd` 切换；`list-agmd`、`publish-agentsmd` 等旧后缀命令不再注册，只返回迁移提示。
   - 当 `SKILL.md metadata.author` 存在时，服务端会在 `publish/list/peek` 相关返回中直接透出 `author`。
-  - `author` 缺失时默认回退为 `undefined`。
+  - 当 `metadata.author` 缺失时，服务端会落盘到 `_anonymous/<skillID>/<version>`，但 API 返回中的 `author` 仍保持空字符串；只有显式写了 `author: undefined` 才会显示为 `undefined`。
   - `skr publish` 输出不包含服务端本地路径。
   - `skr update` 会先读取远端 `maxVersion`，再要求新版本严格更大；交互模式下会给出推荐版本默认值，并在发布前回写本地 `metadata.version`。
   - `skr format [skillDir...]` 交互式支持 `All/Each`，并统一写入 `metadata.version`/`metadata.author`；`skr format --all` 自动扫描当前目录子技能。

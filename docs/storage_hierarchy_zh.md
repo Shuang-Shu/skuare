@@ -2,7 +2,7 @@
 
 > 文档类型：TECH
 > 状态：已完成
-> 更新时间：2026-03-01
+> 更新时间：2026-03-11
 > 适用范围：project-wide
 
 ## 目标与范围
@@ -10,20 +10,20 @@
 - 拆开描述三类容易混淆的层级：
   - 服务端远程仓库层级
   - CLI 配置层级
-  - CLI 本地局部仓库层级
+  - CLI 本地安装层级
 - 补充 `publish` / `get` 的主要数据流，明确边界与常见误区。
 
 ## 一句话结论
 - 服务端存哪里：只由 `skuare-svc` 启动参数决定。
 - CLI 怎么连服务端：由 CLI 参数、workspace 配置、global 配置和默认值共同决定。
-- CLI 把 skill 装到本地哪里：由 `scope`、本地仓库根和 `tool` 决定。
+- CLI 把 skill 装到本地哪里：由当前 `cwd`、目标 `tool` 和 `--global` 决定。
 - CLI 不再维护或推断服务端的真实存储目录。
 
 ## 1. 服务端远程仓库层级
 
 ### 1.1 仓库根目录
 - `skuare-svc` 启动时会解析远程仓库根目录 `SpecDir`。
-- 默认值是 `$HOME/.skuare`。
+- 默认值是 `$HOME/.skuare/skills`。
 - 可由环境变量 `SKUARE_SPEC_DIR` 或启动参数 `--spec-dir` 覆盖。
 - 相关实现：`skuare-svc/internal/config/config.go`。
 
@@ -32,26 +32,34 @@
 
 ```text
 <specDir>/
-  .system/
+  .skuare/
     index.json
     locks/
       <skillID>.lock
-  <skillID>/
-    <version>/
-      SKILL.md
-      <other files...>
+  agentsmd/
+    <agentsmdID>/
+      <version>/
+        AGENTS.md
+        meta.json
+  <authorDir>/
+    <skillID>/
+      <version>/
+        SKILL.md
+        <other files...>
 ```
 
-- `<skillID>/<version>/` 是 skill 版本的真实存储目录。
-- `.system/index.json` 是服务端索引文件。
-- `.system/locks/` 保存按 `skillID` 维度的文件锁。
+- `<authorDir>/<skillID>/<version>/` 是 skill 版本的真实存储目录。
+- 当 `metadata.author` 缺失时，文件系统落盘目录会回退到 `_anonymous`。
+- `.skuare/index.json` 是服务端索引文件。
+- `.skuare/locks/` 保存按 `skillID` 维度的文件锁。
 - 相关实现：`skuare-svc/internal/store/fs_store.go`。
 
 ### 1.3 服务端写入行为
-- `publish/create` 最终写入 `<specDir>/<skillID>/<version>/`。
+- `publish/create` 最终写入 `<specDir>/<authorDir>/<skillID>/<version>/`。
 - 创建版本时会先写临时目录，再 rename 为正式目录，降低半写入状态暴露风险。
-- `delete` 删除的是某个 `<skillID>/<version>` 目录。
+- `delete` 删除的是某个 `<authorDir>/<skillID>/<version>` 目录，并会顺带清理回溯路径上的空父目录。
 - `list/get/peek/validate` 都基于该远程仓库读取。
+- 若手动迁移了磁盘目录，需额外调用一次 `POST /api/v1/reindex` 重建 `.skuare/index.json`。
 
 ## 2. CLI 配置层级
 
@@ -107,54 +115,52 @@ CLI flags > workspace config > global config > defaults
 - 服务端远程仓库根目录只由服务端启动参数决定，CLI 不再声明该值。
 - 历史配置里若残留此字段，当前 CLI 也不会再依赖它推断服务端目录。
 
-## 3. CLI 本地局部仓库层级
+## 3. CLI 本地安装层级
 
-### 3.1 本地仓库根
-CLI 拉取 skill 到本地时，也有两套仓库根：
+### 3.1 tool home 根目录
+CLI 拉取 skill 到本地时，会写入目标 tool 的 home 目录：
 
-- global 本地仓库根：`~/.skuare`
-- workspace 本地仓库根：`<cwd>/.skuare`
+- workspace tool home（默认）：`<cwd>/.<tool>`
+- global tool home：`~/.<tool>`
 
 默认情况下：
-- `skr get` 的 `scope` 是 `workspace`
-- 可通过 `--scope global` 切到 global
-- 可通过 `--repo-dir <path>` 显式覆盖本地仓库根
+- `skr get` 默认安装到 workspace tool home
+- 加 `--global` 后切换到用户 home
+- 目标 `tool` 取配置的第一个 LLM 工具
 
 ### 3.2 最终安装目录
 `skr get` 最终安装目标是：
 
 ```text
-<repoRoot>/repos/<scope>/<tool>/<skillID>/
+<toolHome>/skills/<skillID>/
 ```
 
 例如：
 
 ```text
-~/.skuare/repos/global/codex/pdf-reader/
-<project>/.skuare/repos/workspace/codex/pdf-reader/
+<project>/.codex/skills/pdf-reader/
+~/.codex/skills/pdf-reader/
 ```
 
-这四层分别表示：
-- `repoRoot`：本地仓库根
-- `scope`：`global` 或 `workspace`
-- `tool`：目标 LLM tool，例如 `codex`
+这两层分别表示：
+- `toolHome`：工具本地根目录
 - `skillID`：具体技能 ID
 
 ### 3.3 为什么还要分 `tool`
-同一台机器可能同时服务多个 LLM 工具，因此本地局部仓库还要继续按 `tool` 分层，避免不同工具的安装结果相互污染。
+同一台机器可能同时服务多个 LLM 工具，因此本地安装目录仍需按 `tool` 分层，避免不同工具的安装结果相互污染。
 
 ## 4. tool 目录层级
 
-除了 `skr get` 使用的局部仓库外，CLI 还维护“工具自己的 skills 目录”概念。
+CLI 维护“工具自己的 home 目录”概念，而 `skr get` 会安装到该目录下的 `skills/` 子目录。
 
 默认规则是：
-- `codex` -> `<cwd>/skills`
+- `codex` -> `<cwd>/.codex/skills`
 - `claudecode` -> `~/.claudecode/skills`
 - 自定义工具 -> `~/.<tool>/skills`
 
 若配置里提供了 `toolSkillDirs[tool]`，则优先使用显式配置值。
 
-这条线的作用是告诉 CLI 某个工具默认从哪里读取或放置本地 skill 工作目录，它和 `skr get` 的局部仓库不是一个概念。
+这条线的作用是告诉 CLI 某个工具默认从哪里读取或放置本地 skill 工作目录。对当前 `get` 来说，它也同时构成安装根目录；旧的 `repos/<scope>/<tool>` 模型已经移除。
 
 ## 5. 主要数据流
 
@@ -166,7 +172,7 @@ CLI 拉取 skill 到本地时，也有两套仓库根：
   -> CLI 解析与打包
   -> HTTP 写请求
   -> skuare-svc
-  -> <specDir>/<skillID>/<version>/
+  -> <specDir>/<authorDir>/<skillID>/<version>/
 ```
 
 关键点：
@@ -181,11 +187,11 @@ CLI 拉取 skill 到本地时，也有两套仓库根：
 skuare-svc 远程版本文件
   -> CLI 拉取 files
   -> 解析依赖
-  -> 写入 <repoRoot>/repos/<scope>/<tool>/<skillID>/
+  -> 写入 <toolHome>/skills/<skillID>/
 ```
 
 关键点：
-- `get` 写的是 CLI 本地局部仓库，不是服务端远程仓库。
+- `get` 写的是 CLI 本地安装目录，不是服务端远程仓库。
 - 若 skill 带依赖，CLI 会继续递归下载依赖并一起写入本地。
 - 当前实现不再根据客户端配置猜测服务端是否与本地共享同一目录。
 
@@ -195,24 +201,24 @@ skuare-svc 远程版本文件
 错误。
 
 真实规则是：
-- CLI 只决定“连接哪里”和“本地怎么组织配置/局部仓库”。
+- CLI 只决定“连接哪里”和“本地怎么组织配置/安装目录”。
 - 服务端存储目录只由 `skuare-svc --spec-dir` 或 `SKUARE_SPEC_DIR` 决定。
 
-### 6.2 常见误区 2：global/workspace 只是一套配置开关
+### 6.2 常见误区 2：`--global` 表示服务端全局存储
 不完整。
 
-`global/workspace` 同时影响两类东西：
-- CLI 配置来源
-- `skr get` 本地局部仓库的安装位置
+`--global` 只影响 CLI 本地安装目标：
+- 不带 `--global`：`<cwd>/.<tool>/skills/`
+- 带 `--global`：`~/.<tool>/skills/`
 
 但它不影响服务端远程仓库根目录。
 
-### 6.3 常见误区 3：tool 目录和局部仓库是同一个东西
+### 6.3 常见误区 3：tool 目录和已安装 skill 目录是同一个东西
 错误。
 
 它们分别解决不同问题：
 - `toolSkillDirs`：工具自己的技能工作目录
-- `<repoRoot>/repos/<scope>/<tool>/<skillID>/...`：`skr get` 安装后的局部仓库
+- `<toolHome>/skills/<skillID>/...`：`skr get` 安装后的本地 skill 目录
 
 ### 6.4 常见误区 4：local 模式等于客户端本地写盘模式
 错误。

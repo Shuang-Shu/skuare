@@ -4,7 +4,7 @@
 
 > Document Type: REFERENCE  
 > Status: Completed  
-> Last Updated: 2026-03-10  
+> Last Updated: 2026-03-11  
 > Scope: project-wide
 
 ## Example Setup
@@ -205,7 +205,7 @@ skr peek --rgx "^ShuangShu/report-generator@"
 ---
 
 ### get
-Install skill and its dependencies to local partial repository.
+Install skill and its dependencies to the local tool skill directory.
 
 **Usage:**
 ```bash
@@ -219,7 +219,7 @@ skr get --rgx <pattern> [version] [--global]
 
 **Installation Directories:**
 - Workspace (default): `<cwd>/.<tool>/skills/<skillID>/`
-- Global: `~/.skuare/.<tool>/skills/<skillID>/`
+- Global: `~/.<tool>/skills/<skillID>/`
 
 Where `<tool>` is the first configured LLM tool (codex/claudecode/custom).
 
@@ -265,7 +265,7 @@ skr detail <skillName|skillID> [relativePath...]
 
 **Resolution Order:**
 1. Search in `<cwd>/.<tool>/skills/`
-2. Search in `~/.skuare/.<tool>/skills/`
+2. Search in `~/.<tool>/skills/`
 
 **Output:**
 File contents with path headers.
