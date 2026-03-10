@@ -192,6 +192,60 @@ export function renderSkillTemplate(skillID: string, description: string, author
   ].join("\n");
 }
 
+export function renderSkrSkillTemplate(skillID: string, description: string, author: string, version: string): string {
+  const safeSkillID = toYamlString(skillID);
+  const safeDescription = toYamlString(description);
+  const safeAuthor = toYamlString(author);
+  const safeVersion = toYamlString(version);
+
+  return [
+    "---",
+    `name: ${safeSkillID}`,
+    "metadata:",
+    `  version: ${safeVersion}`,
+    `  author: ${safeAuthor}`,
+    `description: ${safeDescription}`,
+    "---",
+    "",
+    `# ${skillID}`,
+    "",
+    "## Overview",
+    "Use this skill when the user asks to work with this package's domain workflow, deliver the package's intended output, or maintain its local resources with Skuare.",
+    "",
+    "## Workflow",
+    "1. Clarify the user's target outcome, input artifacts, and delivery constraints before making changes.",
+    "2. Read `references/skuare-workflow.md` before editing so the local authoring, validation, and publish flow stays consistent.",
+    "3. Make only the files needed for the requested outcome and keep the final response focused on concrete results.",
+    "",
+    "## Output Contract",
+    "- Return the requested deliverable directly.",
+    "- Call out assumptions, validation status, and any follow-up publish or dependency actions.",
+    "",
+  ].join("\n");
+}
+
+export function renderSkrSkillWorkflowReference(skillID: string): string {
+  return [
+    `# ${skillID} Skuare Workflow`,
+    "",
+    "## When To Use",
+    "- Use this skill when the user asks to create, revise, validate, or publish the current package as a Skuare skill.",
+    "- Treat the current directory as the source of truth for the skill package.",
+    "",
+    "## Local Workflow",
+    "1. Read `SKILL.md` and any local reference files before editing.",
+    "2. Keep frontmatter metadata aligned with the package intent and release version.",
+    "3. Use `skr build --skr-skill [refSkill...] [--all]` to refresh dependency files for the current directory.",
+    "4. Run the project's required checks before publish or handoff.",
+    "",
+    "## Publish Checklist",
+    "- Confirm `metadata.version` is set and incremented when publishing a new version.",
+    "- Verify dependency files match the current local references.",
+    "- Publish with `skr publish --dir .` when the package is ready.",
+    "",
+  ].join("\n");
+}
+
 export function toYamlString(input: string): string {
   return `"${input.replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`;
 }

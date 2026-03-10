@@ -38,6 +38,7 @@ Default repository root path: `$HOME/.skuare`
 - `skr publish --dir <skill-dir> [--force|-f]`: read dependency description and recursively upload dependent Skills to remote repository; `--force/-f` overwrites an existing version.
 - `skr update <author>/<skillName> <newSkillDir>`: query the remote skill's `maxVersion`, only allow a higher version, prefill a suggested version in interactive mode, and rewrite local `SKILL.md metadata.version` before publishing.
 - `skr build <skillName> [refSkill...] [--all]`: automatically create or append dependency files (`skill-deps.json` / `skill-deps.lock.json`) for local skill. When target skill doesn't exist, it will interactively create a minimal `SKILL.md` template first. Supports `alias=refSkill`; `--all` will use all valid skillDirs in current directory as reference skills.
+- `skr build --skr-skill [refSkill...] [--all]`: treat `cwd` as the target Skuare skill package; when `SKILL.md` is missing, scaffold a skill-builder-style skill in `cwd` and then write dependency files there.
 - `skr detail <skillName|skillID> [relativePath...]`: show files under a local installed skill. Defaults to the target skill's `SKILL.md` when no path is provided.
 - `skr get <skill-ref> [version] [--global] [--wrap]`: fetch Skill from remote repository. When directly targeting one skill, `peek/get/deps` share the same selector logic for `skillID`, `name`, and `author/name`.
   - Without `--global`: install to `<cwd>/.{llmTool}/skills/<skillID>/`
