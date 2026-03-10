@@ -5,7 +5,7 @@ import { BaseCommand } from "./base";
 import type { CommandContext, JsonValue } from "./types";
 import { callApi } from "../http/client";
 import { Status } from "../utils/format";
-import { parseRegexOption } from "../utils/command_args";
+import { collectPositionalArgs, parseRegexOption } from "../utils/command_args";
 import { resolvePrimaryTool, resolveToolHomeDir } from "../utils/install_paths";
 
 type AgentsMDListItem = {
@@ -120,6 +120,10 @@ export class ListAgentsMDCommand extends BaseCommand {
   readonly description = "List AGENTS.md";
 
   async execute(ctx: CommandContext): Promise<void> {
+    const positional = collectPositionalArgs(ctx.args, ["--q", "--rgx", "--regex"]);
+    if (positional.length > 0) {
+      this.fail("Usage: skuare list --type <agentsmd|agmd> [--q <keyword>] [--rgx <re>]. Bare positional arguments are not allowed; use --q or --rgx.");
+    }
     const query = this.parseOptionValue(ctx.args, "--q") || "";
     const regexPattern = parseRegexOption(ctx.args);
     const listPath = query ? `/api/v1/agentsmd?q=${encodeURIComponent(query)}` : "/api/v1/agentsmd";

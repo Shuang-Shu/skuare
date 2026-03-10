@@ -49,6 +49,13 @@ test("buildHelpText describes aligned peek selector forms", () => {
   assert.match(helpText, /<author>\/<name> or <name>: resolve the target skill, then show overview/);
 });
 
+test("buildHelpText describes list search-only input rules", () => {
+  const helpText = buildHelpText();
+
+  assert.match(helpText, /list \[--type <skill\|agentsmd\|agmd>] \[--q <keyword>] \[--rgx <re>]/);
+  assert.match(helpText, /Search input must be passed via --q or --rgx; bare positional arguments are rejected/);
+});
+
 function escapeRegex(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
