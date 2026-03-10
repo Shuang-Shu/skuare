@@ -12,6 +12,7 @@ import { resolveToolSkillsDir } from "../config/resolver";
 import { parseRegexOption, stripRegexOptions } from "../utils/command_args";
 import { resolveInstallTargetRoot, resolvePrimaryTool } from "../utils/install_paths";
 import { parseSkillFrontmatter } from "../utils/skill_manifest";
+import { compareVersions } from "../utils/versioning";
 import { DetailAgentsMDCommand, GetAgentsMDCommand, ListAgentsMDCommand, PeekAgentsMDCommand } from "./agentsmd";
 import { normalizeResourceContext } from "./resource_type";
 
@@ -432,14 +433,30 @@ abstract class SkillCatalogCommand extends BaseCommand {
     };
   }
 
-  protected createCatalogSkillCandidates(items: NormalizedSkillItem[]): SkillSelectionCandidate[] {
-    return items.map((item) => this.createSkillSelectionCandidate({
+  protected createCatalogSkillCandidates(
+    items: NormalizedSkillItem[],
+    options?: { collapseVersions?: boolean }
+  ): SkillSelectionCandidate[] {
+    const candidates = items.map((item) => this.createSkillSelectionCandidate({
       skillID: String(item.skill_id || "").trim(),
       version: String(item.version || "").trim(),
       name: item.name,
       author: item.author,
       description: String(item.description || "").trim(),
     }));
+
+    if (!options?.collapseVersions) {
+      return candidates;
+    }
+
+    const latestBySkillID = new Map<string, SkillSelectionCandidate>();
+    for (const candidate of candidates) {
+      const existing = latestBySkillID.get(candidate.skillID);
+      if (!existing || compareVersions(candidate.version, existing.version) > 0) {
+        latestBySkillID.set(candidate.skillID, candidate);
+      }
+    }
+    return Array.from(latestBySkillID.values());
   }
 
   protected async resolveSkillCandidate(
@@ -482,7 +499,9 @@ abstract class SkillCatalogCommand extends BaseCommand {
     const parsed = withExplicitSelectorVersion(parseSkillSelectorInput(input), explicitVersion);
     const selected = await this.resolveSkillCandidate(
       parsed,
-      this.createCatalogSkillCandidates(await this.loadCatalogItems(context)),
+      this.createCatalogSkillCandidates(await this.loadCatalogItems(context), {
+        collapseVersions: !options.includeSelectedVersion,
+      }),
       {
         allowMissingFallback: options.allowMissingFallback,
         matchVersion: false,
