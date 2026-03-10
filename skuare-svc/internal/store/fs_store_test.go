@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -34,6 +35,10 @@ func TestFSStoreCRUD(t *testing.T) {
 	if entry.Name != "pdf-reader" {
 		t.Fatalf("unexpected entry name: %s", entry.Name)
 	}
+	wantPath := filepath.Join(dir, anonymousSkillAuthorDir, "pdf-reader", "1.0.0")
+	if entry.Path != wantPath {
+		t.Fatalf("entry.Path=%q, want=%q", entry.Path, wantPath)
+	}
 
 	items, err := s.List("pdf")
 	if err != nil {
@@ -49,6 +54,9 @@ func TestFSStoreCRUD(t *testing.T) {
 	}
 	if len(detail.Files) == 0 {
 		t.Fatalf("expected files in detail")
+	}
+	if detail.Path != wantPath {
+		t.Fatalf("detail.Path=%q, want=%q", detail.Path, wantPath)
 	}
 
 	if _, err := s.Validate("pdf-reader", "1.0.0"); err != nil {
@@ -154,6 +162,10 @@ func TestFSStorePersistsAuthorFromSkillMetadata(t *testing.T) {
 	if entry.Author != "custom-author" {
 		t.Fatalf("expected author in create response, got %q", entry.Author)
 	}
+	wantPath := filepath.Join(dir, "custom-author", "custom-reader", "1.0.0")
+	if entry.Path != wantPath {
+		t.Fatalf("entry.Path=%q, want=%q", entry.Path, wantPath)
+	}
 
 	items, err := s.List("custom")
 	if err != nil {
@@ -178,6 +190,9 @@ func TestFSStorePersistsAuthorFromSkillMetadata(t *testing.T) {
 	if detail.Author != "custom-author" {
 		t.Fatalf("expected author in detail, got %q", detail.Author)
 	}
+	if detail.Path != wantPath {
+		t.Fatalf("detail.Path=%q, want=%q", detail.Path, wantPath)
+	}
 
 	if _, err := s.Reindex(); err != nil {
 		t.Fatalf("Reindex failed: %v", err)
@@ -188,6 +203,9 @@ func TestFSStorePersistsAuthorFromSkillMetadata(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].Author != "custom-author" {
 		t.Fatalf("expected author to survive reindex, got %+v", items)
+	}
+	if items[0].Path != wantPath {
+		t.Fatalf("reindex Path=%q, want=%q", items[0].Path, wantPath)
 	}
 }
 
@@ -214,6 +232,65 @@ func TestFSStoreCreateDuplicateWithoutForceReturnsAlreadyExists(t *testing.T) {
 	_, err = s.Create(req)
 	if !errors.Is(err, ErrAlreadyExists) {
 		t.Fatalf("expected ErrAlreadyExists, got %v", err)
+	}
+}
+
+func TestFSStoreUsesAnonymousDirectoryWhenAuthorMissing(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewFSStore(dir)
+	if err != nil {
+		t.Fatalf("NewFSStore failed: %v", err)
+	}
+
+	entry, err := s.Create(model.CreateSkillVersionRequest{
+		SkillID: "demo-skill",
+		Version: "1.0.0",
+		Skill: model.SkillSpec{
+			Description: "demo description",
+			Overview:    "demo overview",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	wantPath := filepath.Join(dir, anonymousSkillAuthorDir, "demo-skill", "1.0.0")
+	if entry.Path != wantPath {
+		t.Fatalf("entry.Path=%q, want=%q", entry.Path, wantPath)
+	}
+	if entry.Author != "" {
+		t.Fatalf("entry.Author=%q, want empty", entry.Author)
+	}
+}
+
+func TestFSStoreRejectsAuthorContainingPathSeparator(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewFSStore(dir)
+	if err != nil {
+		t.Fatalf("NewFSStore failed: %v", err)
+	}
+
+	skillMD := strings.Join([]string{
+		"---",
+		"name: bad-author-skill",
+		"metadata:",
+		"  author: bad/author",
+		"description: demo desc",
+		"---",
+		"",
+		"# bad-author-skill",
+		"",
+	}, "\n")
+
+	_, err = s.Create(model.CreateSkillVersionRequest{
+		SkillID: "bad-author-skill",
+		Version: "1.0.0",
+		Files: []model.FileSpec{
+			{Path: "SKILL.md", Content: skillMD},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid metadata.author") {
+		t.Fatalf("expected invalid metadata.author error, got %v", err)
 	}
 }
 

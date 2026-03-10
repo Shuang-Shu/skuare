@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestLoadDefaultsToSkuareRoot(t *testing.T) {
+func TestLoadDefaultsToSkuareSkillsRoot(t *testing.T) {
 	oldArgs := os.Args
 	oldCommandLine := flag.CommandLine
 	t.Cleanup(func() {
@@ -26,7 +26,7 @@ func TestLoadDefaultsToSkuareRoot(t *testing.T) {
 
 	cfg := Load()
 
-	wantSpecDir := filepath.Join(tmpHome, ".skuare")
+	wantSpecDir := filepath.Join(tmpHome, ".skuare", "skills")
 	if cfg.SpecDir != wantSpecDir {
 		t.Fatalf("SpecDir=%q, want=%q", cfg.SpecDir, wantSpecDir)
 	}

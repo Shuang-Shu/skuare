@@ -3,7 +3,7 @@ SHELL := /bin/sh
 ADDR ?= 127.0.0.1:15657
 LOCAL_MODE ?= true
 DAEMON ?= false
-SPEC_DIR ?= $(HOME)/.skuare
+SPEC_DIR ?= $(HOME)/.skuare/skills
 GOCACHE ?= /tmp/go-cache-skuare
 AUTHORIZED_KEYS_FILE ?=
 AUTH_MAX_SKEW_SEC ?= 300
@@ -26,7 +26,7 @@ SVC_VERSION ?= latest
 
 help:
 	@echo "Available targets:"
-	@echo "  make start-be [ADDR=host:port] [LOCAL_MODE=true|false] [SPEC_DIR=$(HOME)/.skuare]"
+	@echo "  make start-be [ADDR=host:port] [LOCAL_MODE=true|false] [SPEC_DIR=$(HOME)/.skuare/skills]"
 	@echo "                 [AUTHORIZED_KEYS_FILE=path] [AUTH_MAX_SKEW_SEC=300] [DAEMON=true|false] [BE_ARGS='--xxx ...']"
 	@echo "  make stop-be                   # 停止后台守护的 skuare-svc"
 	@echo "  make start-cli                 # 启动 CLI（默认 help）"
