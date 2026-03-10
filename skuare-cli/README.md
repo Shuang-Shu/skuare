@@ -48,6 +48,7 @@
   - `help`、`version`
   - `init`：写本地配置文件
   - `build <skillName> [refSkill...] [--all]`：本地生成/追加 `<skillName>/skill-deps.json` 与 `<skillName>/skill-deps.lock.json`；若目标 skill 缺失，会先交互式创建最小 `SKILL.md`
+  - `build --skr-skill [refSkill...] [--all]`：将 `cwd` 直接视为目标 Skuare Skill 包；若缺少 `SKILL.md`，会先生成 skill-builder 风格脚手架，再写入依赖文件
   - `format [skillDir...]` / `format --all`：本地格式化 `SKILL.md`
   - `detail <skillName|skillID> [relativePath...]`：本地展示目标已安装 skill 目录下的文件内容；不传文件路径时默认读取该 skill 的 `SKILL.md`
   - `detail --type agentsmd` / `detail --type agmd`：本地展示 `<cwd>/.{tool}/AGENTS.md` 或 `~/.{tool}/AGENTS.md`
@@ -254,8 +255,10 @@ skuare detail skuare/report-generator references/details.md notes.txt
 - 当 `SKILL.md metadata.author` 存在时，`skr publish` 成功返回会包含 `author`，后续 `list/peek` 也会直接展示该值。
 
 `build` 依赖文件行为：
-- 命令格式：`skuare build <skillName> [refSkill...] [--all]`。
+- 命令格式：`skuare build <skillName> [refSkill...] [--all]` 或 `skuare build --skr-skill [refSkill...] [--all]`。
 - 若目标 skill 不存在，则自动创建目标目录并交互式生成最小 `SKILL.md` 模板。
+- `--skr-skill` 会把 `cwd` 作为目标 skill 目录，skill 名默认取 `basename(cwd)`。
+- `--skr-skill` 初始化时会额外生成 `references/skuare-workflow.md`，供 LLM Skill 工作流复用。
 - 若目标 skill 缺少依赖文件，则自动创建 `skill-deps.json` 与 `skill-deps.lock.json`。
 - 若目标 skill 已有依赖文件，则采用 add 语义：保留历史依赖，并对本次 `refSkill` 做追加/同名更新。
 - `--all` 会扫描命令执行目录下所有包含 `SKILL.md` 的直接子目录，并将其作为引用 skill；目标 skill 自身会自动排除。
@@ -328,6 +331,7 @@ skuare --server http://127.0.0.1:15657 \
 - 2026-02-27：`get` 安装目录改为按 LLMTool 规则解析（`codex` -> `./skills`，`claudecode` -> `~/.claudecode/skills`）；`init` 支持为 custom 工具配置 skills 目录映射。
 - 2026-02-27：新增 `build <skillName> [refSkill...]`，用于本地自动创建/追加 `skill-deps.json` 与 `skill-deps.lock.json`。
 - 2026-03-01：`build` 新增 `--all`，用于扫描当前目录下全部合法 skillDir 并批量写入依赖；与显式 `refSkill...` 不可混用。目标 skill 缺失时会先交互式初始化最小 `SKILL.md` 模板。
+- 2026-03-11：`build` 新增 `--skr-skill`，可将 `cwd` 直接初始化为面向 LLM 的 Skuare Skill 包，并生成 skill-builder 风格 `SKILL.md` 与 `references/skuare-workflow.md`。
 - 2026-02-28：`author` 预填与回退默认值统一为 `undefined`（含 `format` 交互与 `list/peek` 展示）。
 - 2026-02-28：优化 `list/peek` 展示：新增 `author`，并统一 `id=<author>/<name>@<version>`，且 `id` 先于 `name` 输出。
 - 2026-03-01：`get` 新增 `--rgx` 正则选 skill；`list/peek` 对外参数名统一为 `--rgx`（兼容旧 `--regex`）。

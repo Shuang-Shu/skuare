@@ -127,9 +127,10 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
   {
     create: () => new BuildCommand(),
     help: {
-      usage: ["build <skillName> [refSkill...] [--all]", ""],
+      usage: ["build <skillName> [refSkill...] [--all] | build --skr-skill [refSkill...] [--all]", ""],
       details: [
         "                                       Build deps files, scans current skill dirs with --all, initializes missing target interactively",
+        "                                       --skr-skill treats cwd as the target skill dir and scaffolds a skill-builder-style SKILL.md plus references/",
       ],
     },
   },

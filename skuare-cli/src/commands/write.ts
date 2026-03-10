@@ -10,7 +10,15 @@ import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, posix, relative, resolve } from "node:path";
 import * as readlinePromises from "node:readline/promises";
 import { collectPositionalArgs } from "../utils/command_args";
-import { parseSkillFrontmatter, parseSkillMarkdown, readSkillMetadataDefaults, renderSkillTemplate, withUpdatedSkillMetadata } from "../utils/skill_manifest";
+import {
+  parseSkillFrontmatter,
+  parseSkillMarkdown,
+  readSkillMetadataDefaults,
+  renderSkrSkillTemplate,
+  renderSkrSkillWorkflowReference,
+  renderSkillTemplate,
+  withUpdatedSkillMetadata,
+} from "../utils/skill_manifest";
 import { discoverSkillDirs } from "../utils/skill_workspace";
 import { compareVersions, maxVersion, suggestNextVersion } from "../utils/versioning";
 import { DeleteAgentsMDCommand, PublishAgentsMDCommand } from "./agentsmd";
@@ -701,19 +709,24 @@ export class BuildCommand extends BaseCommand {
   async execute(context: CommandContext): Promise<void> {
     const args = context.args.map((v) => v.trim()).filter(Boolean);
     const includeAll = args.includes("--all");
-    const positional = args.filter((v) => v !== "--all");
-    const [skillName, ...rawRefs] = positional;
-    if (!skillName) {
-      this.fail("Usage: skuare build <skillName> [refSkill...] [--all]");
+    const useSkrSkill = args.includes("--skr-skill");
+    const positional = args.filter((v) => v !== "--all" && v !== "--skr-skill");
+    const skillName = useSkrSkill ? "" : positional[0] || "";
+    const rawRefs = useSkrSkill ? positional : positional.slice(1);
+    if (!useSkrSkill && !skillName) {
+      this.fail("Usage: skuare build <skillName> [refSkill...] [--all] | skuare build --skr-skill [refSkill...] [--all]");
     }
     if (includeAll && rawRefs.length > 0) {
       this.fail("--all cannot be used with explicit refSkill arguments");
     }
 
-    const targetDir = await this.resolveTargetSkillDir(skillName, context.cwd, context.cwd);
+    const targetDir = useSkrSkill
+      ? await this.resolveCurrentDirSkill(context.cwd)
+      : await this.resolveTargetSkillDir(skillName, context.cwd, context.cwd);
+    const refsSource = useSkrSkill ? positional : rawRefs;
     const refs = includeAll
       ? await this.resolveAllRefSkills(context.cwd, targetDir)
-      : Array.from(new Set(rawRefs));
+      : Array.from(new Set(refsSource));
     const skillDirRoot = dirname(targetDir);
     const resolvedRefs: Array<{ skill: string; version: string; dir: string; alias?: string }> = [];
     for (const ref of refs) {
@@ -795,8 +808,18 @@ export class BuildCommand extends BaseCommand {
     const direct = resolve(input);
     const inBase = resolve(baseDir, input);
     const targetDir = direct === inBase ? direct : inBase;
-    await this.ensureSkillTemplate(targetDir);
+    await this.ensureSkillTemplate(targetDir, "default");
     return targetDir;
+  }
+
+  private async resolveCurrentDirSkill(cwd: string): Promise<string> {
+    const skillPath = join(cwd, "SKILL.md");
+    const info = await stat(skillPath).catch(() => undefined);
+    if (info?.isFile()) {
+      return cwd;
+    }
+    await this.ensureSkillTemplate(cwd, "skr-skill");
+    return cwd;
   }
 
   private async findSkillDir(input: string, baseDir: string, fallbackDir: string): Promise<string | undefined> {
@@ -818,7 +841,7 @@ export class BuildCommand extends BaseCommand {
     return undefined;
   }
 
-  private async ensureSkillTemplate(targetDir: string): Promise<void> {
+  private async ensureSkillTemplate(targetDir: string, templateKind: "default" | "skr-skill"): Promise<void> {
     const targetInfo = await stat(targetDir).catch(() => undefined);
     if (targetInfo?.isFile()) {
       this.fail(`Target path is a file, cannot initialize skill directory: ${targetDir}`);
@@ -831,7 +854,9 @@ export class BuildCommand extends BaseCommand {
     try {
       const skillID = basename(targetDir);
       const defaults = {
-        description: `Describe when to use ${skillID} and what outcome it should provide.`,
+        description: templateKind === "skr-skill"
+          ? `Use when the user asks to work on ${skillID}, create or revise its package output, or manage the current Skuare skill with local validation and publish steps.`
+          : `Describe when to use ${skillID} and what outcome it should provide.`,
         author: "undefined",
         version: "0.0.1",
       };
@@ -849,7 +874,15 @@ export class BuildCommand extends BaseCommand {
 
       await mkdir(targetDir, { recursive: true });
       const skillPath = join(targetDir, "SKILL.md");
-      await writeFile(skillPath, renderSkillTemplate(skillID, description, author, version), "utf8");
+      const template = templateKind === "skr-skill"
+        ? renderSkrSkillTemplate(skillID, description, author, version)
+        : renderSkillTemplate(skillID, description, author, version);
+      await writeFile(skillPath, template, "utf8");
+      if (templateKind === "skr-skill") {
+        const referencesDir = join(targetDir, "references");
+        await mkdir(referencesDir, { recursive: true });
+        await writeFile(join(referencesDir, "skuare-workflow.md"), renderSkrSkillWorkflowReference(skillID), "utf8");
+      }
     } finally {
       rl.close();
     }
