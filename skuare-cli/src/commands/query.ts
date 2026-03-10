@@ -18,6 +18,7 @@ import { normalizeResourceContext } from "./resource_type";
 
 type RemoteFile = { path: string; content: string };
 type InstallResult = { skills: string[]; conflictFiles: string[] };
+type InstallTargetPlan = { targetRoot: string; tools: string[] };
 type NormalizedSkillItem = {
   id: string;
   name: string;
@@ -721,8 +722,28 @@ abstract class DependencyAwareCommand extends SkillCatalogCommand {
     return resolvePrimaryTool(llmTools);
   }
 
-  protected resolveInstallTargetRoot(cwd: string, tool: string, isGlobal: boolean): string {
-    return resolveInstallTargetRoot(cwd, tool, isGlobal);
+  protected resolveInstallTargetRoot(cwd: string, tool: string, configured: string | undefined, isGlobal: boolean): string {
+    return resolveInstallTargetRoot(cwd, tool, isGlobal, configured);
+  }
+
+  protected resolveInstallTargets(context: CommandContext, isGlobal: boolean): InstallTargetPlan[] {
+    const tools = isGlobal
+      ? Array.from(new Set((context.llmTools || []).map((value) => value.trim()).filter(Boolean)))
+      : [this.resolvePrimaryTool(context.llmTools)];
+    const targets = new Map<string, string[]>();
+    for (const tool of tools) {
+      const targetRoot = this.resolveInstallTargetRoot(context.cwd, tool, context.toolSkillDirs[tool], isGlobal);
+      const existing = targets.get(targetRoot);
+      if (existing) {
+        existing.push(tool);
+      } else {
+        targets.set(targetRoot, [tool]);
+      }
+    }
+    return Array.from(targets.entries()).map(([targetRoot, groupedTools]) => ({
+      targetRoot,
+      tools: groupedTools,
+    }));
   }
 
   protected onDependencyCycle(context: DependencyCycleContext): never {
@@ -1092,7 +1113,7 @@ abstract class DependencyAwareCommand extends SkillCatalogCommand {
   protected resolveDepsInstallRoot(context: CommandContext, descriptor: LocalRootDescriptor, isGlobal: boolean): string {
     if (isGlobal) {
       const tool = descriptor.tool || this.resolvePrimaryTool(context.llmTools);
-      return this.resolveInstallTargetRoot(context.cwd, tool, true);
+      return this.resolveInstallTargetRoot(context.cwd, tool, context.toolSkillDirs[tool], true);
     }
     return descriptor.installRoot || dirname(descriptor.rootDir);
   }
@@ -1143,24 +1164,48 @@ export class GetCommand extends DependencyAwareCommand {
       versionArg = resolved.version;
     }
 
-    const tool = this.resolvePrimaryTool(skillContext.llmTools);
-    const targetRoot = this.resolveInstallTargetRoot(skillContext.cwd, tool, isGlobal);
+    const installTargets = this.resolveInstallTargets(skillContext, isGlobal);
+    const primaryTool = isGlobal
+      ? installTargets.flatMap((entry) => entry.tools)[0] || this.resolvePrimaryTool(skillContext.llmTools)
+      : this.resolvePrimaryTool(skillContext.llmTools);
+    const primaryTargetRoot = installTargets[0]?.targetRoot || this.resolveInstallTargetRoot(
+      skillContext.cwd,
+      primaryTool,
+      skillContext.toolSkillDirs[primaryTool],
+      isGlobal
+    );
     const rootNode = await this.fetchRemoteSkillNode(skillContext, skillID, versionArg);
     const graph = await this.buildDependencyGraph(skillContext, rootNode);
     const sharedLocalDir = false;
     const nodesToInstall = wrapMode ? [graph.root] : this.collectSubtree(graph, graph.root.skillID);
-    const result = await this.installGraphNodes(targetRoot, nodesToInstall, { sharedLocalDir });
-    if (wrapMode) {
-      await this.writeWrapMetadata(targetRoot, graph.root.skillID, {
-        version: 1,
-        mode: "wrap",
-        tool,
-        root_skill_id: graph.root.skillID,
-        root_version: graph.root.version,
-        install_root: targetRoot,
-        global: isGlobal,
-      });
+    const installedSkills = new Set<string>();
+    const conflictFiles = new Set<string>();
+    for (const installTarget of installTargets) {
+      const result = await this.installGraphNodes(installTarget.targetRoot, nodesToInstall, { sharedLocalDir });
+      for (const skill of result.skills) {
+        installedSkills.add(skill);
+      }
+      for (const conflict of result.conflictFiles) {
+        conflictFiles.add(conflict);
+      }
+      if (wrapMode) {
+        for (const tool of installTarget.tools) {
+          await this.writeWrapMetadata(installTarget.targetRoot, graph.root.skillID, {
+            version: 1,
+            mode: "wrap",
+            tool,
+            root_skill_id: graph.root.skillID,
+            root_version: graph.root.version,
+            install_root: installTarget.targetRoot,
+            global: isGlobal,
+          });
+        }
+      }
     }
+    const result = {
+      skills: Array.from(installedSkills),
+      conflictFiles: Array.from(conflictFiles),
+    };
     if (sharedLocalDir && result.conflictFiles.length > 0) {
       console.log(
         `${this.yellow("[WARN]")} local mode shared repository detected, overwrite ${result.conflictFiles.length} file(s) during install`
@@ -1169,8 +1214,10 @@ export class GetCommand extends DependencyAwareCommand {
     console.log(JSON.stringify({
       global: isGlobal,
       wrap: wrapMode,
-      llm_tool: tool,
-      target: targetRoot,
+      llm_tool: primaryTool,
+      llm_tools: installTargets.flatMap((entry) => entry.tools),
+      target: primaryTargetRoot,
+      targets: installTargets.map((entry) => ({ target: entry.targetRoot, tools: entry.tools })),
       shared_local_dir: sharedLocalDir,
       conflicts: result.conflictFiles.sort((a, b) => a.localeCompare(b)),
       skills: result.skills.sort((a, b) => a.localeCompare(b)),
