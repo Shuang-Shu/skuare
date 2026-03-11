@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { GetCommand } from "./commands/query";
 import { resolveToolSkillsDirPromptDefault } from "./commands/init";
@@ -29,6 +29,15 @@ test("workspace prompt default ignores inherited global toolSkillDirs and recomm
       scopedDir: "./workspace-acme-skills",
     }),
     join(cwd, "workspace-acme-skills")
+  );
+  assert.equal(
+    resolveToolSkillsDirPromptDefault({
+      cwd,
+      tool: "acme",
+      scope: "workspace",
+      scopedDir: join(homedir(), ".acme", "skills"),
+    }),
+    join(cwd, ".acme", "skills")
   );
 });
 

@@ -72,6 +72,33 @@ function getCustomTools(llmTools: string[]): string[] {
   return llmTools.map((tool) => tool.trim()).filter((tool) => tool && !isBuiltinLLMTool(tool));
 }
 
+function shouldRepairWorkspaceScopedDir({
+  cwd,
+  tool,
+  inheritedDir,
+  scopedDir,
+}: {
+  cwd: string;
+  tool: string;
+  inheritedDir?: string;
+  scopedDir?: string;
+}): boolean {
+  const scoped = normalizeToolSkillsDir(cwd, scopedDir || "");
+  if (!scoped) {
+    return false;
+  }
+  const workspaceDefault = getDefaultToolSkillsDir(cwd, tool, false);
+  if (scoped === workspaceDefault) {
+    return false;
+  }
+  const globalDefault = getDefaultToolSkillsDir(cwd, tool, true);
+  if (scoped === globalDefault) {
+    return true;
+  }
+  const inherited = normalizeToolSkillsDir(cwd, inheritedDir || "");
+  return !!inherited && scoped === inherited;
+}
+
 export function resolveToolSkillsDirPromptDefault({
   cwd,
   tool,
@@ -88,6 +115,9 @@ export function resolveToolSkillsDirPromptDefault({
   const fallback = getDefaultToolSkillsDir(cwd, tool, scope === "global");
   const scoped = normalizeToolSkillsDir(cwd, scopedDir || "");
   if (scoped) {
+    if (scope === "workspace" && shouldRepairWorkspaceScopedDir({ cwd, tool, inheritedDir, scopedDir })) {
+      return getDefaultToolSkillsDir(cwd, tool, false);
+    }
     return scoped;
   }
   if (scope === "global") {
