@@ -6,7 +6,7 @@ import type { CommandContext } from "./types";
 import { BaseCommand } from "./base";
 import { callApi } from "../http/client";
 import type { JsonValue } from "./types";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { resolveToolSkillsDir } from "../config/resolver";
 import { collectPositionalArgs, parseRegexOption, stripRegexOptions } from "../utils/command_args";
@@ -84,6 +84,21 @@ type LocalRootDescriptor = {
   metadata?: WrapMetadata;
   files: RemoteFile[];
   dependencies: DependencyRef[];
+};
+type LocalInstalledSkill = {
+  skillID: string;
+  version: string;
+  name: string;
+  author: string;
+  description: string;
+  skillDir: string;
+  installRoot: string;
+  metadata?: WrapMetadata;
+  dependencies: DependencyRef[];
+};
+type RemovePlan = {
+  removed: LocalInstalledSkill[];
+  keptSharedDependencies: LocalInstalledSkill[];
 };
 
 const WRAP_METADATA_FILE = ".skuare-wrap.json";
@@ -241,6 +256,10 @@ async function collectSkillDirs(rootDir: string): Promise<string[]> {
 
   await walk(rootDir);
   return out;
+}
+
+function isInteractiveTTY(): boolean {
+  return !!process.stdin.isTTY && !!process.stdout.isTTY;
 }
 
 function resolveDetailTool(context: CommandContext): string {
@@ -516,7 +535,7 @@ abstract class SkillCatalogCommand extends BaseCommand {
     };
   }
 
-  private sortSkillSelectionCandidates(candidates: SkillSelectionCandidate[]): SkillSelectionCandidate[] {
+  protected sortSkillSelectionCandidates(candidates: SkillSelectionCandidate[]): SkillSelectionCandidate[] {
     return [...candidates].sort((a, b) => {
       const left = `${a.skillID}@${a.version}`;
       const right = `${b.skillID}@${b.version}`;
@@ -1117,6 +1136,201 @@ abstract class DependencyAwareCommand extends SkillCatalogCommand {
     }
     return descriptor.installRoot || dirname(descriptor.rootDir);
   }
+
+  protected async readLocalInstalledSkill(skillDir: string, installRoot: string): Promise<LocalInstalledSkill> {
+    const descriptor = await this.loadLocalRootDescriptor(skillDir);
+    const skillFile = descriptor.files.find((file) => normalizePath(file.path) === "SKILL.md");
+    const parsed = parseSkillFrontmatter(skillFile?.content || "");
+    const localSkillID = normalizePath(relative(installRoot, descriptor.rootDir));
+    const display = buildDisplayIdentity({
+      skillID: localSkillID,
+      version: descriptor.rootVersion,
+      name: parsed.name,
+      author: parsed.metadataAuthor,
+    });
+    return {
+      skillID: localSkillID,
+      version: descriptor.rootVersion,
+      name: display.name,
+      author: display.author,
+      description: descriptor.description,
+      skillDir: descriptor.rootDir,
+      installRoot,
+      metadata: descriptor.metadata,
+      dependencies: descriptor.dependencies,
+    };
+  }
+
+  protected async collectInstalledSkills(installRoot: string): Promise<LocalInstalledSkill[]> {
+    const rootInfo = await stat(installRoot).catch(() => undefined);
+    if (!rootInfo?.isDirectory()) {
+      return [];
+    }
+    const skillDirs = await collectSkillDirs(installRoot);
+    const loaded = await Promise.all(skillDirs.map((skillDir) => this.readLocalInstalledSkill(skillDir, installRoot)));
+    return loaded.sort((a, b) => {
+      const left = `${a.skillID}@${a.version}`;
+      const right = `${b.skillID}@${b.version}`;
+      return left.localeCompare(right);
+    });
+  }
+
+  protected createLocalSkillCandidates(skills: LocalInstalledSkill[]): SkillSelectionCandidate[] {
+    return skills.map((skill) => this.createSkillSelectionCandidate({
+      skillID: skill.skillID,
+      version: skill.version,
+      name: skill.name,
+      author: skill.author,
+      description: [
+        skill.description,
+        skill.metadata ? "wrap root" : "",
+      ].filter(Boolean).join(" | "),
+    }));
+  }
+
+  protected async selectLocalSkills(
+    installRoot: string,
+    input: string
+  ): Promise<LocalInstalledSkill[]> {
+    const installed = await this.collectInstalledSkills(installRoot);
+    if (installed.length === 0) {
+      return [];
+    }
+
+    const trimmed = input.trim();
+    const exact = installed.find((skill) => skill.skillID === trimmed);
+    if (exact) {
+      return [exact];
+    }
+
+    const parsed = parseSkillSelectorInput(trimmed);
+    const candidates = this.createLocalSkillCandidates(installed);
+    const matched = this.sortSkillSelectionCandidates(
+      candidates.filter((candidate) => matchesSkillSelectorCandidate(parsed, candidate, { matchVersion: true }))
+    );
+    if (matched.length === 0) {
+      return [];
+    }
+    if (matched.length === 1) {
+      const target = installed.find((skill) => skill.skillID === matched[0].skillID);
+      return target ? [target] : [];
+    }
+    if (!isInteractiveTTY()) {
+      this.fail(`Multiple installed skills match ${input} in ${installRoot}; interactive removal requires a TTY`);
+    }
+    const { selectSkillsWithScroll } = await import("../ui/selectors.js");
+    const selected = await selectSkillsWithScroll(
+      matched.map((item) => ({
+        skillID: item.skillID,
+        version: item.version,
+        description: item.description,
+      })),
+      "Multiple installed skills found, select one or more to remove (use ↑/↓, Space to toggle, Enter to confirm):"
+    );
+    const selectedKeys = new Set(selected.map((item) => formatNodeKey(item.skillID, item.version)));
+    return installed.filter((skill) => selectedKeys.has(formatNodeKey(skill.skillID, skill.version)));
+  }
+
+  protected buildLocalDependencyIndexes(installed: LocalInstalledSkill[]): {
+    skillsByID: Map<string, LocalInstalledSkill>;
+    childrenByID: Map<string, Set<string>>;
+    parentsByID: Map<string, Set<string>>;
+  } {
+    const skillsByID = new Map(installed.map((skill) => [skill.skillID, skill]));
+    const childrenByID = new Map<string, Set<string>>();
+    const parentsByID = new Map<string, Set<string>>();
+
+    for (const skill of installed) {
+      const children = new Set<string>();
+      for (const dep of skill.dependencies) {
+        if (!skillsByID.has(dep.skillID)) {
+          continue;
+        }
+        children.add(dep.skillID);
+        const parents = parentsByID.get(dep.skillID) || new Set<string>();
+        parents.add(skill.skillID);
+        parentsByID.set(dep.skillID, parents);
+      }
+      childrenByID.set(skill.skillID, children);
+    }
+
+    return { skillsByID, childrenByID, parentsByID };
+  }
+
+  protected buildRemovePlan(installed: LocalInstalledSkill[], selectedSkillIDs: string[], removeDependencies: boolean): RemovePlan {
+    const selectedSet = new Set(selectedSkillIDs);
+    const { skillsByID, childrenByID, parentsByID } = this.buildLocalDependencyIndexes(installed);
+
+    if (!removeDependencies) {
+      return {
+        removed: selectedSkillIDs.map((skillID) => skillsByID.get(skillID)).filter((skill): skill is LocalInstalledSkill => !!skill),
+        keptSharedDependencies: [],
+      };
+    }
+
+    const subtree = new Set<string>();
+    const walk = (skillID: string) => {
+      if (subtree.has(skillID)) {
+        return;
+      }
+      subtree.add(skillID);
+      for (const child of childrenByID.get(skillID) || []) {
+        walk(child);
+      }
+    };
+    for (const skillID of selectedSet) {
+      if (skillsByID.has(skillID)) {
+        walk(skillID);
+      }
+    }
+
+    const removable = new Set<string>(selectedSet);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const skillID of subtree) {
+        if (removable.has(skillID)) {
+          continue;
+        }
+        const parents = parentsByID.get(skillID) || new Set<string>();
+        const hasRetainedParent = Array.from(parents).some((parentID) => !removable.has(parentID));
+        if (!hasRetainedParent) {
+          removable.add(skillID);
+          changed = true;
+        }
+      }
+    }
+
+    return {
+      removed: Array.from(removable)
+        .map((skillID) => skillsByID.get(skillID))
+        .filter((skill): skill is LocalInstalledSkill => !!skill)
+        .sort((a, b) => a.skillID.localeCompare(b.skillID)),
+      keptSharedDependencies: Array.from(subtree)
+        .filter((skillID) => !removable.has(skillID))
+        .map((skillID) => skillsByID.get(skillID))
+        .filter((skill): skill is LocalInstalledSkill => !!skill)
+        .sort((a, b) => a.skillID.localeCompare(b.skillID)),
+    };
+  }
+
+  protected async removeInstalledSkill(skill: LocalInstalledSkill): Promise<void> {
+    await rm(skill.skillDir, { recursive: true, force: true });
+    await this.pruneEmptyAncestorDirs(dirname(skill.skillDir), skill.installRoot);
+  }
+
+  private async pruneEmptyAncestorDirs(currentDir: string, stopDir: string): Promise<void> {
+    let cursor = resolve(currentDir);
+    const absoluteStop = resolve(stopDir);
+    while (cursor.startsWith(absoluteStop) && cursor !== absoluteStop) {
+      const entries = await readdir(cursor).catch(() => []);
+      if (entries.length > 0) {
+        return;
+      }
+      await rm(cursor, { recursive: false, force: true }).catch(() => undefined);
+      cursor = dirname(cursor);
+    }
+  }
 }
 
 export class GetCommand extends DependencyAwareCommand {
@@ -1309,6 +1523,82 @@ export class DepsCommand extends DependencyAwareCommand {
 
   private collectDescendants(graph: DependencyGraph, rootSkillID: string): SkillGraphNode[] {
     return this.collectSubtree(graph, rootSkillID).filter((node) => node.skillID !== rootSkillID);
+  }
+}
+
+export class RemoveCommand extends DependencyAwareCommand {
+  readonly name = "remove";
+  readonly description = "Remove installed skill from local repository";
+
+  async execute(context: CommandContext): Promise<void> {
+    const normalized = normalizeResourceContext(context);
+    if (normalized.resourceType === "agentsmd") {
+      this.fail("remove does not support AGENTS.md. Use delete for remote records.");
+    }
+
+    const skillContext = normalized.context;
+    const isGlobal = skillContext.args.includes("--global");
+    const removeDependencies = skillContext.args.includes("--deps");
+    const positional = skillContext.args.filter((arg) => arg !== "--global" && arg !== "--deps");
+    const [input] = positional;
+    if (!input || positional.length !== 1) {
+      this.fail("Usage: skuare remove <skillID|name|author/name> [--global] [--deps]");
+    }
+
+    const installTargets = this.resolveInstallTargets(skillContext, isGlobal);
+    const targetResults: Array<{
+      target: string;
+      tools: string[];
+      removed: string[];
+      kept_shared_dependencies: string[];
+      missing: boolean;
+    }> = [];
+    const removedSkills = new Set<string>();
+    const keptSharedDependencies = new Set<string>();
+
+    for (const installTarget of installTargets) {
+      const selected = await this.selectLocalSkills(installTarget.targetRoot, input);
+      if (selected.length === 0) {
+        targetResults.push({
+          target: installTarget.targetRoot,
+          tools: installTarget.tools,
+          removed: [],
+          kept_shared_dependencies: [],
+          missing: true,
+        });
+        continue;
+      }
+
+      const installed = await this.collectInstalledSkills(installTarget.targetRoot);
+      const plan = this.buildRemovePlan(installed, selected.map((skill) => skill.skillID), removeDependencies);
+      for (const skill of plan.removed) {
+        await this.removeInstalledSkill(skill);
+        removedSkills.add(skill.skillID);
+      }
+      for (const skill of plan.keptSharedDependencies) {
+        keptSharedDependencies.add(skill.skillID);
+      }
+      targetResults.push({
+        target: installTarget.targetRoot,
+        tools: installTarget.tools,
+        removed: plan.removed.map((skill) => skill.skillID),
+        kept_shared_dependencies: plan.keptSharedDependencies.map((skill) => skill.skillID),
+        missing: false,
+      });
+    }
+
+    console.log(JSON.stringify({
+      global: isGlobal,
+      deps: removeDependencies,
+      input,
+      llm_tool: isGlobal
+        ? installTargets.flatMap((entry) => entry.tools)[0] || this.resolvePrimaryTool(skillContext.llmTools)
+        : this.resolvePrimaryTool(skillContext.llmTools),
+      llm_tools: installTargets.flatMap((entry) => entry.tools),
+      targets: targetResults,
+      removed: Array.from(removedSkills).sort((a, b) => a.localeCompare(b)),
+      kept_shared_dependencies: Array.from(keptSharedDependencies).sort((a, b) => a.localeCompare(b)),
+    }, null, 2));
   }
 }
 

@@ -14,9 +14,10 @@
   - 不依赖 server，可直接修改本地配置、Skill 文件和依赖文件。
 - server 只读命令：`health`、`list`、`peek`、`validate`
   - 会访问 server，但不会写远程仓库。
-- 混合命令：`get`、`deps`
+- 混合命令：`get`、`deps`、`remove`
   - `get`：先访问 server 拉取 Skill，再写入本地局部仓库。
   - `deps`：围绕 wrap 根 Skill 查看或安装依赖子树。
+  - `remove`：直接删除本地或全局已安装 Skill。
 - server 写命令：`publish`、`update`、`create`、`delete`
   - 会写远程仓库；CLI 仅在提供签名凭证时附加签名，最终是否接受无签名写入由服务端决定。
 - 统一资源切换：`list`、`peek`、`get`、`detail`、`publish`、`create`、`delete`
@@ -51,6 +52,7 @@
   - `build <skillName> [refSkill...] [--all]`：本地生成/追加 `<skillName>/skill-deps.json` 与 `<skillName>/skill-deps.lock.json`；若目标 skill 缺失，会先交互式创建最小 `SKILL.md`
   - `format [skillDir...]` / `format --all`：本地格式化 `SKILL.md`
   - `detail <skillName|skillID> [relativePath...]`：本地展示目标已安装 skill 目录下的文件内容；不传文件路径时默认读取该 skill 的 `SKILL.md`
+  - `remove <skillID|author/name|name> [--global] [--deps]`：删除已安装的本地 skill；支持递归删除依赖并保护共享依赖
   - `detail --type agentsmd` / `detail --type agmd`：本地展示 `<cwd>/.{tool}/AGENTS.md` 或 `~/.{tool}/AGENTS.md`
 - server 只读命令：
   - `health` -> `GET /healthz`
@@ -72,6 +74,10 @@
   - `deps --content <rootSkillDir> <depSkillID|author/name@version|author/name|name>`：输出目标依赖的 `SKILL.md`
   - `deps --tree <rootSkillDir> <depSkillID|author/name@version|author/name|name>`：输出目标依赖的文件列表
   - `deps --install <rootSkillDir> <depSkillID|author/name@version|author/name|name> [--global]`：按需安装目标依赖子树
+  - `remove <skillID|author/name|name> [--global] [--deps]`
+  - 默认从当前 `cwd` 对应 tool 的本地 skill 目录删除；`--global` 时会从所有已配置工具的全局 skill 根目录删除
+  - 传 `skillID` 时按精确目录删除；传 `author/name` 或 `name` 且命中多个已安装 skill 时，会进入交互式多选
+  - 默认只删除指定 skill 本体；`--deps` 会递归删除其依赖子树，但会保留仍被其他已安装 skill 引用的共享依赖
 - server 写命令：
   - `publish --file <json> [--force|-f]` -> `POST /api/v1/skills`
   - `publish --skill <SKILL.md> [--skill-id] [--version] [--force|-f]` -> `POST /api/v1/skills`
@@ -323,6 +329,7 @@ skuare --server http://127.0.0.1:15657 \
 - 2026-02-27：新增 `build <skillName> [refSkill...]`，用于本地自动创建/追加 `skill-deps.json` 与 `skill-deps.lock.json`。
 - 2026-03-01：`build` 新增 `--all`，用于扫描当前目录下全部合法 skillDir 并批量写入依赖；与显式 `refSkill...` 不可混用。目标 skill 缺失时会先交互式初始化最小 `SKILL.md` 模板。
 - 2026-03-11：新增 `skill` 命令，可将内嵌的 skuare-authored LLM Skill 安装到 `cwd`；生成内容的版本与当前 CLI 版本保持一致。
+- 2026-03-12：新增 `remove` 命令，用于删除本地或全局已安装 skill；支持 `--deps` 递归删除与共享依赖保护。
 - 2026-02-28：`author` 预填与回退默认值统一为 `undefined`（含 `format` 交互与 `list/peek` 展示）。
 - 2026-02-28：优化 `list/peek` 展示：新增 `author`，并统一 `id=<author>/<name>@<version>`，且 `id` 先于 `name` 输出。
 - 2026-03-01：`get` 新增 `--rgx` 正则选 skill；`list/peek` 对外参数名统一为 `--rgx`（兼容旧 `--regex`）。

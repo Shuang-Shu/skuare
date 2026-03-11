@@ -225,6 +225,10 @@ type SkillOption = {
   description: string;
 };
 
+function formatSkillOptionLabel(skill: SkillOption): string {
+  return `${skill.skillID}@${skill.version} - ${skill.description}`;
+}
+
 export async function selectSkillWithScroll(
   skills: SkillOption[],
   title: string
@@ -265,8 +269,7 @@ export async function selectSkillWithScroll(
     for (let i = windowStart; i < windowEnd; i++) {
       const cursor = i === idx ? "> " : "  ";
       const skill = skills[i];
-      const label = `${skill.skillID}@${skill.version} - ${skill.description}`;
-      stdout.write(`${cursor}${label}\n`);
+      stdout.write(`${cursor}${formatSkillOptionLabel(skill)}\n`);
     }
     rendered = true;
   };
@@ -319,6 +322,120 @@ export async function selectSkillWithScroll(
         stdin.off("keypress", onKeypress);
         stdin.setRawMode?.(wasRaw);
         stdin.pause?.();
+        process.exit(130);
+      }
+    };
+
+    stdin.on("keypress", onKeypress);
+  });
+}
+
+export async function selectSkillsWithScroll(
+  skills: SkillOption[],
+  title: string
+): Promise<SkillOption[]> {
+  const stdin = process.stdin as StdinInterface;
+  const stdout = process.stdout as StdoutInterface;
+
+  if (!stdin.isTTY || !stdout.isTTY) {
+    return [skills[0]];
+  }
+
+  const readline = await import("node:readline");
+  readline.emitKeypressEvents(process.stdin);
+
+  stdin.resume?.();
+  const wasRaw = !!stdin.isRaw;
+  stdin.setRawMode?.(true);
+
+  const windowSize = 10;
+  let idx = 0;
+  let windowStart = 0;
+  let rendered = false;
+  let enterArmed = false;
+  const selected = new Set<number>([0]);
+
+  setTimeout(() => {
+    enterArmed = true;
+  }, 200);
+
+  const render = () => {
+    const blockHeight = Math.min(windowSize, skills.length) + 1;
+    if (rendered) {
+      stdout.write(`\x1b[${blockHeight}F`);
+    }
+    stdout.write("\x1b[J");
+    stdout.write(`${title} (${idx + 1}/${skills.length})\n`);
+
+    const windowEnd = Math.min(windowStart + windowSize, skills.length);
+    for (let i = windowStart; i < windowEnd; i++) {
+      const cursor = i === idx ? "> " : "  ";
+      const mark = selected.has(i) ? "[x]" : "[ ]";
+      stdout.write(`${cursor}${mark} ${formatSkillOptionLabel(skills[i])}\n`);
+    }
+    rendered = true;
+  };
+
+  render();
+
+  return await new Promise<SkillOption[]>((resolve) => {
+    const cleanup = () => {
+      stdin.off("keypress", onKeypress);
+      stdin.setRawMode?.(wasRaw);
+      stdin.pause?.();
+      const blockHeight = Math.min(windowSize, skills.length) + 1;
+      if (rendered) {
+        stdout.write(`\x1b[${blockHeight}F`);
+        stdout.write("\x1b[J");
+      }
+    };
+
+    const onKeypress: KeypressHandler = (str, key) => {
+      if (key?.name === "up") {
+        if (idx > 0) {
+          idx--;
+          if (idx < windowStart) {
+            windowStart = Math.max(0, windowStart - 1);
+          }
+          render();
+        }
+        return;
+      }
+
+      if (key?.name === "down") {
+        if (idx < skills.length - 1) {
+          idx++;
+          if (idx >= windowStart + windowSize) {
+            windowStart = Math.min(Math.max(skills.length - windowSize, 0), windowStart + 1);
+          }
+          render();
+        }
+        return;
+      }
+
+      if (key?.name === "space" || str === " ") {
+        if (selected.has(idx)) {
+          if (selected.size > 1) {
+            selected.delete(idx);
+          }
+        } else {
+          selected.add(idx);
+        }
+        render();
+        return;
+      }
+
+      if (key?.name === "return" || key?.name === "enter") {
+        if (!enterArmed) {
+          return;
+        }
+        cleanup();
+        resolve(Array.from(selected).sort((a, b) => a - b).map((index) => skills[index]));
+        return;
+      }
+
+      if (key?.ctrl && key?.name === "c") {
+        cleanup();
         process.exit(130);
       }
     };
