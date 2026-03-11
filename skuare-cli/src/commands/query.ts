@@ -1623,6 +1623,24 @@ export class GetCommand extends DependencyAwareCommand {
   readonly name = "get";
   readonly description = "Install skill to local partial repository";
 
+  private resolveGetInstallTargets(context: CommandContext, isGlobal: boolean): InstallTargetPlan[] {
+    const tools = Array.from(new Set((context.llmTools || []).map((value) => value.trim()).filter(Boolean)));
+    const targets = new Map<string, string[]>();
+    for (const tool of tools) {
+      const targetRoot = this.resolveInstallTargetRoot(context.cwd, tool, context.toolSkillDirs[tool], isGlobal);
+      const existing = targets.get(targetRoot);
+      if (existing) {
+        existing.push(tool);
+      } else {
+        targets.set(targetRoot, [tool]);
+      }
+    }
+    return Array.from(targets.entries()).map(([targetRoot, groupedTools]) => ({
+      targetRoot,
+      tools: groupedTools,
+    }));
+  }
+
   async execute(context: CommandContext): Promise<void> {
     const normalized = normalizeResourceContext(context);
     if (normalized.resourceType === "agentsmd") {
@@ -1664,7 +1682,7 @@ export class GetCommand extends DependencyAwareCommand {
       versionArg = resolved.version;
     }
 
-    const installTargets = this.resolveInstallTargets(skillContext, isGlobal);
+    const installTargets = this.resolveGetInstallTargets(skillContext, isGlobal);
     const primaryTool = isGlobal
       ? installTargets.flatMap((entry) => entry.tools)[0] || this.resolvePrimaryTool(skillContext.llmTools)
       : this.resolvePrimaryTool(skillContext.llmTools);

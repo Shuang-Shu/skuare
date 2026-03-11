@@ -146,6 +146,51 @@ test("get --global installs the same skill into all configured tools' global ski
   }
 });
 
+test("get installs the same skill into all configured workspace tool directories when --global is omitted", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "skuare-get-workspace-multi-"));
+  const customWorkspaceDir = join(workspace, "custom-jojo-skills");
+  const restore = mockFetch({
+    "GET /api/v1/skills": new Response(JSON.stringify({
+      items: [{ skill_id: "demo/root", version: "1.0.0", name: "root", author: "demo", description: "Root description" }],
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+    "GET /api/v1/skills/demo%2Froot/1.0.0": skillDetail("demo/root", "1.0.0", "Root description"),
+  });
+
+  try {
+    const logs = await captureConsole(async () => {
+      await new GetCommand().execute(createContext(workspace, ["demo/root@1.0.0"], {
+        llmTools: ["codex", "claudecode", "jojo"],
+        toolSkillDirs: {
+          jojo: customWorkspaceDir,
+        },
+      }));
+    });
+
+    const output = JSON.parse(logs.join("\n")) as {
+      global: boolean;
+      llm_tool: string;
+      llm_tools: string[];
+      targets: Array<{ target: string; tools: string[] }>;
+      skills: string[];
+    };
+
+    assert.equal(output.global, false);
+    assert.equal(output.llm_tool, "codex");
+    assert.deepEqual(output.llm_tools, ["codex", "claudecode", "jojo"]);
+    assert.equal(output.targets.length, 3);
+    assert.deepEqual(output.skills, ["demo/root"]);
+    assert.equal((await stat(join(workspace, ".codex", "skills", "demo", "root", "SKILL.md"))).isFile(), true);
+    assert.equal((await stat(join(workspace, ".claudecode", "skills", "demo", "root", "SKILL.md"))).isFile(), true);
+    assert.equal((await stat(join(customWorkspaceDir, "demo", "root", "SKILL.md"))).isFile(), true);
+  } finally {
+    restore();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("get --global respects explicit global toolSkillDirs and ignores workspace-relative ones", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "skuare-get-global-custom-"));
   const home = await mkdtemp(join(tmpdir(), "skuare-home-"));

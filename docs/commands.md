@@ -222,12 +222,13 @@ skr get --rgx <pattern> [version] [--global] [--wrap]
 - Workspace (default): `<cwd>/.<tool>/skills/<skillID>/`
 - Global: `~/.<tool>/skills/<skillID>/`
 
-Where `<tool>` is the first configured LLM tool (codex/claudecode/custom).
+Where `<tool>` covers every configured LLM tool (codex/claudecode/custom).
 
 **Behavior:**
 - Fetches skill from remote repository
 - Resolves dependency tree from `skill-deps.lock.json`
 - Installs all dependencies as sibling directories (flat structure)
+- Without `--global`, installs into every configured tool's workspace directory; with `--global`, installs into every configured tool's global directory
 - Uses latest version if version not specified
 - `skillRef` accepts `skillID`, `name`, and `author/name`
 - If existing local files would be overwritten, `skr get` shows an interactive confirmation in TTY

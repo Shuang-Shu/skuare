@@ -39,9 +39,9 @@
 - `skr build <skillName> [refSkill...] [--all]`：为本地 skill 自动创建或追加更新依赖文件（`skill-deps.json` / `skill-deps.lock.json`），当目标 skill 不存在时会先交互式创建最小 `SKILL.md` 模板，支持 `alias=refSkill`；`--all` 会将当前目录下全部合法 skillDir 作为引用 skill。
 - `skr detail <skillName|skillID> [relativePath...]`：展示本地已安装 skill 下的文件内容；不传文件路径时默认输出目标 skill 的 `SKILL.md`。
 - `skr get <skill-ref> [version] [--global] [--wrap]`：从远程仓库拉取 Skill；直接指定目标时支持 `skillID`、`name`、`author/name` 三种 selector，并与 `peek/deps` 复用同一交互逻辑。
-  - 不带 `--global`：安装到 `<cwd>/.{llmTool}/skills/<skillID>/`
-  - 带 `--global`：同时安装到所有已配置工具的全局 skill 目录；每个默认目标为 `~/.{llmTool}/skills/<skillID>/`
-  - 不带 `--global` 时，`llmTool` 仍取配置文件中的第一个工具；带 `--global` 时会覆盖全部已配置工具
+  - 不带 `--global`：安装到全部已配置工具各自的 workspace skill 目录，默认形如 `<cwd>/.{llmTool}/skills/<skillID>/`
+  - 带 `--global`：安装到全部已配置工具各自的全局 skill 目录，默认形如 `~/.{llmTool}/skills/<skillID>/`
+  - `--global` 只影响安装位置，不影响安装到哪些工具
   - 默认会把完整依赖图平铺安装；带 `--wrap` 时只安装根 Skill，依赖留给 `skr deps` 按需查看和安装
 - `skr deps --brief|--content|--tree|--install <rootSkillDir> ...`：围绕 wrap 根 Skill 查看依赖摘要、内容、文件树，并按需安装子树；目标依赖支持 `skillID/name/author/name` 与 `@version`。
 
@@ -154,7 +154,7 @@ skr delete observability-orchestrator 1.0.0
 - 2026-03-01：`get` 新增 `--rgx` 正则选 skill；`list/peek` 对外参数名统一为 `--rgx`（兼容旧 `--regex`）。
 - 2026-02-28：区分远程仓库与本地局部仓库：`publish` 成为主写命令，`get` 新增 `--scope/--repo-dir/--tool`，默认仓库根统一为 `~/.skuare`。
 - 2026-03-01：清理仓库入口风格：`make format` 不再错误要求 `VERSION`，`scripts/dev-up.sh` 默认 `SPEC_DIR` 与主入口保持一致。
-- 2026-03-02：`get` 简化参数：移除 `--scope/--repo-dir/--tool`，改用 `--global` 标志位；不带 `--global` 安装到 `<cwd>/.{llmTool}/skills/`，带 `--global` 安装到 `~/.{llmTool}/skills/`。
+- 2026-03-02：`get` 简化参数：移除 `--scope/--repo-dir/--tool`，改用 `--global` 标志位；不带 `--global` 安装到全部已配置工具的 `<cwd>/.{llmTool}/skills/`，带 `--global` 安装到全部已配置工具的 `~/.{llmTool}/skills/`。
 - 2026-03-02：将 `skr detail` 修正为 `skr detail <skillName|skillID> [relativePath...]`；会先定位本地已安装 skill，再默认展示其 `SKILL.md`，并拒绝越界路径。
 - 2026-03-01：`skr` 在回退旧 `dist/index.js` 时会将 `publish` 兼容桥接为旧命令 `create`，避免无 TypeScript 环境下出现 `Unknown command: publish`。
 - 2026-03-04：根安装入口从 `make install-skr` 调整为 `make install`；会自动安装 `skuare-cli` 的 npm 依赖、执行 `skuare-svc` 的 `go mod download`，并注册 `skr`。
