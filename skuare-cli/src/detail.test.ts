@@ -75,7 +75,7 @@ async function createSkill(
   skillID: string,
   options?: { files?: Record<string, string> }
 ): Promise<void> {
-  const dir = join(workspace, "skills", ...skillID.split("/"));
+  const dir = join(workspace, ".codex", "skills", ...skillID.split("/"));
   await mkdir(dir, { recursive: true });
   const parts = skillID.split("/");
   const basename = parts[parts.length - 1] || skillID;

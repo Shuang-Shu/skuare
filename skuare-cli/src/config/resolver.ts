@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { CliArgs, SkuareConfig } from "../types";
 import { DEFAULT_CONFIG_DIR_NAME, DEFAULT_CONFIG_FILE_NAME, createDefaultConfig } from "../types";
+import { resolveInstallTargetRoot } from "../utils/install_paths";
 import { loadConfig } from "./loader";
 import { mergeConfig } from "./merger";
 
@@ -93,16 +94,8 @@ export function isBuiltinLLMTool(tool: string): boolean {
 /**
  * 获取工具默认 skills 目录
  */
-export function getDefaultToolSkillsDir(cwd: string, tool: string): string {
-  const name = tool.trim();
-  const lower = name.toLowerCase();
-  if (lower === "codex") {
-    return join(cwd, "skills");
-  }
-  if (lower === "claudecode") {
-    return join(homedir(), ".claudecode", "skills");
-  }
-  return join(homedir(), `.${name}`, "skills");
+export function getDefaultToolSkillsDir(cwd: string, tool: string, isGlobal = false): string {
+  return resolveInstallTargetRoot(cwd, tool, isGlobal);
 }
 
 /**
@@ -120,12 +113,8 @@ export function normalizeToolSkillsDir(cwd: string, input: string): string {
 /**
  * 解析工具最终 skills 目录（配置优先，其次默认规则）
  */
-export function resolveToolSkillsDir(cwd: string, tool: string, configured?: string): string {
-  const configuredPath = normalizeToolSkillsDir(cwd, configured || "");
-  if (configuredPath) {
-    return configuredPath;
-  }
-  return getDefaultToolSkillsDir(cwd, tool);
+export function resolveToolSkillsDir(cwd: string, tool: string, configured?: string, isGlobal = false): string {
+  return resolveInstallTargetRoot(cwd, tool, isGlobal, configured);
 }
 
 /**

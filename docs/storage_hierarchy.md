@@ -157,8 +157,8 @@ CLI maintains the concept of a "tool's own home directory", and `skr get` instal
 
 Default rules:
 - `codex` -> `<cwd>/.codex/skills`
-- `claudecode` -> `~/.claudecode/skills`
-- custom tool -> `~/.<tool>/skills`
+- `claudecode` -> `<cwd>/.claudecode/skills`
+- custom tool -> `<cwd>/.<tool>/skills`
 
 If `toolSkillDirs[tool]` is provided in config, prioritize explicit config value.
 

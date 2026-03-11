@@ -44,14 +44,17 @@ export function mergeConfig(...items: Array<Partial<SkuareConfig> | undefined>):
       );
     }
 
-    if (item.toolSkillDirs && typeof item.toolSkillDirs === "object" && !Array.isArray(item.toolSkillDirs)) {
-      for (const [tool, dir] of Object.entries(item.toolSkillDirs)) {
-        const key = String(tool).trim();
-        const val = String(dir ?? "").trim();
-        if (!key || !val) {
-          continue;
+    if (Object.prototype.hasOwnProperty.call(item, "toolSkillDirs")) {
+      result.toolSkillDirs = {};
+      if (item.toolSkillDirs && typeof item.toolSkillDirs === "object" && !Array.isArray(item.toolSkillDirs)) {
+        for (const [tool, dir] of Object.entries(item.toolSkillDirs)) {
+          const key = String(tool).trim();
+          const val = String(dir ?? "").trim();
+          if (!key || !val) {
+            continue;
+          }
+          result.toolSkillDirs[key] = val;
         }
-        result.toolSkillDirs[key] = val;
       }
     }
   }
