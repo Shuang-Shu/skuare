@@ -65,6 +65,8 @@
   - 默认安装到 `<cwd>/.{llmTool}/skills/<skillID>/`
   - `--global`：安装到 `~/.{llmTool}/skills/<skillID>/`
   - 默认模式会把完整依赖图平铺安装；`--wrap` 只安装根 Skill，并写入本地 wrap 元数据供后续 `deps` 使用
+  - 当本地已安装内容会被覆盖时，`get` 会在 TTY 中展示交互式确认；非交互环境会直接失败，不再静默覆盖
+  - 若多个已安装 root Skill 共享同一个子 Skill，确认页会提示该子 Skill 还被哪些其他 root Skill 使用
   - When a command directly targets one skill, `peek/get/deps` now reuse the same selector flow: `skillID`, `name`, and `author/name`, with the same multi-match interaction
   - `get --type agentsmd|agmd <agentsmd-id> [version] [--global]`
   - 默认安装到 `<cwd>/.{llmTool}/AGENTS.md`；`--global` 时安装到 `~/.{llmTool}/AGENTS.md`
@@ -72,6 +74,7 @@
   - `deps --content <rootSkillDir> <depSkillID|author/name@version|author/name|name>`：输出目标依赖的 `SKILL.md`
   - `deps --tree <rootSkillDir> <depSkillID|author/name@version|author/name|name>`：输出目标依赖的文件列表
   - `deps --install <rootSkillDir> <depSkillID|author/name@version|author/name|name> [--global]`：按需安装目标依赖子树
+  - `deps --install` 与 `get` 共用同一套覆盖确认语义：TTY 中交互确认，非交互环境直接失败
 - server 写命令：
   - `publish --file <json> [--force|-f]` -> `POST /api/v1/skills`
   - `publish --skill <SKILL.md> [--skill-id] [--version] [--force|-f]` -> `POST /api/v1/skills`

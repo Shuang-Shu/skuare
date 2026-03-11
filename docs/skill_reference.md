@@ -135,6 +135,9 @@ skr get observability-orchestrator --global
 - Fetches the target skill from remote repository.
 - Resolves dependency tree from `skill-deps.lock.json`.
 - Installs all dependencies as sibling directories (flat structure).
+- When local files would be overwritten, `skr get` prompts for confirmation in TTY before writing.
+- If multiple installed root skills share the same child skill, the overwrite confirmation shows the other root skills that still depend on that child.
+- Non-interactive sessions fail instead of silently overwriting local installed skills.
 
 **Example Result:**
 ```

@@ -135,6 +135,9 @@ skr get observability-orchestrator --global
 - 从远程仓库拉取目标 skill。
 - 从 `skill-deps.lock.json` 解析依赖树。
 - 将所有依赖作为同级目录安装（平铺结构）。
+- 当本地文件将被覆盖时，`skr get` 会先在 TTY 中请求确认。
+- 如果多个已安装 root Skill 共享同一子 Skill，覆盖确认会列出仍依赖该子 Skill 的其他 root Skill。
+- 非交互环境下会直接失败，不再静默覆盖本地已安装 skill。
 
 **示例结果：**
 ```
