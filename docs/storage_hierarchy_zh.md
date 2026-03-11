@@ -126,7 +126,7 @@ CLI 拉取 skill 到本地时，会写入目标 tool 的 home 目录：
 默认情况下：
 - `skr get` 默认安装到 workspace tool home
 - 加 `--global` 后切换到用户 home
-- 目标 `tool` 取配置的第一个 LLM 工具
+- 目标 `tool` 覆盖配置中的全部 LLM 工具
 
 ### 3.2 最终安装目录
 `skr get` 最终安装目标是：

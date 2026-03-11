@@ -222,12 +222,13 @@ skr get --rgx <pattern> [version] [--global] [--wrap]
 - 工作区（默认）：`<cwd>/.<tool>/skills/<skillID>/`
 - 全局：`~/.<tool>/skills/<skillID>/`
 
-其中 `<tool>` 是配置的第一个 LLM 工具（codex/claudecode/custom）。
+其中 `<tool>` 会覆盖配置中的全部 LLM 工具（codex/claudecode/custom）。
 
 **行为：**
 - 从远程仓库拉取 skill
 - 从 `skill-deps.lock.json` 解析依赖树
 - 将所有依赖作为同级目录安装（平铺结构）
+- 不带 `--global` 时安装到全部已配置工具的工作区目录；带 `--global` 时安装到全部已配置工具的全局目录
 - 如果未指定版本则使用最新版本
 - `skillRef` 支持 `skillID`、`name`、`author/name`
 - 如果本地已有内容将被覆盖，`skr get` 会在 TTY 中展示交互式确认

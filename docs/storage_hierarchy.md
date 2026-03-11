@@ -128,7 +128,7 @@ When CLI fetches skills locally, it writes into the selected tool's home directo
 By default:
 - `skr get` installs into the workspace tool home
 - `--global` switches installation to the user's home directory
-- The target `tool` is the first configured LLM tool
+- The target `tool` set covers every configured LLM tool
 
 ### 3.2 Final Installation Directory
 `skr get` final installation target is:
