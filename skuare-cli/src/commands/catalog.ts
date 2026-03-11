@@ -1,7 +1,7 @@
 import type { Command } from "./types";
 import { HealthCommand } from "./admin";
 import { InitCommand } from "./init";
-import { DepsCommand, DetailCommand, GetCommand, ListCommand, PeekCommand, ValidateCommand } from "./query";
+import { DepsCommand, DetailCommand, GetCommand, ListCommand, PeekCommand, RemoveCommand, ValidateCommand } from "./query";
 import { SkillCommand } from "./skill";
 import { BuildCommand, CreateCommand, DeleteCommand, FormatCommand, PublishCommand, UpdateCommand } from "./write";
 
@@ -90,6 +90,18 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
         "                                       Show the target dependency's file list",
         "deps --install <rootSkillDir> <depSkillID|author/name@version|author/name|name> [--global]",
         "                                       Install the selected dependency subtree next to the wrapped root or into ~/.{tool}/skills/",
+      ],
+    },
+  },
+  {
+    create: () => new RemoveCommand(),
+    help: {
+      usage: ["remove <skillID|author/name|name> [--global] [--deps]", "Remove local installed skills"],
+      details: [
+        "                                       Default mode removes from <cwd>/.{tool}/skills/; --global removes from configured global skill roots",
+        "                                       - <skillID>: exact local target, no interactive selector",
+        "                                       - <author>/<name> or <name>: interactive multi-select when multiple installed candidates match",
+        "                                       - --deps: recursively remove the target subtree, but keep shared dependencies still referenced elsewhere",
       ],
     },
   },
