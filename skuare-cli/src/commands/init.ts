@@ -72,6 +72,30 @@ function getCustomTools(llmTools: string[]): string[] {
   return llmTools.map((tool) => tool.trim()).filter((tool) => tool && !isBuiltinLLMTool(tool));
 }
 
+export function resolveToolSkillsDirPromptDefault({
+  cwd,
+  tool,
+  scope,
+  inheritedDir,
+  scopedDir,
+}: {
+  cwd: string;
+  tool: string;
+  scope: ConfigScope;
+  inheritedDir?: string;
+  scopedDir?: string;
+}): string {
+  const fallback = getDefaultToolSkillsDir(cwd, tool, scope === "global");
+  const scoped = normalizeToolSkillsDir(cwd, scopedDir || "");
+  if (scoped) {
+    return scoped;
+  }
+  if (scope === "global") {
+    return normalizeToolSkillsDir(cwd, inheritedDir || "") || fallback;
+  }
+  return fallback;
+}
+
 /**
  * 运行初始化 TUI
  */
@@ -84,6 +108,7 @@ async function runInitTUI(cwd: string): Promise<void> {
   const workspacePath = getWorkspaceConfigPath(cwd);
 
   const globalCfg = await loadConfig(globalPath);
+  const workspaceCfg = await loadConfig(workspacePath);
   const globalExists = globalCfg !== undefined;
 
   console.log(
@@ -227,12 +252,25 @@ async function runInitTUI(cwd: string): Promise<void> {
     }
 
     const customTools = getCustomTools(llmTools);
-    const shouldPromptCustomDirs = modifyLLMTools || customTools.some((tool) => !toolSkillDirs[tool]);
+    const isWorkspaceReuseGlobal = scope === "workspace" && workspaceMode === "reuse-global";
+    const targetCfg = scope === "global" ? globalCfg : workspaceCfg;
+    const hasTargetSpecificDir = (tool: string): boolean => !!normalizeToolSkillsDir(
+      cwd,
+      targetCfg?.toolSkillDirs?.[tool] || ""
+    );
+    const shouldPromptCustomDirs = !isWorkspaceReuseGlobal && (
+      modifyLLMTools || customTools.some((tool) => !hasTargetSpecificDir(tool))
+    );
     if (customTools.length > 0 && shouldPromptCustomDirs) {
       console.log("\nConfigure custom tool skills directories:");
       for (const tool of customTools) {
-        const fallback = getDefaultToolSkillsDir(cwd, tool);
-        const current = normalizeToolSkillsDir(cwd, toolSkillDirs[tool] || "") || fallback;
+        const current = resolveToolSkillsDirPromptDefault({
+          cwd,
+          tool,
+          scope,
+          inheritedDir: toolSkillDirs[tool],
+          scopedDir: targetCfg?.toolSkillDirs?.[tool],
+        });
         const answer = await askWithDefault(rl, `Skills directory for custom tool "${tool}"`, current);
         const normalized = normalizeToolSkillsDir(cwd, answer);
         if (!normalized) {
