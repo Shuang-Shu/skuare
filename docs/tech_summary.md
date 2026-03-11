@@ -40,6 +40,7 @@
   - `skr peek` output aligns with `id/name/author` display conventions, and now reuses the same direct-skill selector flow as `get/deps`.
   - `skr peek` supports `--regex <pattern>` for unique match then query details.
   - `skr get --wrap` installs only the root skill and persists `.skuare-wrap.json`; `skr deps` inspects or installs wrapped dependency subtrees on demand, and `peek/get/deps` now share one direct-skill selector flow (`skillID | name | author/name`, with optional `@version`).
+  - `skr get` / `skr deps --install` no longer silently overwrite local installed skills: TTY sessions show interactive overwrite confirmation, shared child skills are annotated with other installed root consumers, and non-TTY sessions fail fast.
   - AGENTS.md resources now reuse the base command entry via `--type agentsmd|agmd`; removed suffix commands such as `list-agmd` and `publish-agentsmd` return migration hints instead of remaining registered commands.
   - When `SKILL.md metadata.author` exists, the server returns `author` directly in `publish/list/peek` related responses.
   - When `metadata.author` is missing, server stores the version under `_anonymous/<skillID>/<version>` but keeps API `author` empty; a literal `author: undefined` remains `undefined`.

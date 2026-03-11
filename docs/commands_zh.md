@@ -209,13 +209,14 @@ skr peek --rgx "^ShuangShu/report-generator@"
 
 **用法：**
 ```bash
-skr get <skillRef> [version] [--global]
-skr get --rgx <pattern> [version] [--global]
+skr get <skillRef> [version] [--global] [--wrap]
+skr get --rgx <pattern> [version] [--global] [--wrap]
 ```
 
 **选项：**
 - `--rgx <pattern>` - 通过正则表达式匹配 skill（必须精确匹配一个 skill）
 - `--global` - 安装到全局目录而非工作区
+- `--wrap` - 只安装根 Skill，依赖子树交给 `skr deps` 按需处理
 
 **安装目录：**
 - 工作区（默认）：`<cwd>/.<tool>/skills/<skillID>/`
@@ -229,6 +230,9 @@ skr get --rgx <pattern> [version] [--global]
 - 将所有依赖作为同级目录安装（平铺结构）
 - 如果未指定版本则使用最新版本
 - `skillRef` 支持 `skillID`、`name`、`author/name`
+- 如果本地已有内容将被覆盖，`skr get` 会在 TTY 中展示交互式确认
+- 如果待覆盖节点被其他已安装 root Skill 共享，确认中会列出这些 root Skill ID
+- 在非交互环境中，覆盖会直接失败，不再静默改写本地 skill
 
 **输出：**
 包含安装摘要的 JSON：
@@ -237,6 +241,8 @@ skr get --rgx <pattern> [version] [--global]
 - `target` - 安装根目录
 - `skills` - 已安装 skill ID 列表
 - `conflicts` - 覆盖的文件列表（如有）
+- `confirmation_required` - 安装前是否需要覆盖确认
+- `overwrite_targets` - 每个安装目标的覆盖摘要，包含共享子 Skill 的 `shared_with` root Skill 列表
 
 **示例：**
 ```bash

@@ -38,6 +38,7 @@
   - `skr peek` 输出对齐 `id/name/author` 展示规范。
   - `skr peek` 支持 `--regex <pattern>` 唯一匹配后查询详情。
   - `skr get --wrap` 只安装根 Skill，并落盘 `.skuare-wrap.json`；`skr deps` 用于按需查看或安装被包装的依赖子树，且依赖目标已复用 `get` 的 Skill 选择形式（`<author>/<name>@<version> | <author>/<name> | <name>`）。
+  - `skr get` / `skr deps --install` 不再静默覆盖本地已安装 skill：TTY 中会先做交互式覆盖确认，共享子 Skill 会标注其他已安装 root 使用者，非 TTY 会直接失败。
   - AGENTS.md 资源已统一复用基础命令入口，通过 `--type agentsmd|agmd` 切换；`list-agmd`、`publish-agentsmd` 等旧后缀命令不再注册，只返回迁移提示。
   - 当 `SKILL.md metadata.author` 存在时，服务端会在 `publish/list/peek` 相关返回中直接透出 `author`。
   - 当 `metadata.author` 缺失时，服务端会落盘到 `_anonymous/<skillID>/<version>`，但 API 返回中的 `author` 仍保持空字符串；只有显式写了 `author: undefined` 才会显示为 `undefined`。

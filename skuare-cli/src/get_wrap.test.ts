@@ -6,6 +6,34 @@ import { join } from "node:path";
 import { DepsCommand, GetCommand } from "./commands/query";
 import type { CommandContext } from "./commands/types";
 
+class InteractiveGetCommand extends GetCommand {
+  constructor(private readonly decision: boolean) {
+    super();
+  }
+
+  protected override isInteractiveInstallSession(): boolean {
+    return true;
+  }
+
+  protected override async confirmInstallTargetPreview(): Promise<boolean> {
+    return this.decision;
+  }
+}
+
+class InteractiveDepsCommand extends DepsCommand {
+  constructor(private readonly decision: boolean) {
+    super();
+  }
+
+  protected override isInteractiveInstallSession(): boolean {
+    return true;
+  }
+
+  protected override async confirmInstallTargetPreview(): Promise<boolean> {
+    return this.decision;
+  }
+}
+
 test("get --wrap installs only the root skill and writes wrap metadata", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "skuare-get-wrap-"));
   const restore = mockFetch({
@@ -212,6 +240,155 @@ test("deps can inspect and install wrapped dependency subtrees with get-like ski
   }
 });
 
+test("get reuses an already installed shared child when multiple roots depend on the same version", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "skuare-get-shared-child-reuse-"));
+  const installRoot = join(workspace, ".codex", "skills");
+  await createWrappedRoot(join(installRoot, "demo", "root-a"), installRoot, "demo/root-a", "1.0.0", [
+    { skill: "demo/shared-child", version: "1.0.0", resolved: "1.0.0" },
+  ]);
+  await writeInstalledSkill(join(installRoot, "demo", "shared-child"), "demo/shared-child", "1.0.0", "Shared child v1");
+
+  const restore = mockFetch({
+    "GET /api/v1/skills": new Response(JSON.stringify({
+      items: [{ skill_id: "demo/root-b", version: "1.0.0", name: "root-b", author: "demo", description: "Root B description" }],
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+    "GET /api/v1/skills/demo%2Froot-b/1.0.0": skillDetail("demo/root-b", "1.0.0", "Root B description", [
+      { skill: "demo/shared-child", version: "1.0.0", resolved: "1.0.0" },
+    ]),
+    "GET /api/v1/skills/demo%2Fshared-child/1.0.0": skillDetail("demo/shared-child", "1.0.0", "Shared child v1"),
+  });
+
+  try {
+    const logs = await captureConsole(async () => {
+      await new GetCommand().execute(createContext(workspace, ["demo/root-b@1.0.0"]));
+    });
+    const output = JSON.parse(logs.join("\n")) as {
+      confirmation_required: boolean;
+      overwrite_targets: Array<unknown>;
+      skills: string[];
+    };
+
+    assert.equal(output.confirmation_required, false);
+    assert.deepEqual(output.overwrite_targets, []);
+    assert.deepEqual(output.skills, ["demo/root-b", "demo/shared-child"]);
+    assert.equal((await stat(join(installRoot, "demo", "root-b", "SKILL.md"))).isFile(), true);
+    assert.match(await readFile(join(installRoot, "demo", "shared-child", "SKILL.md"), "utf8"), /Shared child v1/);
+  } finally {
+    restore();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("get blocks non-interactive overwrite when shared child version would change", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "skuare-get-shared-child-overwrite-"));
+  const installRoot = join(workspace, ".codex", "skills");
+  await createWrappedRoot(join(installRoot, "demo", "root-a"), installRoot, "demo/root-a", "1.0.0", [
+    { skill: "demo/shared-child", version: "1.0.0", resolved: "1.0.0" },
+  ]);
+  await writeInstalledSkill(join(installRoot, "demo", "shared-child"), "demo/shared-child", "1.0.0", "Shared child v1");
+
+  const restore = mockFetch({
+    "GET /api/v1/skills": new Response(JSON.stringify({
+      items: [{ skill_id: "demo/root-b", version: "1.0.0", name: "root-b", author: "demo", description: "Root B description" }],
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+    "GET /api/v1/skills/demo%2Froot-b/1.0.0": skillDetail("demo/root-b", "1.0.0", "Root B description", [
+      { skill: "demo/shared-child", version: "2.0.0", resolved: "2.0.0" },
+    ]),
+    "GET /api/v1/skills/demo%2Fshared-child/2.0.0": skillDetail("demo/shared-child", "2.0.0", "Shared child v2"),
+  });
+
+  try {
+    await assert.rejects(
+      () => new GetCommand().execute(createContext(workspace, ["demo/root-b@1.0.0"])),
+      /Overwrite confirmation required, but current session is not interactive\.[\s\S]*demo\/shared-child:1\.0\.0->2\.0\.0 \(shared with demo\/root-a\)/
+    );
+    await assert.rejects(stat(join(installRoot, "demo", "root-b", "SKILL.md")), /ENOENT/);
+    assert.match(await readFile(join(installRoot, "demo", "shared-child", "SKILL.md"), "utf8"), /Shared child v1/);
+  } finally {
+    restore();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("get cancels the whole install target when overwrite confirmation is rejected", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "skuare-get-shared-child-cancel-"));
+  const installRoot = join(workspace, ".codex", "skills");
+  await createWrappedRoot(join(installRoot, "demo", "root-a"), installRoot, "demo/root-a", "1.0.0", [
+    { skill: "demo/shared-child", version: "1.0.0", resolved: "1.0.0" },
+  ]);
+  await writeInstalledSkill(join(installRoot, "demo", "shared-child"), "demo/shared-child", "1.0.0", "Shared child v1");
+
+  const restore = mockFetch({
+    "GET /api/v1/skills": new Response(JSON.stringify({
+      items: [{ skill_id: "demo/root-b", version: "1.0.0", name: "root-b", author: "demo", description: "Root B description" }],
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+    "GET /api/v1/skills/demo%2Froot-b/1.0.0": skillDetail("demo/root-b", "1.0.0", "Root B description", [
+      { skill: "demo/shared-child", version: "2.0.0", resolved: "2.0.0" },
+    ]),
+    "GET /api/v1/skills/demo%2Fshared-child/2.0.0": skillDetail("demo/shared-child", "2.0.0", "Shared child v2"),
+  });
+
+  try {
+    await assert.rejects(
+      () => new InteractiveGetCommand(false).execute(createContext(workspace, ["demo/root-b@1.0.0"])),
+      /Install cancelled/
+    );
+    await assert.rejects(stat(join(installRoot, "demo", "root-b", "SKILL.md")), /ENOENT/);
+    assert.match(await readFile(join(installRoot, "demo", "shared-child", "SKILL.md"), "utf8"), /Shared child v1/);
+  } finally {
+    restore();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("deps --install follows the same overwrite confirmation rule for shared installed children", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "skuare-deps-shared-child-overwrite-"));
+  const installRoot = join(workspace, ".codex", "skills");
+  const rootDir = join(installRoot, "demo", "root-b");
+  await createWrappedRoot(rootDir, installRoot, "demo/root-b", "1.0.0", [
+    { skill: "demo/shared-child", version: "2.0.0", resolved: "2.0.0" },
+  ]);
+  await createWrappedRoot(join(installRoot, "demo", "root-a"), installRoot, "demo/root-a", "1.0.0", [
+    { skill: "demo/shared-child", version: "1.0.0", resolved: "1.0.0" },
+  ]);
+  await writeInstalledSkill(join(installRoot, "demo", "shared-child"), "demo/shared-child", "1.0.0", "Shared child v1");
+
+  const restore = mockFetch({
+    "GET /api/v1/skills/demo%2Fshared-child/2.0.0": skillDetail("demo/shared-child", "2.0.0", "Shared child v2"),
+  });
+
+  try {
+    await assert.rejects(
+      () => new DepsCommand().execute(createContext(workspace, ["--install", rootDir, "demo/shared-child"])),
+      /Overwrite confirmation required, but current session is not interactive\.[\s\S]*demo\/shared-child:1\.0\.0->2\.0\.0 \(shared with demo\/root-a\)/
+    );
+
+    const approvedLogs = await captureConsole(async () => {
+      await new InteractiveDepsCommand(true).execute(createContext(workspace, ["--install", rootDir, "demo/shared-child"]));
+    });
+    const approved = JSON.parse(approvedLogs.join("\n")) as {
+      confirmation_required: boolean;
+      overwrite_targets: Array<{ skills: Array<{ skill_id: string; shared_with: string[] }> }>;
+    };
+    assert.equal(approved.confirmation_required, true);
+    assert.equal(approved.overwrite_targets[0]?.skills[0]?.skill_id, "demo/shared-child");
+    assert.deepEqual(approved.overwrite_targets[0]?.skills[0]?.shared_with, ["demo/root-a"]);
+    assert.match(await readFile(join(installRoot, "demo", "shared-child", "SKILL.md"), "utf8"), /Shared child v2/);
+  } finally {
+    restore();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 async function createWrappedRoot(
   rootDir: string,
   installRoot: string,
@@ -239,6 +416,24 @@ async function createWrappedRoot(
     }, null, 2)}\n`,
     "utf8"
   );
+}
+
+async function writeInstalledSkill(
+  skillDir: string,
+  skillID: string,
+  version: string,
+  description: string,
+  deps: Array<{ skill: string; version: string; resolved: string }> = []
+): Promise<void> {
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(join(skillDir, "SKILL.md"), renderSkill(skillID, version, description), "utf8");
+  if (deps.length > 0) {
+    await writeFile(
+      join(skillDir, "skill-deps.lock.json"),
+      `${JSON.stringify({ lock_version: 1, dependencies: deps }, null, 2)}\n`,
+      "utf8"
+    );
+  }
 }
 
 function skillDetail(

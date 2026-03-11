@@ -209,13 +209,14 @@ Install skill and its dependencies to the local tool skill directory.
 
 **Usage:**
 ```bash
-skr get <skillRef> [version] [--global]
-skr get --rgx <pattern> [version] [--global]
+skr get <skillRef> [version] [--global] [--wrap]
+skr get --rgx <pattern> [version] [--global] [--wrap]
 ```
 
 **Options:**
 - `--rgx <pattern>` - Match skill by regex (must match exactly one skill)
 - `--global` - Install to global directory instead of workspace
+- `--wrap` - Install only the root skill and defer dependency subtree installation to `skr deps`
 
 **Installation Directories:**
 - Workspace (default): `<cwd>/.<tool>/skills/<skillID>/`
@@ -229,6 +230,9 @@ Where `<tool>` is the first configured LLM tool (codex/claudecode/custom).
 - Installs all dependencies as sibling directories (flat structure)
 - Uses latest version if version not specified
 - `skillRef` accepts `skillID`, `name`, and `author/name`
+- If existing local files would be overwritten, `skr get` shows an interactive confirmation in TTY
+- If the overwritten node is shared by other installed root skills, the confirmation includes those root skill IDs
+- In non-interactive sessions, overwrite attempts fail instead of silently changing local skills
 
 **Output:**
 JSON with installation summary:
@@ -237,6 +241,8 @@ JSON with installation summary:
 - `target` - Installation root directory
 - `skills` - List of installed skill IDs
 - `conflicts` - List of overwritten files (if any)
+- `confirmation_required` - Whether overwrite confirmation was required before install
+- `overwrite_targets` - Overwrite summary per target root, including `shared_with` root skills for shared child dependencies
 
 **Examples:**
 ```bash

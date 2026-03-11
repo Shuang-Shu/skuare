@@ -100,6 +100,34 @@ type RemovePlan = {
   removed: LocalInstalledSkill[];
   keptSharedDependencies: LocalInstalledSkill[];
 };
+type LocalInstallState = {
+  skills: Map<string, LocalInstalledSkill>;
+  rootConsumersBySkillID: Map<string, string[]>;
+};
+type InstallNodeStatus = "new" | "unchanged" | "overwrite-version" | "overwrite-content";
+type InstallNodePreview = {
+  skillID: string;
+  version: string;
+  role: "root" | "dependency";
+  status: InstallNodeStatus;
+  localVersion?: string;
+  changedFiles: string[];
+  addedFiles: string[];
+  sharedWith: string[];
+};
+type InstallTargetPreview = {
+  targetRoot: string;
+  tools: string[];
+  rootSkillID: string;
+  nodes: InstallNodePreview[];
+  requiresConfirmation: boolean;
+  summary: {
+    newSkills: number;
+    unchangedSkills: number;
+    overwriteSkills: number;
+    sharedSkills: number;
+  };
+};
 
 const WRAP_METADATA_FILE = ".skuare-wrap.json";
 
@@ -1042,6 +1070,264 @@ abstract class DependencyAwareCommand extends SkillCatalogCommand {
     };
   }
 
+  protected isInteractiveInstallSession(): boolean {
+    const stdin = process.stdin as { isTTY?: boolean };
+    const stdout = process.stdout as { isTTY?: boolean };
+    return !!stdin.isTTY && !!stdout.isTTY;
+  }
+
+  protected async loadLocalInstalledSkill(targetRoot: string, skillDir: string): Promise<LocalInstalledSkill> {
+    const root = resolve(targetRoot);
+    const skillID = normalizePath(relative(root, skillDir));
+    const skillPath = join(skillDir, "SKILL.md");
+    const skillContent = await readFile(skillPath, "utf8");
+    const skillMeta = parseSkillFrontmatter(skillContent);
+    const metadata = await this.readWrapMetadata(skillDir);
+    const lockPath = join(skillDir, "skill-deps.lock.json");
+    const plainPath = join(skillDir, "skill-deps.json");
+    const files: RemoteFile[] = [{ path: "SKILL.md", content: skillContent }];
+
+    const lockInfo = await stat(lockPath).catch(() => undefined);
+    if (lockInfo?.isFile()) {
+      files.push({ path: "skill-deps.lock.json", content: await readFile(lockPath, "utf8") });
+    }
+    const plainInfo = await stat(plainPath).catch(() => undefined);
+    if (plainInfo?.isFile()) {
+      files.push({ path: "skill-deps.json", content: await readFile(plainPath, "utf8") });
+    }
+
+    return {
+      skillID,
+      version: skillMeta.metadataVersion,
+      name: skillMeta.name,
+      author: skillMeta.metadataAuthor,
+      description: skillMeta.description,
+      skillDir,
+      installRoot: root,
+      metadata: metadata || undefined,
+      dependencies: this.parseDependencyRefs(files, skillDir),
+    };
+  }
+
+  protected async scanLocalInstallState(targetRoot: string): Promise<LocalInstallState> {
+    const skills = new Map<string, LocalInstalledSkill>();
+    for (const skillDir of await collectSkillDirs(resolve(targetRoot))) {
+      const skill = await this.loadLocalInstalledSkill(targetRoot, skillDir);
+      skills.set(skill.skillID, skill);
+    }
+
+    const directDependents = new Map<string, Set<string>>();
+    for (const skill of skills.values()) {
+      for (const dep of skill.dependencies) {
+        if (!skills.has(dep.skillID)) {
+          continue;
+        }
+        const existing = directDependents.get(dep.skillID);
+        if (existing) {
+          existing.add(skill.skillID);
+        } else {
+          directDependents.set(dep.skillID, new Set([skill.skillID]));
+        }
+      }
+    }
+
+    const roots = Array.from(skills.keys())
+      .filter((skillID) => !directDependents.has(skillID))
+      .sort((a, b) => a.localeCompare(b));
+    const rootConsumersBySkillID = new Map<string, string[]>();
+    const appendRootConsumer = (skillID: string, rootSkillID: string): void => {
+      const existing = rootConsumersBySkillID.get(skillID);
+      if (!existing) {
+        rootConsumersBySkillID.set(skillID, [rootSkillID]);
+        return;
+      }
+      if (!existing.includes(rootSkillID)) {
+        existing.push(rootSkillID);
+        existing.sort((a, b) => a.localeCompare(b));
+      }
+    };
+
+    const visitFromRoot = (rootSkillID: string, skillID: string, seen: Set<string>): void => {
+      if (seen.has(skillID)) {
+        return;
+      }
+      seen.add(skillID);
+      appendRootConsumer(skillID, rootSkillID);
+      const skill = skills.get(skillID);
+      if (!skill) {
+        return;
+      }
+      for (const dep of skill.dependencies) {
+        if (!skills.has(dep.skillID)) {
+          continue;
+        }
+        visitFromRoot(rootSkillID, dep.skillID, seen);
+      }
+    };
+
+    for (const rootSkillID of roots) {
+      visitFromRoot(rootSkillID, rootSkillID, new Set<string>());
+    }
+
+    return { skills, rootConsumersBySkillID };
+  }
+
+  protected async buildInstallTargetPreview(
+    targetRoot: string,
+    tools: string[],
+    nodes: SkillGraphNode[],
+    rootSkillID: string,
+    options?: { excludeRootConsumers?: string[] }
+  ): Promise<InstallTargetPreview> {
+    const localState = await this.scanLocalInstallState(targetRoot);
+    const installSkillIDs = new Set(nodes.map((node) => node.skillID));
+    const excludedRootConsumers = new Set((options?.excludeRootConsumers || []).map((value) => value.trim()).filter(Boolean));
+    const nodePreviews: InstallNodePreview[] = [];
+
+    for (const node of nodes) {
+      const local = localState.skills.get(node.skillID);
+      const changedFiles: string[] = [];
+      const addedFiles: string[] = [];
+
+      for (const file of node.files) {
+        const rel = normalizePath(file.path).replace(/^(\.\.\/)+/, "");
+        const dest = join(targetRoot, node.skillID, rel);
+        let oldContent: string | undefined;
+        try {
+          oldContent = await readFile(dest, "utf8");
+        } catch (err) {
+          if (!(err && typeof err === "object" && (err as { code?: string }).code === "ENOENT")) {
+            throw err;
+          }
+        }
+        if (oldContent === undefined) {
+          addedFiles.push(rel);
+        } else if (oldContent !== file.content) {
+          changedFiles.push(rel);
+        }
+      }
+
+      let status: InstallNodeStatus;
+      if (!local) {
+        status = "new";
+      } else if (changedFiles.length === 0 && addedFiles.length === 0) {
+        status = "unchanged";
+      } else if ((local.version || "").trim() !== node.version) {
+        status = "overwrite-version";
+      } else {
+        status = "overwrite-content";
+      }
+
+      const sharedWith = (localState.rootConsumersBySkillID.get(node.skillID) || [])
+        .filter((consumer) => !installSkillIDs.has(consumer) && !excludedRootConsumers.has(consumer))
+        .sort((a, b) => a.localeCompare(b));
+
+      nodePreviews.push({
+        skillID: node.skillID,
+        version: node.version,
+        role: node.skillID === rootSkillID ? "root" : "dependency",
+        status,
+        localVersion: local?.version,
+        changedFiles: changedFiles.sort((a, b) => a.localeCompare(b)),
+        addedFiles: addedFiles.sort((a, b) => a.localeCompare(b)),
+        sharedWith,
+      });
+    }
+
+    return {
+      targetRoot,
+      tools,
+      rootSkillID,
+      nodes: nodePreviews,
+      requiresConfirmation: nodePreviews.some((node) => node.status === "overwrite-version" || node.status === "overwrite-content"),
+      summary: {
+        newSkills: nodePreviews.filter((node) => node.status === "new").length,
+        unchangedSkills: nodePreviews.filter((node) => node.status === "unchanged").length,
+        overwriteSkills: nodePreviews.filter((node) => node.status === "overwrite-version" || node.status === "overwrite-content").length,
+        sharedSkills: nodePreviews.filter((node) => node.sharedWith.length > 0).length,
+      },
+    };
+  }
+
+  protected renderInstallTargetPreview(preview: InstallTargetPreview): string[] {
+    const lines = [
+      "",
+      "Install overwrite confirmation",
+      `  target: ${preview.targetRoot}`,
+      `  root skill: ${preview.rootSkillID}`,
+      `  tools: ${preview.tools.join(", ")}`,
+      `  summary: ${preview.summary.newSkills} new, ${preview.summary.unchangedSkills} unchanged, ${preview.summary.overwriteSkills} overwrite, ${preview.summary.sharedSkills} shared`,
+      "  overwrite items:",
+    ];
+    const overwriteNodes = preview.nodes.filter((node) => node.status === "overwrite-version" || node.status === "overwrite-content");
+    for (const node of overwriteNodes) {
+      const localVersion = node.localVersion || "unknown";
+      const statusLabel = node.status === "overwrite-version"
+        ? `${localVersion} -> ${node.version}`
+        : `${node.version} (content differs)`;
+      const fileParts: string[] = [];
+      if (node.changedFiles.length > 0) {
+        fileParts.push(`changed=${node.changedFiles.join(",")}`);
+      }
+      if (node.addedFiles.length > 0) {
+        fileParts.push(`added=${node.addedFiles.join(",")}`);
+      }
+      const sharedLabel = node.sharedWith.length > 0 ? `; shared with ${node.sharedWith.join(",")}` : "";
+      lines.push(`  - [${node.role}] ${node.skillID}: ${statusLabel}${sharedLabel}${fileParts.length > 0 ? `; ${fileParts.join("; ")}` : ""}`);
+    }
+    return lines;
+  }
+
+  protected async confirmInstallTargetPreview(preview: InstallTargetPreview): Promise<boolean> {
+    const { selectWithArrows } = await import("../ui/selectors.js");
+    process.stdout.write(`${this.renderInstallTargetPreview(preview).join("\n")}\n`);
+    const decision = await selectWithArrows({
+      options: ["overwrite", "cancel"],
+      labels: [
+        `overwrite ${preview.summary.overwriteSkills} existing skill(s) and continue`,
+        "cancel install",
+      ],
+      defaultIndex: 0,
+      title: "Select install action (use ↑/↓, Enter to confirm):",
+    });
+    return decision === "overwrite";
+  }
+
+  protected buildNonInteractiveOverwriteMessage(previews: InstallTargetPreview[]): string {
+    const lines = [
+      "Overwrite confirmation required, but current session is not interactive.",
+      "Re-run this command in a TTY session to review and confirm the install impact.",
+    ];
+    for (const preview of previews.filter((entry) => entry.requiresConfirmation)) {
+      const overwriteNodes = preview.nodes.filter((node) => node.status === "overwrite-version" || node.status === "overwrite-content");
+      const details = overwriteNodes
+        .map((node) => {
+          const localVersion = node.localVersion || "unknown";
+          const suffix = node.sharedWith.length > 0 ? ` (shared with ${node.sharedWith.join(",")})` : "";
+          return `${node.skillID}:${localVersion}->${node.version}${suffix}`;
+        })
+        .join(", ");
+      lines.push(`- ${preview.targetRoot}: ${details}`);
+    }
+    return lines.join("\n");
+  }
+
+  protected async ensureInstallTargetPreviewsConfirmed(previews: InstallTargetPreview[]): Promise<void> {
+    const pending = previews.filter((preview) => preview.requiresConfirmation);
+    if (pending.length === 0) {
+      return;
+    }
+    if (!this.isInteractiveInstallSession()) {
+      this.fail(this.buildNonInteractiveOverwriteMessage(pending));
+    }
+    for (const preview of pending) {
+      const confirmed = await this.confirmInstallTargetPreview(preview);
+      if (!confirmed) {
+        this.fail(`Install cancelled for ${preview.targetRoot}`);
+      }
+    }
+  }
+
   protected async readWrapMetadata(skillDir: string): Promise<WrapMetadata | undefined> {
     const filePath = join(skillDir, WRAP_METADATA_FILE);
     const info = await stat(filePath).catch(() => undefined);
@@ -1392,6 +1678,12 @@ export class GetCommand extends DependencyAwareCommand {
     const graph = await this.buildDependencyGraph(skillContext, rootNode);
     const sharedLocalDir = false;
     const nodesToInstall = wrapMode ? [graph.root] : this.collectSubtree(graph, graph.root.skillID);
+    const previews = await Promise.all(
+      installTargets.map((installTarget) =>
+        this.buildInstallTargetPreview(installTarget.targetRoot, installTarget.tools, nodesToInstall, graph.root.skillID)
+      )
+    );
+    await this.ensureInstallTargetPreviewsConfirmed(previews);
     const installedSkills = new Set<string>();
     const conflictFiles = new Set<string>();
     for (const installTarget of installTargets) {
@@ -1433,6 +1725,21 @@ export class GetCommand extends DependencyAwareCommand {
       target: primaryTargetRoot,
       targets: installTargets.map((entry) => ({ target: entry.targetRoot, tools: entry.tools })),
       shared_local_dir: sharedLocalDir,
+      confirmation_required: previews.some((preview) => preview.requiresConfirmation),
+      overwrite_targets: previews
+        .filter((preview) => preview.requiresConfirmation)
+        .map((preview) => ({
+          target: preview.targetRoot,
+          tools: preview.tools,
+          skills: preview.nodes
+            .filter((node) => node.status === "overwrite-version" || node.status === "overwrite-content")
+            .map((node) => ({
+              skill_id: node.skillID,
+              local_version: node.localVersion || null,
+              target_version: node.version,
+              shared_with: node.sharedWith,
+            })),
+        })),
       conflicts: result.conflictFiles.sort((a, b) => a.localeCompare(b)),
       skills: result.skills.sort((a, b) => a.localeCompare(b)),
     }, null, 2));
@@ -1510,12 +1817,32 @@ export class DepsCommand extends DependencyAwareCommand {
     }
 
     const installRoot = this.resolveDepsInstallRoot(context, descriptor, isGlobal);
-    const result = await this.installGraphNodes(installRoot, this.collectSubtree(graph, targetNode.skillID), { sharedLocalDir: false });
+    const nodesToInstall = this.collectSubtree(graph, targetNode.skillID);
+    const previews = [await this.buildInstallTargetPreview(installRoot, [], nodesToInstall, targetNode.skillID, {
+      excludeRootConsumers: [descriptor.rootSkillID],
+    })];
+    await this.ensureInstallTargetPreviewsConfirmed(previews);
+    const result = await this.installGraphNodes(installRoot, nodesToInstall, { sharedLocalDir: false });
     console.log(JSON.stringify({
       global: isGlobal,
       root_skill_id: descriptor.rootSkillID,
       target_skill_id: targetNode.skillID,
       install_root: installRoot,
+      confirmation_required: previews.some((preview) => preview.requiresConfirmation),
+      overwrite_targets: previews
+        .filter((preview) => preview.requiresConfirmation)
+        .map((preview) => ({
+          target: preview.targetRoot,
+          tools: preview.tools,
+          skills: preview.nodes
+            .filter((node) => node.status === "overwrite-version" || node.status === "overwrite-content")
+            .map((node) => ({
+              skill_id: node.skillID,
+              local_version: node.localVersion || null,
+              target_version: node.version,
+              shared_with: node.sharedWith,
+            })),
+        })),
       skills: result.skills.sort((a, b) => a.localeCompare(b)),
       conflicts: result.conflictFiles.sort((a, b) => a.localeCompare(b)),
     }, null, 2));

@@ -40,7 +40,7 @@ Default repository root path: `$HOME/.skuare`
 - `skr skill`: install the embedded skuare-authored LLM skill into `cwd`; generated `metadata.version` matches the current `skuare` version.
 - `skr build <skillName> [refSkill...] [--all]`: automatically create or append dependency files (`skill-deps.json` / `skill-deps.lock.json`) for local skill. When target skill doesn't exist, it will interactively create a minimal `SKILL.md` template first. Supports `alias=refSkill`; `--all` will use all valid skillDirs in current directory as reference skills.
 - `skr detail <skillName|skillID> [relativePath...]`: show files under a local installed skill. Defaults to the target skill's `SKILL.md` when no path is provided.
-- `skr get <skill-ref> [version] [--global] [--wrap]`: fetch Skill from remote repository. When directly targeting one skill, `peek/get/deps` share the same selector logic for `skillID`, `name`, and `author/name`.
+- `skr get <skill-ref> [version] [--global] [--wrap]`: fetch Skill from remote repository. When directly targeting one skill, `peek/get/deps` share the same selector logic for `skillID`, `name`, and `author/name`. If local files would be overwritten, `get` now requires interactive confirmation in TTY and refuses to overwrite in non-interactive sessions.
   - Without `--global`: install to `<cwd>/.{llmTool}/skills/<skillID>/`
   - With `--global`: install to every configured global tool skill directory; each default target is `~/.{llmTool}/skills/<skillID>/`
   - Without `--global`, `llmTool` is the first tool in the config file; with `--global`, all configured tools are targeted
@@ -50,6 +50,7 @@ Default repository root path: `$HOME/.skuare`
 Example:
 - If `a` depends on `b` and `c`, after executing `skr get a`, you'll get three skill directories `a`, `b`, `c` under the target tool directory.
 - If you execute `skr get a --wrap`, only `a` is installed locally first; use `skr deps --brief <rootSkillDir>` to inspect the full dependency graph and `skr deps --install <rootSkillDir> <depSkillID>` to install a subtree later.
+- If two installed root skills share the same child skill, overwrite confirmation will explicitly show which other installed root skills still depend on that child before writing the new version.
 
 ## Quick Start
 ```bash
