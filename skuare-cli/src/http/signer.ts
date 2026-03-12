@@ -28,7 +28,7 @@ export type SignatureHeaders = {
 export async function signWriteRequest(
   method: HttpMethod,
   path: string,
-  bodyText: string,
+  body: string | Uint8Array,
   auth: WriteAuth
 ): Promise<SignatureHeaders> {
   if (!auth.keyId) {
@@ -41,7 +41,8 @@ export async function signWriteRequest(
   const privateKeyPem = await readFile(auth.privateKeyFile, "utf8");
   const ts = Math.floor(Date.now() / 1000).toString();
   const nonce = randomBytes(16).toString("hex");
-  const bodyHash = createHash("sha256").update(bodyText).digest("hex");
+  const bodyBytes = typeof body === "string" ? Buffer.from(body) : Buffer.from(body);
+  const bodyHash = createHash("sha256").update(bodyBytes).digest("hex");
 
   const canonical = `${method}\n${path}\n${bodyHash}\n${ts}\n${nonce}`;
   const key = createPrivateKey(privateKeyPem);

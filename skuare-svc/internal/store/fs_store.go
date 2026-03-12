@@ -1,6 +1,8 @@
 package store
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"skuare-svc/internal/config"
 	"skuare-svc/internal/model"
@@ -54,14 +57,14 @@ func NewFSStoreWithFS(specDir string, fileSystem FileSystem) (*FSStore, error) {
 	return s, nil
 }
 
-func (s *FSStore) Create(req model.CreateSkillVersionRequest) (model.SkillEntry, error) {
+func (s *FSStore) Create(req model.CreateSkillUploadRequest) (model.SkillEntry, error) {
 	if err := validator.ValidateSkillID(req.SkillID); err != nil {
 		return model.SkillEntry{}, err
 	}
 	if err := validator.ValidateVersion(req.Version); err != nil {
 		return model.SkillEntry{}, err
 	}
-	uploadedSkillMD := ""
+	var uploadedSkillMD []byte
 	for _, f := range req.Files {
 		if err := validator.ValidateRelativeFilePath(f.Path); err != nil {
 			return model.SkillEntry{}, err
@@ -72,14 +75,14 @@ func (s *FSStore) Create(req model.CreateSkillVersionRequest) (model.SkillEntry,
 	}
 
 	skillMD := uploadedSkillMD
-	if skillMD == "" {
+	if len(skillMD) == 0 {
 		if err := validator.ValidateSkillSpec(req.Skill); err != nil {
 			return model.SkillEntry{}, err
 		}
-		skillMD = validator.RenderSkillMD(req.SkillID, req.Skill)
+		skillMD = []byte(validator.RenderSkillMD(req.SkillID, req.Skill))
 	}
 
-	name, desc, author, err := validator.ValidateSkillMD(req.SkillID, skillMD)
+	name, desc, author, err := validator.ValidateSkillMD(req.SkillID, string(skillMD))
 	if err != nil {
 		return model.SkillEntry{}, err
 	}
@@ -398,11 +401,15 @@ func (s *FSStore) indexPath() string {
 	return filepath.Join(s.systemDir(), "index.json")
 }
 
-func (s *FSStore) writeFile(path string, content string) error {
+func (s *FSStore) writeFile(path string, content []byte) error {
 	if err := s.fs.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return s.fs.WriteFile(path, []byte(content), 0o644)
+	return s.fs.WriteFile(path, content, 0o644)
+}
+
+func isUTF8TextFile(content []byte) bool {
+	return !bytes.Contains(content, []byte{0}) && utf8.Valid(content)
 }
 
 func (s *FSStore) lockSkill(skillID string) (func(), error) {
@@ -711,13 +718,15 @@ func (s *FSStore) listFiles(versionDir string) ([]model.FileSpec, error) {
 		if relErr != nil {
 			return nil
 		}
-		content, readErr := s.readTextFile(path)
+		content, encoding, size, readErr := s.readResponseFile(path)
 		if readErr != nil {
 			return nil
 		}
 		files = append(files, model.FileSpec{
-			Path:    filepath.ToSlash(rel),
-			Content: content,
+			Path:     filepath.ToSlash(rel),
+			Content:  content,
+			Encoding: encoding,
+			Size:     size,
 		})
 		return nil
 	})
@@ -725,6 +734,17 @@ func (s *FSStore) listFiles(versionDir string) ([]model.FileSpec, error) {
 		return files[i].Path < files[j].Path
 	})
 	return files, nil
+}
+
+func (s *FSStore) readResponseFile(path string) (string, string, int64, error) {
+	b, err := s.fs.ReadFile(path)
+	if err != nil {
+		return "", "", 0, err
+	}
+	if isUTF8TextFile(b) {
+		return string(b), "", int64(len(b)), nil
+	}
+	return base64.StdEncoding.EncodeToString(b), "base64", int64(len(b)), nil
 }
 
 func (s *FSStore) readTextFile(path string) (string, error) {

@@ -32,14 +32,15 @@ func main() {
 		writeAuthorizer = authz.NewSignatureVerifierWithMaxSkew(authzReg, time.Duration(cfg.AuthMaxSkewSec)*time.Second)
 	}
 
-	h := internalhttp.NewServer(cfg.Addr, svc, agentsmdSvc, writeAuthorizer, cfg.LocalMode)
+	h := internalhttp.NewServer(cfg.Addr, svc, agentsmdSvc, writeAuthorizer, cfg.LocalMode, cfg.MaxRequestBodySize)
 	log.Printf(
-		"skuare-svc listening on %s, spec_dir=%s, authorized_keys_file=%s, local_mode=%v, auth_max_skew_sec=%d",
+		"skuare-svc listening on %s, spec_dir=%s, authorized_keys_file=%s, local_mode=%v, auth_max_skew_sec=%d, max_request_body_size=%d",
 		cfg.Addr,
 		cfg.SpecDir,
 		cfg.AuthorizedKeysFile,
 		cfg.LocalMode,
 		cfg.AuthMaxSkewSec,
+		cfg.MaxRequestBodySize,
 	)
 	h.Spin()
 }

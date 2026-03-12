@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { UpdateCommand } from "./commands/write";
-import type { CommandContext, JsonValue } from "./commands/types";
+import type { CommandContext } from "./commands/types";
 
 test("update prompts with a version greater than remote maxVersion and reuses publish flow", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "skuare-update-"));
@@ -17,7 +17,7 @@ test("update prompts with a version greater than remote maxVersion and reuses pu
   });
 
   const requests: string[] = [];
-  const requestBodies: JsonValue[] = [];
+  const requestBodies: string[] = [];
   let prompted: { skillID: string; maxVersion: string; suggestedVersion: string } | undefined;
   const restore = mockFetch(async (input, init) => {
     const url = new URL(String(input));
@@ -39,7 +39,7 @@ test("update prompts with a version greater than remote maxVersion and reuses pu
       });
     }
     if (key === "POST /api/v1/skills") {
-      requestBodies.push(JSON.parse(String(init?.body ?? "{}")) as JsonValue);
+      requestBodies.push(decodeLatin1(toBuffer(init?.body)));
       return jsonResponse({
         skill_id: "demo-skill",
         version: "1.10.1",
@@ -81,8 +81,7 @@ test("update prompts with a version greater than remote maxVersion and reuses pu
       "GET /api/v1/skills/demo-skill",
       "POST /api/v1/skills",
     ]);
-    const body = requestBodies[0] as Record<string, JsonValue>;
-    assert.equal(body.version, "1.10.1");
+    assert.match(requestBodies[0], /"version":"1\.10\.1"/);
     assert.match(logs.join("\n"), /"version": "1.10.1"/);
     const updatedSkill = await readFile(join(skillDir, "SKILL.md"), "utf8");
     assert.match(updatedSkill, /version: "1.10.1"/);
@@ -225,4 +224,18 @@ async function captureConsole(run: () => Promise<void>): Promise<string[]> {
   } finally {
     console.log = original;
   }
+}
+
+function toBuffer(body: BodyInit | null | undefined): Buffer {
+  if (!body) {
+    return Buffer.alloc(0);
+  }
+  if (typeof body === "string") {
+    return Buffer.from(body);
+  }
+  return Buffer.from(body as Uint8Array);
+}
+
+function decodeLatin1(input: Uint8Array): string {
+  return new TextDecoder("latin1").decode(input);
 }

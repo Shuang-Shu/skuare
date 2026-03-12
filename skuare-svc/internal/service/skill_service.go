@@ -14,6 +14,10 @@ func NewSkillService(store store.Store) *SkillService {
 }
 
 func (s *SkillService) Create(req model.CreateSkillVersionRequest) (model.SkillEntry, error) {
+	return s.store.Create(req.ToUploadRequest())
+}
+
+func (s *SkillService) CreateUpload(req model.CreateSkillUploadRequest) (model.SkillEntry, error) {
 	return s.store.Create(req)
 }
 

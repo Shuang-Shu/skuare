@@ -28,7 +28,7 @@ func TestFSStoreCRUD(t *testing.T) {
 		},
 	}
 
-	entry, err := s.Create(req)
+	entry, err := s.Create(req.ToUploadRequest())
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestFSStoreCreateRespectsUploadedSkillMD(t *testing.T) {
 		},
 	}
 
-	if _, err := s.Create(req); err != nil {
+	if _, err := s.Create(req.ToUploadRequest()); err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
 
@@ -155,7 +155,7 @@ func TestFSStorePersistsAuthorFromSkillMetadata(t *testing.T) {
 		},
 	}
 
-	entry, err := s.Create(req)
+	entry, err := s.Create(req.ToUploadRequest())
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -225,11 +225,11 @@ func TestFSStoreCreateDuplicateWithoutForceReturnsAlreadyExists(t *testing.T) {
 		},
 	}
 
-	if _, err := s.Create(req); err != nil {
+	if _, err := s.Create(req.ToUploadRequest()); err != nil {
 		t.Fatalf("first Create failed: %v", err)
 	}
 
-	_, err = s.Create(req)
+	_, err = s.Create(req.ToUploadRequest())
 	if !errors.Is(err, ErrAlreadyExists) {
 		t.Fatalf("expected ErrAlreadyExists, got %v", err)
 	}
@@ -242,14 +242,14 @@ func TestFSStoreUsesAnonymousDirectoryWhenAuthorMissing(t *testing.T) {
 		t.Fatalf("NewFSStore failed: %v", err)
 	}
 
-	entry, err := s.Create(model.CreateSkillVersionRequest{
+	entry, err := s.Create((model.CreateSkillVersionRequest{
 		SkillID: "demo-skill",
 		Version: "1.0.0",
 		Skill: model.SkillSpec{
 			Description: "demo description",
 			Overview:    "demo overview",
 		},
-	})
+	}).ToUploadRequest())
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -282,13 +282,13 @@ func TestFSStoreRejectsAuthorContainingPathSeparator(t *testing.T) {
 		"",
 	}, "\n")
 
-	_, err = s.Create(model.CreateSkillVersionRequest{
+	_, err = s.Create((model.CreateSkillVersionRequest{
 		SkillID: "bad-author-skill",
 		Version: "1.0.0",
 		Files: []model.FileSpec{
 			{Path: "SKILL.md", Content: skillMD},
 		},
-	})
+	}).ToUploadRequest())
 	if err == nil || !strings.Contains(err.Error(), "invalid metadata.author") {
 		t.Fatalf("expected invalid metadata.author error, got %v", err)
 	}
@@ -389,7 +389,7 @@ func TestFSStoreCreateForceOverwritesExistingVersion(t *testing.T) {
 			{Path: "notes/old.txt", Content: "old content"},
 		},
 	}
-	if _, err := s.Create(firstReq); err != nil {
+	if _, err := s.Create(firstReq.ToUploadRequest()); err != nil {
 		t.Fatalf("first Create failed: %v", err)
 	}
 
@@ -402,7 +402,7 @@ func TestFSStoreCreateForceOverwritesExistingVersion(t *testing.T) {
 			{Path: "notes/new.txt", Content: "new content"},
 		},
 	}
-	entry, err := s.Create(secondReq)
+	entry, err := s.Create(secondReq.ToUploadRequest())
 	if err != nil {
 		t.Fatalf("force Create failed: %v", err)
 	}
@@ -427,5 +427,64 @@ func TestFSStoreCreateForceOverwritesExistingVersion(t *testing.T) {
 	}
 	if !strings.Contains(files["SKILL.md"], "second description") {
 		t.Fatalf("expected SKILL.md to be overwritten, got %q", files["SKILL.md"])
+	}
+}
+
+func TestFSStoreGetVersionBase64EncodesBinaryFiles(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewFSStore(dir)
+	if err != nil {
+		t.Fatalf("NewFSStore failed: %v", err)
+	}
+
+	req := model.CreateSkillUploadRequest{
+		SkillID: "demo-skill",
+		Version: "1.0.0",
+		Files: []model.UploadedFile{
+			{
+				Path: "SKILL.md",
+				Content: []byte(strings.Join([]string{
+					"---",
+					"name: demo-skill",
+					"metadata:",
+					"  version: 1.0.0",
+					"description: demo description",
+					"---",
+					"",
+					"# demo-skill",
+					"",
+					"## Overview",
+					"demo overview",
+					"",
+				}, "\n")),
+			},
+			{
+				Path:    "assets/icon.bin",
+				Content: []byte{0x00, 0x01, 0x02, 0xff},
+			},
+		},
+	}
+
+	if _, err := s.Create(req); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	detail, err := s.GetVersion("demo-skill", "1.0.0")
+	if err != nil {
+		t.Fatalf("GetVersion failed: %v", err)
+	}
+
+	files := map[string]model.FileSpec{}
+	for _, file := range detail.Files {
+		files[file.Path] = file
+	}
+	if files["assets/icon.bin"].Encoding != "base64" {
+		t.Fatalf("expected base64 encoding, got %+v", files["assets/icon.bin"])
+	}
+	if files["assets/icon.bin"].Content != "AAEC/w==" {
+		t.Fatalf("unexpected base64 content: %q", files["assets/icon.bin"].Content)
+	}
+	if files["SKILL.md"].Encoding != "" {
+		t.Fatalf("expected text file to omit encoding, got %+v", files["SKILL.md"])
 	}
 }

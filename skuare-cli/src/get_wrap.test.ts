@@ -73,6 +73,31 @@ test("get --wrap installs only the root skill and writes wrap metadata", async (
   }
 });
 
+test("get installs binary files returned as base64-encoded remote files", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "skuare-get-binary-"));
+  const binary = Buffer.from([0x00, 0x01, 0x02, 0xff]);
+  const restore = mockFetch({
+    "GET /api/v1/skills": new Response(JSON.stringify({
+      items: [{ skill_id: "demo/root", version: "1.0.0", name: "root", author: "demo", description: "Root description" }],
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+    "GET /api/v1/skills/demo%2Froot/1.0.0": skillDetail("demo/root", "1.0.0", "Root description", [], [
+      { path: "assets/icon.bin", content: binary.toString("base64"), encoding: "base64" },
+    ]),
+  });
+
+  try {
+    await new GetCommand().execute(createContext(workspace, ["demo/root@1.0.0"]));
+    const installed = await readFile(join(workspace, ".codex", "skills", "demo", "root", "assets", "icon.bin"));
+    assert.deepEqual(installed, binary);
+  } finally {
+    restore();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("get reports circular dependencies instead of silently skipping them", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "skuare-get-cycle-"));
   const restore = mockFetch({
@@ -486,7 +511,7 @@ function skillDetail(
   version: string,
   description: string,
   deps: Array<{ skill: string; version: string; resolved: string }> = [],
-  extraFiles: Array<{ path: string; content: string }> = []
+  extraFiles: Array<{ path: string; content: string; encoding?: string }> = []
 ): Response {
   const files = [{ path: "SKILL.md", content: renderSkill(skillID, version, description) }];
   if (deps.length > 0) {

@@ -7,12 +7,15 @@ import (
 	"strconv"
 )
 
+const DefaultMaxRequestBodySize = 64 << 20
+
 type Config struct {
 	Addr               string
 	SpecDir            string
 	AuthorizedKeysFile string
 	LocalMode          bool
 	AuthMaxSkewSec     int
+	MaxRequestBodySize int
 }
 
 func Load() Config {
@@ -49,7 +52,14 @@ func Load() Config {
 			defaultAuthMaxSkewSec = v
 		}
 	}
+	defaultMaxRequestBodySize := DefaultMaxRequestBodySize
+	if raw := os.Getenv("SKUARE_MAX_REQUEST_BODY_SIZE_BYTES"); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
+			defaultMaxRequestBodySize = v
+		}
+	}
 	flag.IntVar(&cfg.AuthMaxSkewSec, "auth-max-skew-sec", defaultAuthMaxSkewSec, "Max allowed signature timestamp skew in seconds")
+	flag.IntVar(&cfg.MaxRequestBodySize, "max-request-body-size-bytes", defaultMaxRequestBodySize, "Max allowed HTTP request body size in bytes")
 	flag.Parse()
 
 	cfg.SpecDir = filepath.Clean(cfg.SpecDir)
@@ -59,6 +69,9 @@ func Load() Config {
 	cfg.AuthorizedKeysFile = filepath.Clean(cfg.AuthorizedKeysFile)
 	if cfg.AuthMaxSkewSec <= 0 {
 		cfg.AuthMaxSkewSec = 300
+	}
+	if cfg.MaxRequestBodySize <= 0 {
+		cfg.MaxRequestBodySize = DefaultMaxRequestBodySize
 	}
 	return cfg
 }
