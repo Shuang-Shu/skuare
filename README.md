@@ -36,7 +36,7 @@ Default repository root path: `$HOME/.skuare`
 - Dependency description file: `skill-deps.json`
 - Dependency lock file: `skill-deps.lock.json`
 - `skr publish --dir <skill-dir> [--force|-f]`: read dependency description and recursively upload dependent Skills to remote repository; `--force/-f` overwrites an existing version.
-- `skr update <author>/<skillName> <newSkillDir>`: query the remote skill's `maxVersion`, only allow a higher version, prefill a suggested version in interactive mode, and rewrite local `SKILL.md metadata.version` before publishing.
+- `skr update <skillRef> <newSkillDir>`: query the remote skill's `maxVersion`, only allow a higher version, and rewrite local `SKILL.md metadata.version` before publishing. `skillRef` supports `skillID`, `name`, and `author/name`; ambiguous matches reuse the same interactive selector as `get/peek`.
 - `skr skill`: install the embedded skuare-authored LLM skill into `cwd`; generated `metadata.version` matches the current `skuare` version.
 - `skr build <skillName> [refSkill...] [--all]`: automatically create or append dependency files (`skill-deps.json` / `skill-deps.lock.json`) for local skill. When target skill doesn't exist, it will interactively create a minimal `SKILL.md` template first. Supports `alias=refSkill`; `--all` will use all valid skillDirs in current directory as reference skills.
 - `skr config [--global]`: print the matched config file path and JSON content. By default it walks upward from `cwd` until `/` and returns the first `.skuare/config.json`; `--global` reads `~/.skuare/config.json`.
@@ -135,7 +135,7 @@ skr deps --install ./.codex/skills/skuare/observability-orchestrator skuare/core
 ```bash
 skr publish --dir ./skills/observability-orchestrator
 skr publish --dir ./skills/observability-orchestrator --force
-skr update ShuangShu/observability-orchestrator ./examples/observability-orchestrator
+skr update observability-orchestrator ./examples/observability-orchestrator
 skr create --dir ./skills/observability-orchestrator
 skr delete observability-orchestrator 1.0.0
 ```

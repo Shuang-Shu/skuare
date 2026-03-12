@@ -15,6 +15,7 @@ import { discoverSkillDirs } from "../utils/skill_workspace";
 import { buildMultipartFormData, buildTarGzBundle } from "../utils/upload_bundle";
 import { compareVersions, maxVersion, suggestNextVersion } from "../utils/versioning";
 import { DeleteAgentsMDCommand, PublishAgentsMDCommand } from "./agentsmd";
+import { SkillCatalogCommand } from "./query";
 import { normalizeResourceContext } from "./resource_type";
 
 type ReadlineInterface = Awaited<ReturnType<typeof readlinePromises.createInterface>>;
@@ -27,11 +28,6 @@ type CreateSource =
 type SkillDependency = {
   skill: string;
   version: string;
-};
-
-type RemoteSkillListItem = {
-  skill_id?: JsonValue;
-  author?: JsonValue;
 };
 
 type PreparedPublishRequest = {
@@ -492,7 +488,7 @@ export class CreateCommand extends PublishCommand {
   }
 }
 
-export class UpdateCommand extends BaseCommand {
+export class UpdateCommand extends SkillCatalogCommand {
   readonly name = "update";
   readonly description = "Publish a new version for an existing remote skill";
 
@@ -504,23 +500,22 @@ export class UpdateCommand extends BaseCommand {
 
     const [targetRef, newSkillDir] = normalized.context.args;
     if (!targetRef || !newSkillDir || normalized.context.args.length !== 2) {
-      this.fail("Usage: skuare update <author>/<skillName> <newSkillDir>");
+      this.fail("Usage: skuare update <skillRef> <newSkillDir>");
     }
 
-    const { author, skillName } = this.parseAuthorSkillRef(targetRef);
     const skillFile = await this.resolveSkillFilePath(newSkillDir);
     const raw = await readFile(skillFile, "utf8");
     const frontmatter = parseSkillFrontmatter(raw);
-    if (frontmatter.name !== skillName) {
-      this.fail(`Local SKILL.md name (${frontmatter.name || "(empty)"}) must match command skillName (${skillName})`);
-    }
-    if (frontmatter.metadataAuthor !== author) {
-      this.fail(`Local SKILL.md metadata.author (${frontmatter.metadataAuthor || "(empty)"}) must match command author (${author})`);
-    }
+    const selected = await this.resolveCatalogSkillCandidate(normalized.context, targetRef, undefined, {
+      notFoundMessage: (value) => `Remote skill not found for ${value}`,
+      selectionTitle: "Multiple skills found, select one (use ↑/↓, Enter to confirm):",
+      includeSelectedVersion: false,
+    });
+    this.assertLocalSkillMatchesRemote(frontmatter, selected.name, selected.author);
 
-    const remote = await this.loadRemoteSkill(normalized.context, author, skillName);
+    const remote = await this.loadRemoteSkill(normalized.context, selected.skillID, selected.author);
     const suggestedVersion = suggestNextVersion(remote.maxVersion);
-    const chosenVersion = await this.resolveUpdatedVersion(skillName, frontmatter.metadataVersion, remote.maxVersion, suggestedVersion);
+    const chosenVersion = await this.resolveUpdatedVersion(remote.skillID, frontmatter.metadataVersion, remote.maxVersion, suggestedVersion);
 
     if (compareVersions(chosenVersion, remote.maxVersion) <= 0) {
       this.fail(`metadata.version (${chosenVersion}) must be greater than remote maxVersion (${remote.maxVersion})`);
@@ -572,15 +567,25 @@ export class UpdateCommand extends BaseCommand {
     this.fail(`Local metadata.version (${localVersion || "(empty)"}) must be greater than remote maxVersion (${remoteMaxVersion}). Suggested: ${suggestedVersion}`);
   }
 
-  private parseAuthorSkillRef(input: string): { author: string; skillName: string } {
-    const parts = input.split("/");
-    if (parts.length !== 2 || !parts[0].trim() || !parts[1].trim()) {
-      this.fail(`Invalid target skill ref: ${input}. Expected <author>/<skillName>`);
+  private assertLocalSkillMatchesRemote(
+    frontmatter: ReturnType<typeof parseSkillFrontmatter>,
+    remoteName: string,
+    remoteAuthor: string
+  ): void {
+    if (frontmatter.name !== remoteName) {
+      this.fail(`Local SKILL.md name (${frontmatter.name || "(empty)"}) must match selected remote skill name (${remoteName || "(empty)"})`);
     }
-    return {
-      author: parts[0].trim(),
-      skillName: parts[1].trim(),
-    };
+
+    const localAuthor = this.normalizeAuthor(frontmatter.metadataAuthor);
+    const expectedAuthor = this.normalizeAuthor(remoteAuthor);
+    if (localAuthor !== expectedAuthor) {
+      this.fail(`Local SKILL.md metadata.author (${frontmatter.metadataAuthor || "(empty)"}) must match selected remote author (${remoteAuthor || "(empty)"})`);
+    }
+  }
+
+  private normalizeAuthor(input: string): string {
+    const trimmed = input.trim();
+    return trimmed || "undefined";
   }
 
   private async resolveSkillFilePath(skillDir: string): Promise<string> {
@@ -599,30 +604,12 @@ export class UpdateCommand extends BaseCommand {
 
   private async loadRemoteSkill(
     context: CommandContext,
-    author: string,
-    skillName: string
+    skillID: string,
+    expectedAuthor: string
   ): Promise<{ skillID: string; maxVersion: string }> {
-    const listResp = await callApi({
-      method: "GET",
-      path: `/api/v1/skills?q=${encodeURIComponent(skillName)}`,
-      server: context.server,
-      silent: true,
-    });
-    const itemsRaw = (listResp.data && typeof listResp.data === "object" && !Array.isArray(listResp.data))
-      ? (listResp.data as { items?: JsonValue }).items
-      : undefined;
-    const items = Array.isArray(itemsRaw) ? itemsRaw : [];
-    const matches = items
-      .filter((item): item is RemoteSkillListItem => !!item && typeof item === "object" && !Array.isArray(item))
-      .filter((item) => String(item.skill_id || "").trim() === skillName && String(item.author || "").trim() === author);
-
-    if (matches.length === 0) {
-      this.fail(`Remote skill not found for ${author}/${skillName}`);
-    }
-
     const overviewResp = await callApi({
       method: "GET",
-      path: `/api/v1/skills/${encodeURIComponent(skillName)}`,
+      path: `/api/v1/skills/${encodeURIComponent(skillID)}`,
       server: context.server,
       silent: true,
     });
@@ -630,17 +617,17 @@ export class UpdateCommand extends BaseCommand {
       ? (overviewResp.data as { versions?: JsonValue; author?: JsonValue; skill_id?: JsonValue })
       : {};
     const remoteAuthor = String(overview.author || "").trim();
-    if (remoteAuthor && remoteAuthor !== author) {
-      this.fail(`Remote skill ${skillName} belongs to author ${remoteAuthor}, not ${author}`);
+    if (this.normalizeAuthor(remoteAuthor) !== this.normalizeAuthor(expectedAuthor)) {
+      this.fail(`Remote skill ${skillID} belongs to author ${remoteAuthor || "(empty)"}, not ${expectedAuthor || "(empty)"}`);
     }
     const versions = Array.isArray(overview.versions)
       ? overview.versions.map((item) => String(item).trim()).filter(Boolean)
       : [];
     if (versions.length === 0) {
-      this.fail(`No versions found for remote skill: ${skillName}`);
+      this.fail(`No versions found for remote skill: ${skillID}`);
     }
     return {
-      skillID: String(overview.skill_id || skillName).trim() || skillName,
+      skillID: String(overview.skill_id || skillID).trim() || skillID,
       maxVersion: maxVersion(versions),
     };
   }

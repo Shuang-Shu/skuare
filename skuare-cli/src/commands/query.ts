@@ -30,7 +30,7 @@ type NormalizedSkillItem = {
 type ParsedSkillSelectorInput =
   | { type: "author-name"; author: string; name: string; version?: string }
   | { type: "name-only"; name: string; version?: string };
-type SkillSelectionCandidate = {
+export type SkillSelectionCandidate = {
   skillID: string;
   version: string;
   name: string;
@@ -445,7 +445,7 @@ function matchesSkillSelectorCandidate(
   return candidate.skillID === input.name || candidate.name === input.name;
 }
 
-abstract class SkillCatalogCommand extends BaseCommand {
+export abstract class SkillCatalogCommand extends BaseCommand {
   protected compileRegex(pattern: string): RegExp {
     try {
       return new RegExp(pattern);
@@ -559,7 +559,33 @@ abstract class SkillCatalogCommand extends BaseCommand {
     if (matched.length === 1) {
       return matched[0];
     }
-    return this.selectSkillCandidate(matched, options.selectionTitle);
+    return this.selectCatalogSkillCandidate(matched, options.selectionTitle);
+  }
+
+  protected async resolveCatalogSkillCandidate(
+    context: CommandContext,
+    input: string,
+    explicitVersion: string | undefined,
+    options: {
+      allowMissingFallback?: boolean;
+      selectionTitle: string;
+      notFoundMessage: (input: string) => string;
+      includeSelectedVersion?: boolean;
+    }
+  ): Promise<SkillSelectionCandidate> {
+    const parsed = withExplicitSelectorVersion(parseSkillSelectorInput(input), explicitVersion);
+    return this.resolveSkillCandidate(
+      parsed,
+      this.createCatalogSkillCandidates(await this.loadCatalogItems(context), {
+        collapseVersions: !options.includeSelectedVersion,
+      }),
+      {
+        allowMissingFallback: options.allowMissingFallback,
+        matchVersion: false,
+        notFoundMessage: options.notFoundMessage,
+        selectionTitle: options.selectionTitle,
+      }
+    );
   }
 
   protected async resolveCatalogSkillSelection(
@@ -574,18 +600,7 @@ abstract class SkillCatalogCommand extends BaseCommand {
     }
   ): Promise<{ skillID: string; version?: string }> {
     const parsed = withExplicitSelectorVersion(parseSkillSelectorInput(input), explicitVersion);
-    const selected = await this.resolveSkillCandidate(
-      parsed,
-      this.createCatalogSkillCandidates(await this.loadCatalogItems(context), {
-        collapseVersions: !options.includeSelectedVersion,
-      }),
-      {
-        allowMissingFallback: options.allowMissingFallback,
-        matchVersion: false,
-        notFoundMessage: options.notFoundMessage,
-        selectionTitle: options.selectionTitle,
-      }
-    );
+    const selected = await this.resolveCatalogSkillCandidate(context, input, explicitVersion, options);
     return {
       skillID: selected.skillID,
       version: parsed.version || (options.includeSelectedVersion ? selected.version || undefined : undefined),
@@ -600,7 +615,7 @@ abstract class SkillCatalogCommand extends BaseCommand {
     });
   }
 
-  private async selectSkillCandidate(
+  protected async selectCatalogSkillCandidate(
     candidates: SkillSelectionCandidate[],
     selectionTitle: string
   ): Promise<SkillSelectionCandidate> {

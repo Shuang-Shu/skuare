@@ -143,8 +143,9 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
   {
     create: () => new UpdateCommand(),
     help: {
-      usage: ["update <author>/<skillName> <newSkillDir>", "Publish a new version for an existing remote skill"],
+      usage: ["update <skillRef> <newSkillDir>", "Publish a new version for an existing remote skill"],
       details: [
+        "                                       <skillRef> supports skillID | name | author/name; ambiguous matches reuse the shared selector,",
         "                                       Queries remote maxVersion, prompts with a greater suggested version,",
         "                                       then writes metadata.version back to <newSkillDir>/SKILL.md before publish",
       ],
