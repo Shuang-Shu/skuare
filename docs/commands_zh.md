@@ -127,6 +127,28 @@ CLI 参数 > 工作区配置 > 全局配置 > 默认值
 
 ---
 
+### config
+显示当前命中的配置文件内容与路径。
+
+**用法：**
+```bash
+skr config [--global]
+```
+
+**行为：**
+- 默认模式从 `cwd` 开始逐级向上查找，直到 `/`
+- 返回这条祖先链上最先命中的 `.skuare/config.json`
+- `--global` 直接读取 `~/.skuare/config.json`
+- 如果目标作用域内没有配置文件，会明确报错
+
+**输出：**
+JSON 包含：
+- `scope` - `workspace` 或 `global`
+- `path` - 命中的配置文件路径
+- `config` - 解析后的 JSON 配置内容
+
+---
+
 ### health
 远程服务器健康检查。
 

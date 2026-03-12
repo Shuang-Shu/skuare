@@ -127,6 +127,28 @@ CLI args > workspace config > global config > defaults
 
 ---
 
+### config
+Show the matched config file content and path.
+
+**Usage:**
+```bash
+skr config [--global]
+```
+
+**Behavior:**
+- Default mode starts from `cwd` and walks upward until `/`
+- Returns the first `.skuare/config.json` found on that ancestor chain
+- `--global` reads `~/.skuare/config.json` directly
+- Fails clearly when no config file exists in the requested scope
+
+**Output:**
+JSON with:
+- `scope` - `workspace` or `global`
+- `path` - Matched config file path
+- `config` - Parsed JSON config content
+
+---
+
 ### health
 Health check for remote server.
 

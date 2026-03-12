@@ -1,5 +1,6 @@
 import type { Command } from "./types";
 import { HealthCommand } from "./admin";
+import { ConfigCommand } from "./config";
 import { InitCommand } from "./init";
 import { DepsCommand, DetailCommand, GetCommand, ListCommand, PeekCommand, RemoveCommand, ValidateCommand } from "./query";
 import { SkillCommand } from "./skill";
@@ -24,6 +25,16 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
   {
     create: () => new InitCommand(),
     help: { usage: ["init", "Interactive init for global/workspace config"] },
+  },
+  {
+    create: () => new ConfigCommand(),
+    help: {
+      usage: ["config [--global]", "Show config file content and path"],
+      details: [
+        "                                       Default: walk upward from cwd and return the first .skuare/config.json found before /",
+        "                                       --global: read ~/.skuare/config.json directly",
+      ],
+    },
   },
   {
     create: () => new SkillCommand(),

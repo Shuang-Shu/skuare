@@ -18,7 +18,7 @@ Core value: version-controlled management of "Skill content + dependencies" — 
 Default repository root path: `$HOME/.skuare`
 
 ## Command Groups
-- Pure local commands: `help`, `version`, `init`, `build`, `format`, `detail`
+- Pure local commands: `help`, `version`, `init`, `config`, `build`, `format`, `detail`
   - Main purpose: generate or modify local config, Skill files, dependency files
   - Do not access server by default
 - Server read-only commands: `health`, `list`, `peek`, `validate`
@@ -39,6 +39,7 @@ Default repository root path: `$HOME/.skuare`
 - `skr update <author>/<skillName> <newSkillDir>`: query the remote skill's `maxVersion`, only allow a higher version, prefill a suggested version in interactive mode, and rewrite local `SKILL.md metadata.version` before publishing.
 - `skr skill`: install the embedded skuare-authored LLM skill into `cwd`; generated `metadata.version` matches the current `skuare` version.
 - `skr build <skillName> [refSkill...] [--all]`: automatically create or append dependency files (`skill-deps.json` / `skill-deps.lock.json`) for local skill. When target skill doesn't exist, it will interactively create a minimal `SKILL.md` template first. Supports `alias=refSkill`; `--all` will use all valid skillDirs in current directory as reference skills.
+- `skr config [--global]`: print the matched config file path and JSON content. By default it walks upward from `cwd` until `/` and returns the first `.skuare/config.json`; `--global` reads `~/.skuare/config.json`.
 - `skr detail <skillName|skillID> [relativePath...]`: show files under a local installed skill. Defaults to the target skill's `SKILL.md` when no path is provided.
 - `skr get <skill-ref> [version] [--global] [--wrap]`: fetch Skill from remote repository. When directly targeting one skill, `peek/get/deps` share the same selector logic for `skillID`, `name`, and `author/name`. If local files would be overwritten, `get` now requires interactive confirmation in TTY and refuses to overwrite in non-interactive sessions.
   - Without `--global`: install to every configured tool's workspace skill directory, by default `<cwd>/.{llmTool}/skills/<skillID>/`
@@ -73,7 +74,9 @@ skr init
 # 4) Health check
 skr health
 
-# 5) Pure local commands: init/build/format/detail
+# 5) Pure local commands: init/config/build/format/detail
+skr config
+skr config --global
 skr build observability-orchestrator core-time-utils report-generator
 skr build observability-orchestrator --all
 skr format ./skills/observability-orchestrator
