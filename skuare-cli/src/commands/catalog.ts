@@ -100,7 +100,7 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
     help: {
       usage: ["remove <skillID|author/name|name> [--global] [--deps]", "Remove local installed skills"],
       details: [
-        "                                       Default mode removes from <cwd>/.{tool}/skills/; --global removes from configured global skill roots",
+        "                                       Default mode removes from every configured workspace tool skill root; --global removes from every configured global skill root",
         "                                       - <skillID>: exact local target, no interactive selector",
         "                                       - <author>/<name> or <name>: interactive multi-select when multiple installed candidates match",
         "                                       - --deps: recursively remove the target subtree, but keep shared dependencies still referenced elsewhere",

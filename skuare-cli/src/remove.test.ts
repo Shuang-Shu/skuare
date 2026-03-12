@@ -26,6 +26,71 @@ test("remove deletes an exact local skillID and leaves siblings untouched", asyn
   }
 });
 
+test("remove deletes installed skills from all configured workspace tool roots", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "skuare-remove-multi-tool-"));
+  const codexRoot = join(workspace, ".codex", "skills");
+  const qwenRoot = join(workspace, ".qwen", "skills");
+  try {
+    await createInstalledSkill(codexRoot, "demo/root", "1.0.0");
+    await createInstalledSkill(qwenRoot, "demo/root", "1.0.0");
+
+    const logs = await captureConsole(async () => {
+      await new RemoveCommand().execute(createContext(workspace, ["demo/root"], {
+        llmTools: ["codex", "qwen"],
+      }));
+    });
+    const output = JSON.parse(logs.join("\n")) as {
+      removed: string[];
+      targets: Array<{ target: string; removed: string[]; missing: boolean }>;
+    };
+
+    assert.deepEqual(output.removed, ["demo/root"]);
+    assert.equal(output.targets.length, 2);
+    assert.deepEqual(
+      output.targets.map((entry) => entry.target).sort((a, b) => a.localeCompare(b)),
+      [codexRoot, qwenRoot].sort((a, b) => a.localeCompare(b))
+    );
+    assert.deepEqual(output.targets.map((entry) => entry.removed), [["demo/root"], ["demo/root"]]);
+    assert.deepEqual(output.targets.map((entry) => entry.missing), [false, false]);
+    await assert.rejects(stat(join(codexRoot, "demo", "root", "SKILL.md")), /ENOENT/);
+    await assert.rejects(stat(join(qwenRoot, "demo", "root", "SKILL.md")), /ENOENT/);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("remove respects custom workspace tool skill dirs for every configured tool", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "skuare-remove-custom-tool-dir-"));
+  const codexRoot = join(workspace, ".codex", "skills");
+  const qwenRoot = join(workspace, "custom-tools", "qwen-skills");
+  try {
+    await createInstalledSkill(codexRoot, "demo/root", "1.0.0");
+    await createInstalledSkill(qwenRoot, "demo/root", "1.0.0");
+
+    const logs = await captureConsole(async () => {
+      await new RemoveCommand().execute(createContext(workspace, ["demo/root"], {
+        llmTools: ["codex", "qwen"],
+        toolSkillDirs: { qwen: "custom-tools/qwen-skills" },
+      }));
+    });
+    const output = JSON.parse(logs.join("\n")) as {
+      removed: string[];
+      targets: Array<{ target: string; removed: string[]; missing: boolean }>;
+    };
+
+    assert.deepEqual(output.removed, ["demo/root"]);
+    assert.equal(output.targets.length, 2);
+    assert.deepEqual(
+      output.targets.map((entry) => entry.target).sort((a, b) => a.localeCompare(b)),
+      [codexRoot, qwenRoot].sort((a, b) => a.localeCompare(b))
+    );
+    await assert.rejects(stat(join(codexRoot, "demo", "root", "SKILL.md")), /ENOENT/);
+    await assert.rejects(stat(join(qwenRoot, "demo", "root", "SKILL.md")), /ENOENT/);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("remove reports missing targets without throwing", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "skuare-remove-missing-"));
   try {

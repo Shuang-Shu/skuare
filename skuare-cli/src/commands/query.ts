@@ -774,9 +774,8 @@ abstract class DependencyAwareCommand extends SkillCatalogCommand {
   }
 
   protected resolveInstallTargets(context: CommandContext, isGlobal: boolean): InstallTargetPlan[] {
-    const tools = isGlobal
-      ? Array.from(new Set((context.llmTools || []).map((value) => value.trim()).filter(Boolean)))
-      : [this.resolvePrimaryTool(context.llmTools)];
+    const configuredTools = Array.from(new Set((context.llmTools || []).map((value) => value.trim()).filter(Boolean)));
+    const tools = configuredTools.length > 0 ? configuredTools : [this.resolvePrimaryTool(context.llmTools)];
     const targets = new Map<string, string[]>();
     for (const tool of tools) {
       const targetRoot = this.resolveInstallTargetRoot(context.cwd, tool, context.toolSkillDirs[tool], isGlobal);

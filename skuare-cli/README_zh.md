@@ -75,7 +75,7 @@
   - `deps --tree <rootSkillDir> <depSkillID|author/name@version|author/name|name>`：输出目标依赖的文件列表
   - `deps --install <rootSkillDir> <depSkillID|author/name@version|author/name|name> [--global]`：按需安装目标依赖子树
   - `remove <skillID|author/name|name> [--global] [--deps]`
-  - 默认从当前 `cwd` 对应 tool 的本地 skill 目录删除；`--global` 时会从所有已配置工具的全局 skill 根目录删除
+  - 默认从所有已配置工具的工作区 skill 根目录删除；`--global` 时会从所有已配置工具的全局 skill 根目录删除
   - 传 `skillID` 时按精确目录删除；传 `author/name` 或 `name` 且命中多个已安装 skill 时，会进入交互式多选
   - 默认只删除指定 skill 本体；`--deps` 会递归删除其依赖子树，但会保留仍被其他已安装 skill 引用的共享依赖
 - server 写命令：
