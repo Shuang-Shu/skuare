@@ -21,6 +21,7 @@ func TestLoadDefaultsToSkuareSkillsRoot(t *testing.T) {
 	t.Setenv("SKUARE_AUTHORIZED_KEYS_FILE", "")
 	t.Setenv("SKUARE_LOCAL_MODE", "")
 	t.Setenv("SKUARE_AUTH_MAX_SKEW_SEC", "")
+	t.Setenv("SKUARE_MAX_REQUEST_BODY_SIZE_BYTES", "")
 	os.Args = []string{"skuare-svc-test"}
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
 
@@ -33,5 +34,8 @@ func TestLoadDefaultsToSkuareSkillsRoot(t *testing.T) {
 	wantAuthorizedKeys := filepath.Join(wantSpecDir, SystemDirName, AuthorizedKeysRel)
 	if cfg.AuthorizedKeysFile != wantAuthorizedKeys {
 		t.Fatalf("AuthorizedKeysFile=%q, want=%q", cfg.AuthorizedKeysFile, wantAuthorizedKeys)
+	}
+	if cfg.MaxRequestBodySize != DefaultMaxRequestBodySize {
+		t.Fatalf("MaxRequestBodySize=%d, want=%d", cfg.MaxRequestBodySize, DefaultMaxRequestBodySize)
 	}
 }

@@ -12,6 +12,7 @@ import * as readlinePromises from "node:readline/promises";
 import { collectPositionalArgs } from "../utils/command_args";
 import { parseSkillFrontmatter, parseSkillMarkdown, readSkillMetadataDefaults, renderSkillTemplate, withUpdatedSkillMetadata } from "../utils/skill_manifest";
 import { discoverSkillDirs } from "../utils/skill_workspace";
+import { buildMultipartFormData, buildTarGzBundle } from "../utils/upload_bundle";
 import { compareVersions, maxVersion, suggestNextVersion } from "../utils/versioning";
 import { DeleteAgentsMDCommand, PublishAgentsMDCommand } from "./agentsmd";
 import { normalizeResourceContext } from "./resource_type";
@@ -31,6 +32,13 @@ type SkillDependency = {
 type RemoteSkillListItem = {
   skill_id?: JsonValue;
   author?: JsonValue;
+};
+
+type PreparedPublishRequest = {
+  body: JsonValue | Uint8Array;
+  contentType?: string;
+  skillID: string;
+  version: string;
 };
 
 /**
@@ -54,16 +62,16 @@ export class PublishCommand extends BaseCommand {
       if (source.kind !== "json") {
         await this.uploadDependencies(source, skillContext, forceUpload);
       }
-      const rawBody = source.kind === "json"
-        ? (await this.readJsonFile(source.path) as JsonValue)
-        : (await this.buildRequestFromSkillSource(skillContext.args, source) as JsonValue);
-      const body = this.applyForceFlag(rawBody, forceUpload);
+      const prepared = source.kind === "json"
+        ? this.prepareJsonPublishRequest(await this.readJsonFile(source.path) as JsonValue, forceUpload)
+        : await this.buildRequestFromSkillSource(skillContext.args, source, forceUpload);
 
       try {
         const resp = await callApi({
           method: "POST",
           path: "/api/v1/skills",
-          body,
+          body: prepared.body,
+          contentType: prepared.contentType,
           server: skillContext.server,
           auth: skillContext.auth,
           silent: true,
@@ -71,13 +79,12 @@ export class PublishCommand extends BaseCommand {
         this.printCreateResult(resp.data);
       } catch (err) {
         if (!this.isAlreadyExistsError(err)) {
-          throw err;
+          this.rethrowPublishError(err, prepared);
         }
-        const info = this.extractSkillVersion(body);
         if (forceUpload) {
-          this.fail(`Force publish failed because the server still reported an existing version: ${info.skillID}@${info.version}`);
+          this.fail(`Force publish failed because the server still reported an existing version: ${prepared.skillID}@${prepared.version}`);
         }
-        console.log(`${this.yellow("[WARN]")} skill version already exists: ${info.skillID}@${info.version}`);
+        console.log(`${this.yellow("[WARN]")} skill version already exists: ${prepared.skillID}@${prepared.version}`);
         console.log(`${this.yellow("[TIP]")} Retry with --force or -f to overwrite the existing version.`);
       }
     }
@@ -128,22 +135,20 @@ export class PublishCommand extends BaseCommand {
       await this.uploadOneDependency(child, skillsRoot, context, uploaded, visiting, forceUpload);
     }
 
-    const depBody = this.applyForceFlag(
-      await this.buildRequestFromSkillSource([], { kind: "dir", path: depDir }),
-      forceUpload
-    );
+    const prepared = await this.buildRequestFromSkillSource([], { kind: "dir", path: depDir }, forceUpload);
     try {
       await callApi({
         method: "POST",
         path: "/api/v1/skills",
-        body: depBody,
+        body: prepared.body,
+        contentType: prepared.contentType,
         server: context.server,
         auth: context.auth,
         silent: true,
       });
     } catch (err) {
       if (!this.isAlreadyExistsError(err)) {
-        throw err;
+        this.rethrowPublishError(err, prepared);
       }
     }
 
@@ -196,6 +201,16 @@ export class PublishCommand extends BaseCommand {
     return args.includes("--force") || args.includes("-f");
   }
 
+  private prepareJsonPublishRequest(body: JsonValue, forceUpload: boolean): PreparedPublishRequest {
+    const nextBody = this.applyForceFlag(body, forceUpload);
+    const info = this.extractSkillVersion(nextBody);
+    return {
+      body: nextBody,
+      skillID: info.skillID,
+      version: info.version,
+    };
+  }
+
   private applyForceFlag(body: JsonValue, forceUpload: boolean): JsonValue {
     if (!forceUpload) {
       return body;
@@ -219,6 +234,29 @@ export class PublishCommand extends BaseCommand {
     return { skillID: "(unknown)", version: "(unknown)" };
   }
 
+  private rethrowPublishError(err: unknown, request: PreparedPublishRequest): never {
+    if (this.isPayloadTooLargeError(err)) {
+      this.fail(
+        `Publish request too large for ${request.skillID}@${request.version}. The default skuare-svc upload limit is 64MB now; reduce the bundle size or increase --max-request-body-size-bytes / SKUARE_MAX_REQUEST_BODY_SIZE_BYTES on the server.`
+      );
+    }
+    throw err;
+  }
+
+  private isPayloadTooLargeError(err: unknown): boolean {
+    if (isDomainError(err)) {
+      const details = err.details;
+      if (details && typeof details === "object" && !Array.isArray(details)) {
+        const status = (details as { status?: unknown }).status;
+        if (status === 413) {
+          return true;
+        }
+      }
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    return message.includes("HTTP 413");
+  }
+
   private printCreateResult(data: JsonValue | string | null): void {
     if (data && typeof data === "object" && !Array.isArray(data)) {
       const row = data as Record<string, JsonValue>;
@@ -237,7 +275,11 @@ export class PublishCommand extends BaseCommand {
     console.log(JSON.stringify(data, null, 2));
   }
 
-  private async buildRequestFromSkillSource(args: string[], source: CreateSource): Promise<JsonValue> {
+  private async buildRequestFromSkillSource(
+    args: string[],
+    source: Exclude<CreateSource, { kind: "json" }>,
+    forceUpload: boolean
+  ): Promise<PreparedPublishRequest> {
     const versionFromArg = this.parseOptionValue(args, "--version");
     const skillIdFromArg = this.parseOptionValue(args, "--skill-id");
     const resolvedSkillFile = source.kind === "skill"
@@ -260,18 +302,38 @@ export class PublishCommand extends BaseCommand {
       this.fail(`Version mismatch: --version=${versionFromArg.trim()} but SKILL.md frontmatter version=${version}`);
     }
 
-    const files = await this.collectSideFiles(sourceDir, resolvedSkillFile);
-
-    return {
+    const files = await this.collectSideFiles(sourceDir);
+    const bundle = buildTarGzBundle(files);
+    const metadata = JSON.stringify({
       skill_id: skillID,
       version,
+      force: forceUpload,
       skill: {
         description: parsed.description,
         overview: parsed.overview,
         sections: parsed.sections,
       },
-      files,
-    } satisfies JsonValue;
+    } satisfies JsonValue);
+    const multipart = buildMultipartFormData([
+      {
+        name: "metadata",
+        content: metadata,
+        contentType: "application/json",
+      },
+      {
+        name: "bundle",
+        filename: `${skillID}-${version}.tar.gz`,
+        content: bundle,
+        contentType: "application/gzip",
+      },
+    ]);
+
+    return {
+      body: multipart.body,
+      contentType: multipart.contentType,
+      skillID,
+      version,
+    };
   }
 
   private async resolveCreateSources(args: string[], cwd: string): Promise<CreateSource[]> {
@@ -389,12 +451,13 @@ export class PublishCommand extends BaseCommand {
     }
   }
 
-  private async collectSideFiles(dir: string, _skillFilePath: string): Promise<Array<{ path: string; content: string }>> {
-    const out: Array<{ path: string; content: string }> = [];
+  private async collectSideFiles(dir: string): Promise<Array<{ path: string; content: Uint8Array }>> {
+    const out: Array<{ path: string; content: Uint8Array }> = [];
     const root = resolve(dir);
 
     const walk = async (current: string): Promise<void> => {
       const entries = await readdir(current, { withFileTypes: true });
+      entries.sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name));
       for (const entry of entries) {
         const full = join(current, entry.name);
         if (entry.isDirectory()) {
@@ -405,7 +468,7 @@ export class PublishCommand extends BaseCommand {
           continue;
         }
         const rel = relative(root, full).split("\\").join("/");
-        const content = await readFile(full, "utf8");
+        const content = await readFile(full);
         out.push({ path: posix.normalize(rel), content });
       }
     };

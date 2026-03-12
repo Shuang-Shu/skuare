@@ -83,9 +83,9 @@
   - `deps --install` 与 `get` 共用同一套覆盖确认语义：TTY 中交互确认，非交互环境直接失败
 - server 写命令：
   - `publish --file <json> [--force|-f]` -> `POST /api/v1/skills`
-  - `publish --skill <SKILL.md> [--skill-id] [--version] [--force|-f]` -> `POST /api/v1/skills`
-  - `publish --dir <skillDir> [--skill-id] [--version] [--force|-f]` -> `POST /api/v1/skills`
-  - `publish <path...> [--all] [--skill-id] [--version] [--force|-f]` -> 自动检测每个 path：`SKILL.md` 文件 -> 目录 -> JSON 回退
+  - `publish --skill <SKILL.md> [--skill-id] [--version] [--force|-f]` -> `POST /api/v1/skills`；CLI will pack the whole skill directory as `multipart/form-data` (`metadata` JSON + `bundle.tar.gz`)
+  - `publish --dir <skillDir> [--skill-id] [--version] [--force|-f]` -> `POST /api/v1/skills`；binary files are preserved inside the bundle
+  - `publish <path...> [--all] [--skill-id] [--version] [--force|-f]` -> 自动检测每个 path：`SKILL.md` 文件 -> 目录 -> JSON 回退；目录模式沿用 multipart bundle 上传
   - `update <author>/<skillName> <newSkillDir>` -> query remote `maxVersion`, rewrite local `metadata.version` to a greater value, then reuse `publish --dir`
   - `publish --type agentsmd|agmd --file <AGENTS.md> --agentsmd-id <id> --version <v>` -> `POST /api/v1/agentsmd`
   - `publish --type agentsmd|agmd --dir <dir>` -> 自动读取 `<dir>/AGENTS.md` 与可选 `<dir>/agentsmd-meta.json`
@@ -215,8 +215,10 @@ skuare --server http://127.0.0.1:15657 publish --file /tmp/create-skill.json
 # 从 SKILL.md 发布（自动解析 frontmatter 的 name/description + metadata.version + 正文）
 skuare --server http://127.0.0.1:15657 publish --skill ./skills/pdf-reader/SKILL.md
 
-# 从目录发布（自动查找 <dir>/SKILL.md，并打包目录下其他文件到 files）
+# 从目录发布（自动查找 <dir>/SKILL.md，并将整个 skill 目录打成 multipart bundle）
 skuare --server http://127.0.0.1:15657 publish --dir ./skills/pdf-reader
+
+# skuare-svc 默认允许 64MB 上传；可通过 --max-request-body-size-bytes 或 SKUARE_MAX_REQUEST_BODY_SIZE_BYTES 调整
 
 # 自动检测多个 source 路径；可叠加 --all 扫描当前目录所有子目录
 skuare --server http://127.0.0.1:15657 publish ./skills/pdf-reader ./skills/api-debugger
@@ -334,6 +336,7 @@ skuare --server http://127.0.0.1:15657 \
   - 在支持端口监听的环境执行联调脚本。
 
 ## 变更记录
+- 2026-03-13：`publish --skill/--dir` 改为 multipart bundle 上传，支持二进制文件；`get/deps --install` 同步支持远端二进制文件安装。
 - 2026-02-23：新增后端联动命令（health/list/get/create/delete/validate/reindex）与 `--server` 全局参数。
 - 2026-02-23：CLI 命令入口简化为 `skuare` 与 `skr`，并保留 `skuare-cli` 兼容别名。
 - 2026-02-23：升级写操作鉴权为数字签名：新增 `--key-id`、`--privkey-file` 与对应环境变量。

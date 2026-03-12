@@ -24,8 +24,12 @@ type healthResponse struct {
 	Name   string `json:"name"`
 }
 
-func NewServer(addr string, svc *service.SkillService, agentsmdSvc *service.AgentsMDService, authorizer authz.WriteAuthorizer, localMode bool) *server.Hertz {
-	h := server.Default(server.WithHostPorts(addr))
+func NewServer(addr string, svc *service.SkillService, agentsmdSvc *service.AgentsMDService, authorizer authz.WriteAuthorizer, localMode bool, maxRequestBodySize int) *server.Hertz {
+	h := server.Default(
+		server.WithHostPorts(addr),
+		server.WithMaxRequestBodySize(maxRequestBodySize),
+		server.WithMaxKeepBodySize(maxRequestBodySize),
+	)
 	handler := &Handler{svc: svc, agentsmdSvc: agentsmdSvc, authorizer: authorizer, localMode: localMode}
 
 	h.GET("/healthz", handler.healthz)
@@ -55,6 +59,17 @@ func (h *Handler) healthz(_ context.Context, c *app.RequestContext) {
 
 func (h *Handler) createSkill(_ context.Context, c *app.RequestContext) {
 	if !h.requireWritePermission(c) {
+		return
+	}
+	if isMultipartSkillUpload(c) {
+		req, err := parseMultipartSkillUpload(c)
+		if err != nil {
+			writeError(c, err)
+			return
+		}
+		writeJSONCall(c, 201, func() (model.SkillEntry, error) {
+			return h.svc.CreateUpload(req)
+		})
 		return
 	}
 	var req model.CreateSkillVersionRequest

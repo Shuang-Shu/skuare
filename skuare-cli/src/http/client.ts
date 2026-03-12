@@ -12,7 +12,8 @@ import { DomainError } from "../domain/errors";
 export type ApiRequestOptions = {
   method: HttpMethod;
   path: string;
-  body?: JsonValue;
+  body?: JsonValue | Uint8Array;
+  contentType?: string;
   auth?: { keyId: string; privateKeyFile: string };
   server: string;
   silent?: boolean;
@@ -59,26 +60,37 @@ export async function checkServerConnectivity(
  * @param options 请求选项
  */
 export async function callApi(options: ApiRequestOptions): Promise<ApiResponse> {
-  const { method, path, body, auth, server, silent } = options;
+  const { method, path, body, contentType, auth, server, silent } = options;
   const url = buildUrl(path, server);
-  const bodyText = body ? JSON.stringify(body) : "";
   const headers: Record<string, string> = {};
+  let bodyValue: string | Uint8Array | undefined;
 
-  if (body) {
-    headers["content-type"] = "application/json";
+  if (body !== undefined) {
+    if (body instanceof Uint8Array) {
+      bodyValue = body;
+      if (contentType) {
+        headers["content-type"] = contentType;
+      }
+    } else {
+      bodyValue = JSON.stringify(body);
+      headers["content-type"] = contentType || "application/json";
+    }
   }
 
   if (needsSignature(method, path) && hasSigningCredentials(auth)) {
-    const signed = await signWriteRequest(method, path, bodyText, auth);
+    const signed = await signWriteRequest(method, path, bodyValue || "", auth);
     Object.assign(headers, signed);
   }
 
   let resp: Response;
+  const fetchBody = bodyValue === undefined
+    ? undefined
+    : (typeof bodyValue === "string" ? bodyValue : Buffer.from(bodyValue));
   try {
     resp = await fetch(url, {
       method,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
-      body: bodyText || undefined,
+      body: fetchBody,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

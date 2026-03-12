@@ -8,6 +8,14 @@ type CreateSkillVersionRequest struct {
 	Files   []FileSpec `json:"files,omitempty"`
 }
 
+type CreateSkillUploadRequest struct {
+	SkillID string
+	Version string
+	Force   bool
+	Skill   SkillSpec
+	Files   []UploadedFile
+}
+
 type SkillSpec struct {
 	Overview    string         `json:"overview"`
 	Description string         `json:"description"`
@@ -20,8 +28,15 @@ type SkillSection struct {
 }
 
 type FileSpec struct {
-	Path    string `json:"path"`
-	Content string `json:"content"`
+	Path     string `json:"path"`
+	Content  string `json:"content"`
+	Encoding string `json:"encoding,omitempty"`
+	Size     int64  `json:"size,omitempty"`
+}
+
+type UploadedFile struct {
+	Path    string
+	Content []byte
 }
 
 type SkillEntry struct {
@@ -48,4 +63,21 @@ type SkillOverview struct {
 type Index struct {
 	UpdatedAt string       `json:"updated_at"`
 	Entries   []SkillEntry `json:"entries"`
+}
+
+func (req CreateSkillVersionRequest) ToUploadRequest() CreateSkillUploadRequest {
+	files := make([]UploadedFile, 0, len(req.Files))
+	for _, file := range req.Files {
+		files = append(files, UploadedFile{
+			Path:    file.Path,
+			Content: []byte(file.Content),
+		})
+	}
+	return CreateSkillUploadRequest{
+		SkillID: req.SkillID,
+		Version: req.Version,
+		Force:   req.Force,
+		Skill:   req.Skill,
+		Files:   files,
+	}
 }

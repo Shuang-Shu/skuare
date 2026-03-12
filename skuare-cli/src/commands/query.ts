@@ -16,7 +16,7 @@ import { compareVersions } from "../utils/versioning";
 import { DetailAgentsMDCommand, GetAgentsMDCommand, ListAgentsMDCommand, PeekAgentsMDCommand } from "./agentsmd";
 import { normalizeResourceContext } from "./resource_type";
 
-type RemoteFile = { path: string; content: string };
+type RemoteFile = { path: string; content: Buffer };
 type InstallResult = { skills: string[]; conflictFiles: string[] };
 type InstallTargetPlan = { targetRoot: string; tools: string[] };
 type NormalizedSkillItem = {
@@ -167,7 +167,7 @@ function parseMetadataAuthorFromSkillFiles(filesValue: JsonValue | undefined): s
     if (path !== "SKILL.md") {
       continue;
     }
-    return parseSkillFrontmatter(String(file.content || "")).metadataAuthor;
+    return parseSkillFrontmatter(decodeRemoteFileJsonContent(file)).metadataAuthor;
   }
   return "";
 }
@@ -177,11 +177,40 @@ function parseSkillIdentityFromRemoteFiles(files: RemoteFile[]): { name: string;
   if (!skillFile) {
     return { name: "", author: "" };
   }
-  const parsed = parseSkillFrontmatter(skillFile.content);
+  const parsed = parseSkillFrontmatter(decodeRemoteTextFile(skillFile, "SKILL.md"));
   return {
     name: parsed.name,
     author: parsed.metadataAuthor,
   };
+}
+
+function decodeRemoteFileJsonContent(file: Record<string, JsonValue>): string {
+  const encoding = String(file.encoding || "").trim().toLowerCase();
+  const content = String(file.content || "");
+  if (encoding === "base64") {
+    return Buffer.from(content, "base64").toString("utf8");
+  }
+  return content;
+}
+
+function decodeRemoteTextFile(file: RemoteFile, sourceLabel: string): string {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(file.content);
+  } catch {
+    throw new Error(`Expected UTF-8 text file in ${sourceLabel}: ${file.path}`);
+  }
+}
+
+function buffersEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function buildDisplayIdentity(input: {
@@ -844,7 +873,7 @@ abstract class DependencyAwareCommand extends SkillCatalogCommand {
     }
     let parsed: unknown;
     try {
-      parsed = JSON.parse(depFile.content) as unknown;
+      parsed = JSON.parse(decodeRemoteTextFile(depFile, sourceLabel)) as unknown;
     } catch {
       this.fail(`Invalid dependency file JSON in ${sourceLabel}: ${depFile.path}`);
     }
@@ -924,13 +953,20 @@ abstract class DependencyAwareCommand extends SkillCatalogCommand {
       if (!path) {
         continue;
       }
-      files.push({ path, content: String(file.content || "") });
+      const encoding = String(file.encoding || "").trim().toLowerCase();
+      const content = String(file.content || "");
+      files.push({
+        path,
+        content: encoding === "base64"
+          ? Buffer.from(content, "base64")
+          : Buffer.from(content, "utf8"),
+      });
     }
     if (files.length === 0) {
       this.fail(`Skill ${skillID}@${version} does not contain downloadable files`);
     }
     const skillFile = files.find((file) => normalizePath(file.path) === "SKILL.md");
-    const metadata = skillFile ? parseSkillFrontmatter(skillFile.content) : { name: "", description: "", metadataVersion: "", metadataAuthor: "" };
+    const metadata = skillFile ? parseSkillFrontmatter(decodeRemoteTextFile(skillFile, `${skillID}@${version}`)) : { name: "", description: "", metadataVersion: "", metadataAuthor: "" };
     return {
       skillID: String(row.skill_id || skillID).trim() || skillID,
       version: String(row.version || version).trim() || version,
@@ -1030,21 +1066,21 @@ abstract class DependencyAwareCommand extends SkillCatalogCommand {
       const rel = normalizePath(file.path).replace(/^(\.\.\/)+/, "");
       const dest = join(skillDir, rel);
       await mkdir(dirname(dest), { recursive: true });
-      let oldContent: string | undefined;
+      let oldContent: Buffer | undefined;
       try {
-        oldContent = await readFile(dest, "utf8");
+        oldContent = await readFile(dest);
       } catch (err) {
         if (!(err && typeof err === "object" && (err as { code?: string }).code === "ENOENT")) {
           throw err;
         }
       }
-      if (oldContent === file.content) {
+      if (oldContent && buffersEqual(oldContent, file.content)) {
         continue;
       }
       if (options?.sharedLocalDir && oldContent !== undefined) {
         conflicts.push(normalizePath(join(skillID, rel)));
       }
-      await writeFile(dest, file.content, "utf8");
+      await writeFile(dest, file.content);
     }
     return conflicts;
   }
@@ -1084,15 +1120,15 @@ abstract class DependencyAwareCommand extends SkillCatalogCommand {
     const metadata = await this.readWrapMetadata(skillDir);
     const lockPath = join(skillDir, "skill-deps.lock.json");
     const plainPath = join(skillDir, "skill-deps.json");
-    const files: RemoteFile[] = [{ path: "SKILL.md", content: skillContent }];
+    const files: RemoteFile[] = [{ path: "SKILL.md", content: Buffer.from(skillContent, "utf8") }];
 
     const lockInfo = await stat(lockPath).catch(() => undefined);
     if (lockInfo?.isFile()) {
-      files.push({ path: "skill-deps.lock.json", content: await readFile(lockPath, "utf8") });
+      files.push({ path: "skill-deps.lock.json", content: Buffer.from(await readFile(lockPath, "utf8"), "utf8") });
     }
     const plainInfo = await stat(plainPath).catch(() => undefined);
     if (plainInfo?.isFile()) {
-      files.push({ path: "skill-deps.json", content: await readFile(plainPath, "utf8") });
+      files.push({ path: "skill-deps.json", content: Buffer.from(await readFile(plainPath, "utf8"), "utf8") });
     }
 
     return {
@@ -1191,9 +1227,9 @@ abstract class DependencyAwareCommand extends SkillCatalogCommand {
       for (const file of node.files) {
         const rel = normalizePath(file.path).replace(/^(\.\.\/)+/, "");
         const dest = join(targetRoot, node.skillID, rel);
-        let oldContent: string | undefined;
+        let oldContent: Buffer | undefined;
         try {
-          oldContent = await readFile(dest, "utf8");
+          oldContent = await readFile(dest);
         } catch (err) {
           if (!(err && typeof err === "object" && (err as { code?: string }).code === "ENOENT")) {
             throw err;
@@ -1201,7 +1237,7 @@ abstract class DependencyAwareCommand extends SkillCatalogCommand {
         }
         if (oldContent === undefined) {
           addedFiles.push(rel);
-        } else if (oldContent !== file.content) {
+        } else if (!buffersEqual(oldContent, file.content)) {
           changedFiles.push(rel);
         }
       }
@@ -1369,17 +1405,17 @@ abstract class DependencyAwareCommand extends SkillCatalogCommand {
     const skillContent = await readFile(skillPath, "utf8");
     const skillMeta = parseSkillFrontmatter(skillContent);
     const wrapMetadata = await this.readWrapMetadata(rootDir);
-    const files: RemoteFile[] = [{ path: "SKILL.md", content: skillContent }];
+    const files: RemoteFile[] = [{ path: "SKILL.md", content: Buffer.from(skillContent, "utf8") }];
     const lockPath = join(rootDir, "skill-deps.lock.json");
     const plainPath = join(rootDir, "skill-deps.json");
 
     const lockInfo = await stat(lockPath).catch(() => undefined);
     if (lockInfo?.isFile()) {
-      files.push({ path: "skill-deps.lock.json", content: await readFile(lockPath, "utf8") });
+      files.push({ path: "skill-deps.lock.json", content: Buffer.from(await readFile(lockPath, "utf8"), "utf8") });
     }
     const plainInfo = await stat(plainPath).catch(() => undefined);
     if (plainInfo?.isFile()) {
-      files.push({ path: "skill-deps.json", content: await readFile(plainPath, "utf8") });
+      files.push({ path: "skill-deps.json", content: Buffer.from(await readFile(plainPath, "utf8"), "utf8") });
     }
 
     const rootSkillID = wrapMetadata?.root_skill_id || skillMeta.name || basename(rootDir);
@@ -1425,7 +1461,7 @@ abstract class DependencyAwareCommand extends SkillCatalogCommand {
   protected async readLocalInstalledSkill(skillDir: string, installRoot: string): Promise<LocalInstalledSkill> {
     const descriptor = await this.loadLocalRootDescriptor(skillDir);
     const skillFile = descriptor.files.find((file) => normalizePath(file.path) === "SKILL.md");
-    const parsed = parseSkillFrontmatter(skillFile?.content || "");
+    const parsed = parseSkillFrontmatter(skillFile ? decodeRemoteTextFile(skillFile, skillDir) : "");
     const localSkillID = normalizePath(relative(installRoot, descriptor.rootDir));
     const display = buildDisplayIdentity({
       skillID: localSkillID,

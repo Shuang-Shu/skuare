@@ -22,6 +22,7 @@
   - `--authorized-keys-file`：已注册公钥文件路径（可由 `SKUARE_AUTHORIZED_KEYS_FILE` 覆盖），默认 `<specDir>/.skuare/authorized_keys`
   - `--local`：本地模式，启用后写接口跳过签名鉴权（可由 `SKUARE_LOCAL_MODE` 覆盖，默认 `false`）
   - `--auth-max-skew-sec`：签名时间戳允许偏移秒数（可由 `SKUARE_AUTH_MAX_SKEW_SEC` 覆盖，默认 `300`）
+  - `--max-request-body-size-bytes`：最大请求体大小，默认 `67108864`（64MB，可由 `SKUARE_MAX_REQUEST_BODY_SIZE_BYTES` 覆盖）
 - LOCAL 模式：
   - 服务端 Skill 默认写入 `~/.skuare/skills`，CLI 本地局部仓库仍可使用 `~/.skuare` 作为父目录。
   - 建议 CLI 在该场景写入 `repos/<scope>/<tool>/...` 子目录，避免与服务端 `skills/<author>/<skillID>/<version>` 结构冲突。
@@ -38,6 +39,8 @@
 - 查询/创建返回：当上传的 `SKILL.md` 含 `metadata.author` 时，`POST/GET /api/v1/skills*` 返回体会包含 `author` 字段。
 - 当 `metadata.author` 缺失时，服务端使用 `_anonymous` 作为保留作者目录名进行落盘，但接口返回的 `author` 仍保持空字符串。
 - 创建请求支持可选 `force: true`；传入后会覆盖相同 `skill_id@version` 的已有版本。
+- `POST /api/v1/skills` 同时支持 JSON 与 multipart/form-data；multipart 模式推荐用于包含二进制文件的完整 skill 上传，请求包含 `metadata` JSON part 与 `bundle.tar.gz` part。
+- `GET /api/v1/skills/:skillID/:version` 的 `files[*]` 现在会在二进制文件上返回 `encoding: base64` 与 `size`，CLI 可据此正确安装二进制资源。
 - 错误响应：统一为 `{ "code": "...", "message": "..." }`
 - 错误码定义：统一收敛到 `internal/util/errcode.go`
 - 写操作鉴权：`POST /api/v1/skills`、`DELETE /api/v1/skills/:skillID/:version`、`POST /api/v1/reindex` 需要数字签名请求头（`X-Skuare-Key-Id`/`X-Skuare-Timestamp`/`X-Skuare-Nonce`/`X-Skuare-Signature`）。
@@ -116,7 +119,7 @@ curl -X POST "http://127.0.0.1:15657/api/v1/reindex" \
   -H "X-Skuare-Signature: <base64_signature>"
 ```
 
-`POST /api/v1/skills` 示例：
+`POST /api/v1/skills` JSON 示例：
 ```json
 {
   "skill_id": "pdf-reader",
@@ -135,6 +138,17 @@ curl -X POST "http://127.0.0.1:15657/api/v1/reindex" \
 }
 ```
 
+`POST /api/v1/skills` multipart 示例：
+```bash
+curl -X POST "http://127.0.0.1:15657/api/v1/skills" \
+  -H "X-Skuare-Key-Id: writer-a" \
+  -H "X-Skuare-Timestamp: <unix_ts>" \
+  -H "X-Skuare-Nonce: <nonce>" \
+  -H "X-Skuare-Signature: <base64_signature>" \
+  -F 'metadata={"skill_id":"pdf-reader","version":"1.0.0","force":true};type=application/json' \
+  -F "bundle=@./pdf-reader-1.0.0.tar.gz;type=application/gzip"
+```
+
 当 `force` 为 `true` 时，服务端会在单个 skill 的文件锁保护下替换已有版本目录。
 
 ## 验收标准与风险
@@ -143,6 +157,7 @@ curl -X POST "http://127.0.0.1:15657/api/v1/reindex" \
 - 缓解：文件锁、临时目录写入+原子重命名、`reindex` 修复入口。
 
 ## 变更记录
+- 2026-03-13：`POST /api/v1/skills` 新增 multipart bundle 上传；服务端默认最大请求体提升至 64MB 且可配置；skill 详情文件支持 `encoding=size/base64` 二进制返回。
 - 2026-02-23：切换到 Hertz；新增 SkillHub 文件系统存储 MVP API 与存储实现。
 - 2026-02-23：创建接口改为结构化 `skill` 协议，移除 `openai_yaml` 与 `skill_md` 直传模式。
 - 2026-02-23：新增项目级本地开发编排脚本（dev-up/dev-down/dev-status）。

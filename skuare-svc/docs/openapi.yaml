@@ -55,6 +55,9 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreateSkillVersionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CreateSkillMultipartRequest'
       responses:
         '201':
           description: 创建成功
@@ -231,6 +234,28 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/FileSpec'
+    CreateSkillMultipartRequest:
+      type: object
+      required: [metadata, bundle]
+      properties:
+        metadata:
+          description: JSON string matching CreateSkillMultipartMetadata
+          type: string
+        bundle:
+          type: string
+          format: binary
+    CreateSkillMultipartMetadata:
+      type: object
+      required: [skill_id, version]
+      properties:
+        skill_id:
+          type: string
+        version:
+          type: string
+        force:
+          type: boolean
+        skill:
+          $ref: '#/components/schemas/SkillSpec'
     SkillSpec:
       type: object
       required: [description, overview]
@@ -259,6 +284,12 @@ components:
           type: string
         content:
           type: string
+        encoding:
+          type: string
+          description: Omitted for UTF-8 text files; `base64` for binary files
+        size:
+          type: integer
+          format: int64
     SkillEntry:
       type: object
       properties:
