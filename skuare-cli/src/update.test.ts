@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { UpdateCommand } from "./commands/write";
 import type { CommandContext } from "./commands/types";
 
-test("update prompts with a version greater than remote maxVersion and reuses publish flow", async () => {
+test("update accepts name-only skillRef, prompts with a version greater than remote maxVersion, and reuses publish flow", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "skuare-update-"));
   const skillDir = join(workspace, "demo-skill");
   await createSkillDir(skillDir, {
@@ -68,7 +68,7 @@ test("update prompts with a version greater than remote maxVersion and reuses pu
 
   try {
     const logs = await captureConsole(async () => {
-      await new TestUpdateCommand().execute(createContext(workspace, ["demo/demo-skill", skillDir]));
+      await new TestUpdateCommand().execute(createContext(workspace, ["demo-skill", skillDir]));
     });
 
     assert.deepEqual(prompted, {
@@ -85,6 +85,145 @@ test("update prompts with a version greater than remote maxVersion and reuses pu
     assert.match(logs.join("\n"), /"version": "1.10.1"/);
     const updatedSkill = await readFile(join(skillDir, "SKILL.md"), "utf8");
     assert.match(updatedSkill, /version: "1.10.1"/);
+  } finally {
+    restore();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("update accepts exact skillID when it differs from local skill name", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "skuare-update-skillid-"));
+  const skillDir = join(workspace, "demo-skill");
+  await createSkillDir(skillDir, {
+    name: "demo-skill",
+    author: "demo",
+    version: "2.0.0",
+    description: "Demo description",
+  });
+
+  const requests: string[] = [];
+  const requestBodies: string[] = [];
+  const restore = mockFetch(async (input, init) => {
+    const url = new URL(String(input));
+    const key = `${String(init?.method || "GET").toUpperCase()} ${url.pathname}`;
+    requests.push(key);
+    if (key === "GET /api/v1/skills") {
+      return jsonResponse({
+        items: [
+          { skill_id: "demo-skill-id", version: "1.9.0", name: "demo-skill", author: "demo", description: "latest" },
+        ],
+      });
+    }
+    if (key === "GET /api/v1/skills/demo-skill-id") {
+      return jsonResponse({
+        skill_id: "demo-skill-id",
+        author: "demo",
+        versions: ["1.9.0"],
+      });
+    }
+    if (key === "POST /api/v1/skills") {
+      requestBodies.push(decodeLatin1(toBuffer(init?.body)));
+      return jsonResponse({
+        skill_id: "demo-skill-id",
+        version: "2.0.0",
+        name: "demo-skill",
+        author: "demo",
+        description: "Demo description",
+      }, 201);
+    }
+    throw new Error(`Unexpected request: ${key}`);
+  });
+
+  class TestUpdateCommand extends UpdateCommand {
+    protected override isInteractiveTerminal(): boolean {
+      return false;
+    }
+  }
+
+  try {
+    const logs = await captureConsole(async () => {
+      await new TestUpdateCommand().execute(createContext(workspace, ["demo-skill-id", skillDir]));
+    });
+
+    assert.deepEqual(requests, [
+      "GET /api/v1/skills",
+      "GET /api/v1/skills/demo-skill-id",
+      "POST /api/v1/skills",
+    ]);
+    assert.match(requestBodies[0], /"version":"2\.0\.0"/);
+    assert.match(logs.join("\n"), /"skill_id": "demo-skill-id"/);
+  } finally {
+    restore();
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("update reuses shared selector flow when name-only skillRef matches multiple remote skills", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "skuare-update-selector-"));
+  const skillDir = join(workspace, "demo-skill");
+  await createSkillDir(skillDir, {
+    name: "demo-skill",
+    author: "team-b",
+    version: "2.0.0",
+    description: "Demo description",
+  });
+
+  let selectionTitle = "";
+  let seenCandidates: string[] = [];
+  const requests: string[] = [];
+  const restore = mockFetch(async (input, init) => {
+    const url = new URL(String(input));
+    const key = `${String(init?.method || "GET").toUpperCase()} ${url.pathname}`;
+    requests.push(key);
+    if (key === "GET /api/v1/skills") {
+      return jsonResponse({
+        items: [
+          { skill_id: "skill-a", version: "1.1.0", name: "demo-skill", author: "team-a", description: "A" },
+          { skill_id: "skill-b", version: "1.2.0", name: "demo-skill", author: "team-b", description: "B" },
+        ],
+      });
+    }
+    if (key === "GET /api/v1/skills/skill-b") {
+      return jsonResponse({
+        skill_id: "skill-b",
+        author: "team-b",
+        versions: ["1.2.0"],
+      });
+    }
+    if (key === "POST /api/v1/skills") {
+      return jsonResponse({
+        skill_id: "skill-b",
+        version: "2.0.0",
+        name: "demo-skill",
+        author: "team-b",
+        description: "Demo description",
+      }, 201);
+    }
+    throw new Error(`Unexpected request: ${key}`);
+  });
+
+  class TestUpdateCommand extends UpdateCommand {
+    protected override isInteractiveTerminal(): boolean {
+      return false;
+    }
+
+    protected override async selectCatalogSkillCandidate(candidates: any[], title: string): Promise<any> {
+      selectionTitle = title;
+      seenCandidates = candidates.map((candidate) => `${candidate.skillID}@${candidate.version}`);
+      return candidates.find((candidate) => candidate.skillID === "skill-b");
+    }
+  }
+
+  try {
+    await new TestUpdateCommand().execute(createContext(workspace, ["demo-skill", skillDir]));
+
+    assert.equal(selectionTitle, "Multiple skills found, select one (use ↑/↓, Enter to confirm):");
+    assert.deepEqual(seenCandidates, ["skill-a@1.1.0", "skill-b@1.2.0"]);
+    assert.deepEqual(requests, [
+      "GET /api/v1/skills",
+      "GET /api/v1/skills/skill-b",
+      "POST /api/v1/skills",
+    ]);
   } finally {
     restore();
     await rm(workspace, { recursive: true, force: true });
@@ -146,12 +285,24 @@ test("update rejects mismatched local author or name", async () => {
     description: "Demo description",
   });
 
+  const restore = mockFetch(async (input, init) => {
+    const url = new URL(String(input));
+    const key = `${String(init?.method || "GET").toUpperCase()} ${url.pathname}`;
+    if (key === "GET /api/v1/skills") {
+      return jsonResponse({
+        items: [{ skill_id: "demo-skill", version: "1.10.0", name: "demo-skill", author: "demo", description: "new" }],
+      });
+    }
+    throw new Error(`Unexpected request: ${key}`);
+  });
+
   try {
     await assert.rejects(
       () => new UpdateCommand().execute(createContext(workspace, ["demo/demo-skill", skillDir])),
-      /Local SKILL\.md name \(another-skill\) must match command skillName \(demo-skill\)/
+      /Local SKILL\.md name \(another-skill\) must match selected remote skill name \(demo-skill\)/
     );
   } finally {
+    restore();
     await rm(workspace, { recursive: true, force: true });
   }
 });

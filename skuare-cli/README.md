@@ -86,7 +86,7 @@
   - `publish --skill <SKILL.md> [--skill-id] [--version] [--force|-f]` -> `POST /api/v1/skills`；CLI will pack the whole skill directory as `multipart/form-data` (`metadata` JSON + `bundle.tar.gz`)
   - `publish --dir <skillDir> [--skill-id] [--version] [--force|-f]` -> `POST /api/v1/skills`；binary files are preserved inside the bundle
   - `publish <path...> [--all] [--skill-id] [--version] [--force|-f]` -> 自动检测每个 path：`SKILL.md` 文件 -> 目录 -> JSON 回退；目录模式沿用 multipart bundle 上传
-  - `update <author>/<skillName> <newSkillDir>` -> query remote `maxVersion`, rewrite local `metadata.version` to a greater value, then reuse `publish --dir`
+  - `update <skillRef> <newSkillDir>` -> query remote `maxVersion`, rewrite local `metadata.version` to a greater value, then reuse `publish --dir`; `skillRef` supports `skillID/name/author/name`, and ambiguous matches reuse the same selector as `get/peek/deps`
   - `publish --type agentsmd|agmd --file <AGENTS.md> --agentsmd-id <id> --version <v>` -> `POST /api/v1/agentsmd`
   - `publish --type agentsmd|agmd --dir <dir>` -> 自动读取 `<dir>/AGENTS.md` 与可选 `<dir>/agentsmd-meta.json`
   - `create ... [--force|-f]` -> `publish` 的兼容别名，保留但标记弃用
