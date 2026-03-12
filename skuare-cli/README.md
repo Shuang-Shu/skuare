@@ -10,7 +10,7 @@
 - 通过统一 `--server` 参数对接后端 HTTP API，实现基础 Skill 管理链路。
 
 ## 命令分组总览
-- 纯本地命令：`help`、`version`、`init`、`build`、`format`
+- 纯本地命令：`help`、`version`、`init`、`config`、`build`、`format`
   - 不依赖 server，可直接修改本地配置、Skill 文件和依赖文件。
 - server 只读命令：`health`、`list`、`peek`、`validate`
   - 会访问 server，但不会写远程仓库。
@@ -48,6 +48,7 @@
 - 纯本地命令：
   - `help`、`version`
   - `init`：写本地配置文件
+  - `config [--global]`：读取当前命中的配置文件内容与路径；默认从 `cwd` 开始逐级向上查找到 `/`，`--global` 直接读取 `~/.skuare/config.json`
   - `skill`：将内嵌的 skuare LLM Skill 安装到 `cwd`
   - `build <skillName> [refSkill...] [--all]`：本地生成/追加 `<skillName>/skill-deps.json` 与 `<skillName>/skill-deps.lock.json`；若目标 skill 缺失，会先交互式创建最小 `SKILL.md`
   - `format [skillDir...]` / `format --all`：本地格式化 `SKILL.md`

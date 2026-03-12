@@ -3,7 +3,7 @@
  */
 
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { CliArgs, SkuareConfig } from "../types";
 import { DEFAULT_CONFIG_DIR_NAME, DEFAULT_CONFIG_FILE_NAME, createDefaultConfig } from "../types";
 import { resolveInstallTargetRoot } from "../utils/install_paths";
@@ -42,6 +42,40 @@ export function getGlobalConfigPath(): string {
  */
 export function getWorkspaceConfigPath(cwd: string): string {
   return join(cwd, DEFAULT_CONFIG_DIR_NAME, DEFAULT_CONFIG_FILE_NAME);
+}
+
+/**
+ * 从 cwd 开始逐级向上枚举 workspace 配置路径，直到文件系统根目录。
+ */
+export function getWorkspaceConfigLookupPaths(cwd: string): string[] {
+  const paths: string[] = [];
+  let current = resolve(cwd);
+
+  while (true) {
+    paths.push(getWorkspaceConfigPath(current));
+    const parent = dirname(current);
+    if (parent === current) {
+      break;
+    }
+    current = parent;
+  }
+
+  return paths;
+}
+
+/**
+ * 从 cwd 开始逐级向上查找第一份存在的 workspace 配置。
+ */
+export async function findNearestWorkspaceConfig(
+  cwd: string
+): Promise<{ path: string; config: Partial<SkuareConfig> } | undefined> {
+  for (const path of getWorkspaceConfigLookupPaths(cwd)) {
+    const config = await loadConfig(path);
+    if (config !== undefined) {
+      return { path, config };
+    }
+  }
+  return undefined;
 }
 
 /**
