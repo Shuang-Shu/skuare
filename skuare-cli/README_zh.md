@@ -114,9 +114,11 @@ npm run check
 npm run build
 skuare init
 skuare help
+skuare help list
 skuare --server http://127.0.0.1:15657 health
 # 或
 skr help
+skr help get
 ```
 
 推荐阅读顺序：
