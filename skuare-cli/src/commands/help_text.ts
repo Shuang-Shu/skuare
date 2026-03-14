@@ -1,6 +1,4 @@
-import { getHelpEntries } from "./catalog";
-
-const COMMAND_WIDTH = 37;
+import { getHelpEntries, getHelpEntry, type HelpEntry } from "./catalog";
 
 const GLOBAL_FLAGS = [
   ["--server <url>", "Backend URL (highest priority)"],
@@ -8,9 +6,30 @@ const GLOBAL_FLAGS = [
   ["--privkey-file <path>", "Ed25519 private key PEM file"],
 ] as const;
 
-function formatAligned(left: string, right: string): string {
-  const padded = left.length >= COMMAND_WIDTH ? `${left} ` : left.padEnd(COMMAND_WIDTH, " ");
-  return `${padded}${right}`;
+function renderCommandBlock(entry: HelpEntry): string[] {
+  const lines: string[] = [`  ${entry.name}`, `    ${entry.summary}`, "    Usage:"];
+
+  for (const usageLine of entry.usage) {
+    lines.push(`      ${usageLine}`);
+  }
+
+  if (entry.details?.length) {
+    lines.push("    Details:");
+    for (const detail of entry.details) {
+      lines.push(`      ${detail}`);
+    }
+  }
+
+  return lines;
+}
+
+function renderGlobalFlags(indent = "  "): string[] {
+  const lines = ["Global Flags:"];
+  for (const [flag, description] of GLOBAL_FLAGS) {
+    lines.push(`${indent}${flag}`);
+    lines.push(`${indent}  ${description}`);
+  }
+  return lines;
 }
 
 export function buildHelpText(): string {
@@ -25,17 +44,39 @@ export function buildHelpText(): string {
   ];
 
   for (const entry of getHelpEntries()) {
-    const [commandUsage, description] = entry.usage;
-    lines.push(`  ${formatAligned(commandUsage, description)}`.trimEnd());
-    for (const detail of entry.details || []) {
-      lines.push(`  ${detail}`.trimEnd());
+    lines.push(...renderCommandBlock(entry), "");
+  }
+
+  if (lines[lines.length - 1] === "") {
+    lines.pop();
+  }
+
+  lines.push("", ...renderGlobalFlags());
+
+  return `${lines.join("\n")}`;
+}
+
+export function buildCommandHelpText(name: string): string | undefined {
+  const entry = getHelpEntry(name);
+  if (!entry) {
+    return undefined;
+  }
+
+  const lines: string[] = [entry.name, "", entry.summary, "", "Usage:"];
+
+  for (const usageLine of entry.usage) {
+    lines.push(`  skuare ${usageLine}`);
+    lines.push(`  skr ${usageLine}`);
+  }
+
+  if (entry.details?.length) {
+    lines.push("", "Details:");
+    for (const detail of entry.details) {
+      lines.push(`  ${detail}`);
     }
   }
 
-  lines.push("", "Global Flags:");
-  for (const [flag, description] of GLOBAL_FLAGS) {
-    lines.push(`  ${formatAligned(flag, description)}`.trimEnd());
-  }
+  lines.push("", ...renderGlobalFlags());
 
   return `${lines.join("\n")}`;
 }

@@ -4,7 +4,7 @@
 
 > Document Type: REFERENCE  
 > Status: Completed  
-> Last Updated: 2026-03-11  
+> Last Updated: 2026-03-14  
 > Scope: project-wide
 
 ## Example Setup
@@ -78,15 +78,17 @@ Write to remote repository. May require authentication in remote mode.
 ## Command Details
 
 ### help
-Show help information for all commands.
+Show help information for all commands, or a focused page for one command.
 
 **Usage:**
 ```bash
 skr help
+skr help <command>
 ```
 
 **Output:**
-Displays usage patterns for all available commands.
+- `skr help` prints every command as a separate indented help block.
+- `skr help <command>` prints only the selected command's usage, details, and shared global flags.
 
 ---
 
