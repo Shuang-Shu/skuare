@@ -185,8 +185,11 @@ export class GetAgentsMDCommand extends BaseCommand {
     if (ctx.args.includes("--wrap")) {
       this.fail("--wrap is only supported for skill resources");
     }
+    if (ctx.args.includes("--slink")) {
+      this.fail("--slink is only supported for skill resources");
+    }
 
-    const positional = ctx.args.filter((arg) => arg !== "--global");
+    const positional = ctx.args.filter((arg) => arg !== "--global" && arg !== "--slink");
     const [agentsmdID, versionArg] = positional;
     if (!agentsmdID) {
       this.fail("Missing agentsmd-id");

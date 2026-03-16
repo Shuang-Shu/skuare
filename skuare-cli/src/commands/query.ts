@@ -6,7 +6,7 @@ import type { CommandContext } from "./types";
 import { BaseCommand } from "./base";
 import { callApi } from "../http/client";
 import type { JsonValue } from "./types";
-import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, readlink, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { resolveToolSkillsDir } from "../config/resolver";
 import { collectPositionalArgs, parseRegexOption, stripRegexOptions } from "../utils/command_args";
@@ -19,6 +19,7 @@ import { normalizeResourceContext } from "./resource_type";
 type RemoteFile = { path: string; content: Buffer };
 type InstallResult = { skills: string[]; conflictFiles: string[] };
 type InstallTargetPlan = { targetRoot: string; tools: string[] };
+type InstallStrategy = "copy" | "slink";
 type NormalizedSkillItem = {
   id: string;
   name: string;
@@ -313,6 +314,15 @@ async function collectSkillDirs(rootDir: string): Promise<string[]> {
 
   await walk(rootDir);
   return out;
+}
+
+async function pathExists(candidate: string): Promise<boolean> {
+  try {
+    await stat(candidate);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function isInteractiveTTY(): boolean {
@@ -817,6 +827,51 @@ abstract class DependencyAwareCommand extends SkillCatalogCommand {
     return resolveInstallTargetRoot(cwd, tool, isGlobal, configured);
   }
 
+  protected resolveLocalSkillRepoRoot(): string {
+    return resolve(__dirname, "..", "..", "..");
+  }
+
+  protected async resolveLocalSkillSourceDir(skillID: string): Promise<string> {
+    const repoRoot = this.resolveLocalSkillRepoRoot();
+    const skillName = skillID.split("/").pop()?.trim() || skillID.trim();
+    const searchRoots = [
+      join(repoRoot, ".codex", "skills"),
+      join(repoRoot, "skills"),
+      join(repoRoot, "examples"),
+    ];
+    const existingRoots = (
+      await Promise.all(searchRoots.map(async (root) => await pathExists(root) ? root : ""))
+    ).filter(Boolean);
+
+    const exactMatches = await this.collectLocalSkillSourceMatches(existingRoots.map((root) => join(root, normalizePath(skillID))));
+    if (exactMatches.length === 1) {
+      return exactMatches[0];
+    }
+    if (exactMatches.length > 1) {
+      this.fail(`Multiple local skill directories matched ${skillID}: ${exactMatches.join(", ")}`);
+    }
+
+    const fallbackMatches = await this.collectLocalSkillSourceMatches(existingRoots.map((root) => join(root, skillName)));
+    if (fallbackMatches.length === 1) {
+      return fallbackMatches[0];
+    }
+    if (fallbackMatches.length > 1) {
+      this.fail(`Multiple local skill directories matched ${skillID} by name ${skillName}: ${fallbackMatches.join(", ")}`);
+    }
+
+    this.fail(`No local skill directory found for ${skillID} under ${existingRoots.join(", ") || repoRoot}`);
+  }
+
+  private async collectLocalSkillSourceMatches(candidates: string[]): Promise<string[]> {
+    const matches: string[] = [];
+    for (const candidate of candidates) {
+      if (await isSkillDir(candidate)) {
+        matches.push(resolve(candidate));
+      }
+    }
+    return Array.from(new Set(matches)).sort((a, b) => a.localeCompare(b));
+  }
+
   protected resolveInstallTargets(context: CommandContext, isGlobal: boolean): InstallTargetPlan[] {
     const configuredTools = Array.from(new Set((context.llmTools || []).map((value) => value.trim()).filter(Boolean)));
     const tools = configuredTools.length > 0 ? configuredTools : [this.resolvePrimaryTool(context.llmTools)];
@@ -1118,6 +1173,40 @@ abstract class DependencyAwareCommand extends SkillCatalogCommand {
       skills: Array.from(installed),
       conflictFiles: Array.from(conflicts),
     };
+  }
+
+  protected async installGraphNodesAsSymlinks(
+    targetRoot: string,
+    nodes: SkillGraphNode[],
+  ): Promise<InstallResult> {
+    const installed = new Set<string>();
+    for (const node of nodes) {
+      const sourceDir = await this.resolveLocalSkillSourceDir(node.skillID);
+      await this.ensureSkillSymlink(targetRoot, node.skillID, sourceDir);
+      installed.add(node.skillID);
+    }
+    return {
+      skills: Array.from(installed),
+      conflictFiles: [],
+    };
+  }
+
+  private async ensureSkillSymlink(targetRoot: string, skillID: string, sourceDir: string): Promise<void> {
+    const skillDir = join(targetRoot, skillID);
+    const expectedTarget = resolve(sourceDir);
+    await mkdir(dirname(skillDir), { recursive: true });
+    const existing = await lstat(skillDir).catch(() => undefined);
+    if (!existing) {
+      await symlink(expectedTarget, skillDir);
+      return;
+    }
+    if (!existing.isSymbolicLink()) {
+      this.fail(`Install target already exists and is not a symlink: ${skillDir}`);
+    }
+    const currentTarget = resolve(dirname(skillDir), await readlink(skillDir));
+    if (currentTarget !== expectedTarget) {
+      this.fail(`Install target symlink mismatch for ${skillDir}: ${currentTarget} != ${expectedTarget}`);
+    }
   }
 
   protected isInteractiveInstallSession(): boolean {
@@ -1701,25 +1790,26 @@ export class GetCommand extends DependencyAwareCommand {
     const skillContext = normalized.context;
     const isGlobal = skillContext.args.includes("--global");
     const wrapMode = skillContext.args.includes("--wrap");
+    const slinkMode = skillContext.args.includes("--slink");
     const regexPattern = parseRegexOption(skillContext.args);
-    const positional = stripRegexOptions(skillContext.args).filter((arg) => arg !== "--global" && arg !== "--wrap");
+    const positional = stripRegexOptions(skillContext.args).filter((arg) => arg !== "--global" && arg !== "--wrap" && arg !== "--slink");
 
     let skillID: string;
     let versionArg: string | undefined;
 
     if (regexPattern) {
       if (positional.length > 1) {
-        this.fail("Usage: skuare get --rgx <pattern> [version] [--global] [--wrap]");
+        this.fail("Usage: skuare get --rgx <pattern> [version] [--global] [--wrap] [--slink]");
       }
       skillID = await this.resolveSkillIDByRegex(skillContext, regexPattern);
       versionArg = positional[0];
     } else {
       const [input, version] = positional;
       if (!input) {
-        this.fail("Missing <skillRef>. Usage: skuare get <skillID|name|author/name> [version] [--rgx <pattern>] [--global] [--wrap]");
+        this.fail("Missing <skillRef>. Usage: skuare get <skillID|name|author/name> [version] [--rgx <pattern>] [--global] [--wrap] [--slink]");
       }
       if (positional.length > 2) {
-        this.fail("Usage: skuare get <skillID|name|author/name> [version] [--rgx <pattern>] [--global] [--wrap]");
+        this.fail("Usage: skuare get <skillID|name|author/name> [version] [--rgx <pattern>] [--global] [--wrap] [--slink]");
       }
 
       const resolved = await this.resolveCatalogSkillSelection(skillContext, input, version, {
@@ -1745,6 +1835,7 @@ export class GetCommand extends DependencyAwareCommand {
     const rootNode = await this.fetchRemoteSkillNode(skillContext, skillID, versionArg);
     const graph = await this.buildDependencyGraph(skillContext, rootNode);
     const sharedLocalDir = false;
+    const installStrategy: InstallStrategy = slinkMode ? "slink" : "copy";
     const nodesToInstall = wrapMode ? [graph.root] : this.collectSubtree(graph, graph.root.skillID);
     const previews = await Promise.all(
       installTargets.map((installTarget) =>
@@ -1755,7 +1846,9 @@ export class GetCommand extends DependencyAwareCommand {
     const installedSkills = new Set<string>();
     const conflictFiles = new Set<string>();
     for (const installTarget of installTargets) {
-      const result = await this.installGraphNodes(installTarget.targetRoot, nodesToInstall, { sharedLocalDir });
+      const result = installStrategy === "slink"
+        ? await this.installGraphNodesAsSymlinks(installTarget.targetRoot, nodesToInstall)
+        : await this.installGraphNodes(installTarget.targetRoot, nodesToInstall, { sharedLocalDir });
       for (const skill of result.skills) {
         installedSkills.add(skill);
       }
@@ -1788,6 +1881,7 @@ export class GetCommand extends DependencyAwareCommand {
     console.log(JSON.stringify({
       global: isGlobal,
       wrap: wrapMode,
+      slink: slinkMode,
       llm_tool: primaryTool,
       llm_tools: installTargets.flatMap((entry) => entry.tools),
       target: primaryTargetRoot,

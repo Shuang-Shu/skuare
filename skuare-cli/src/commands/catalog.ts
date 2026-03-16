@@ -114,8 +114,8 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
       name: "get",
       summary: "Install skill or AGENTS.md into the selected local repository",
       usage: [
-        "get [--type <skill|agentsmd|agmd>] <author>/<name>@<version> | <author>/<name> | <name> [--global] [--wrap]",
-        "get --rgx <pattern> [version] [--global] [--wrap]",
+        "get [--type <skill|agentsmd|agmd>] <author>/<name>@<version> | <author>/<name> | <name> [--global] [--wrap] [--slink]",
+        "get --rgx <pattern> [version] [--global] [--wrap] [--slink]",
         "get --type <agentsmd|agmd> <agentsmd-id> [version] [--global]",
       ],
       details: [
@@ -123,6 +123,7 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
         "<author>/<name>@<version> or <name>@<version>: exact match",
         "<author>/<name> or <name>: interactive selection if multiple versions found",
         "Default target: <cwd>/.{tool}/skills/, --global target: ~/.{tool}/skills/",
+        "--slink creates symlinks to local CLI repository skill directories instead of copying remote files",
         "--wrap installs only the root skill and keeps dependencies queryable via `skr deps`",
         "When existing local skill files would be overwritten, `get` shows an interactive confirmation in TTY; non-TTY sessions fail instead of silently overwriting",
         "--rgx mode installs by regex pattern and must match exactly one skill",

@@ -56,9 +56,10 @@ test("buildCommandHelpText renders a single command help page", () => {
 
   assert.ok(helpText);
   assert.match(helpText, /^get\n\nInstall skill or AGENTS\.md into the selected local repository\n\nUsage:/);
-  assert.match(helpText, /skuare get \[--type <skill\|agentsmd\|agmd>] <author>\/<name>@<version> \| <author>\/<name> \| <name> \[--global] \[--wrap]/);
+  assert.match(helpText, /skuare get \[--type <skill\|agentsmd\|agmd>] <author>\/<name>@<version> \| <author>\/<name> \| <name> \[--global] \[--wrap] \[--slink]/);
   assert.match(helpText, /skr get --type <agentsmd\|agmd> <agentsmd-id> \[version] \[--global]/);
   assert.match(helpText, /Details:\n  Default mode installs skill and dependencies to local partial repository/);
+  assert.match(helpText, /--slink creates symlinks to local CLI repository skill directories instead of copying remote files/);
   assert.doesNotMatch(helpText, /\nlist\n/);
 });
 

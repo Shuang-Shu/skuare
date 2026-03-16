@@ -63,9 +63,10 @@
   - `peek --rgx <pattern> [version]` -> 先查询列表，再正则筛选唯一 skill
   - `validate <skillID> <version>` -> `POST /api/v1/skills/:skillID/:version/validate`
 - 混合命令：
-  - `get <skillRef> [version] [--rgx] [--global] [--wrap]`
+  - `get <skillRef> [version] [--rgx] [--global] [--wrap] [--slink]`
   - 默认安装到 `<cwd>/.{llmTool}/skills/<skillID>/`
   - `--global`：安装到 `~/.{llmTool}/skills/<skillID>/`
+  - `--slink`：不复制远端文件，而是把目标 `<skillID>` 目录创建为指向本地 CLI 仓库 skill 目录的软连接
   - 默认模式会把完整依赖图平铺安装；`--wrap` 只安装根 Skill，并写入本地 wrap 元数据供后续 `deps` 使用
   - 当直接指定 skill 时，`peek/get/deps` 统一复用同一 selector：支持 `skillID`、`name`、`author/name`，多候选时复用同一交互选择逻辑
   - `get --type agentsmd|agmd <agentsmd-id> [version] [--global]`
@@ -291,6 +292,9 @@ skuare detail skuare/report-generator references/details.md notes.txt
 - 不带 `--global`：安装到 `<cwd>/.{llmTool}/skills/<skillID>/`
 - 带 `--global`：同时安装到所有已配置工具的全局 skill 目录；每个默认目标为 `~/.{llmTool}/skills/<skillID>/`
 - 不带 `--global` 时，`llmTool` 取值为配置文件中第一个工具；带 `--global` 时覆盖全部已配置工具
+- 带 `--slink`：每个目标 `<skillID>` 会变为指向本地 CLI 仓库 skill 目录的软连接；优先按完整 `skillID` 匹配本地目录，找不到时回退到 skill basename
+- `--slink` 不适用于 `agentsmd`，且若目标已存在为普通目录、文件或指向其他位置的软连接时会直接失败，不做覆盖
+- LOCALMODE 下若多个工具共享同一个 skill 目录，`get --slink` 会按目标目录去重，只创建一次软连接
 - 带 `--wrap`：只安装根 Skill，并在根目录下写入 `.skuare-wrap.json` 供 `deps` 读取
 - 遇到循环依赖时，`get` 会直接报错，不再静默跳过回边
 

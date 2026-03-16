@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readlink, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { DepsCommand, GetCommand } from "./commands/query";
 import type { CommandContext } from "./commands/types";
 
@@ -31,6 +31,16 @@ class InteractiveDepsCommand extends DepsCommand {
 
   protected override async confirmInstallTargetPreview(): Promise<boolean> {
     return this.decision;
+  }
+}
+
+class LocalRepoGetCommand extends GetCommand {
+  constructor(private readonly repoRoot: string) {
+    super();
+  }
+
+  protected override resolveLocalSkillRepoRoot(): string {
+    return this.repoRoot;
   }
 }
 
@@ -95,6 +105,96 @@ test("get installs binary files returned as base64-encoded remote files", async 
   } finally {
     restore();
     await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("get --slink creates symlinks to local CLI repository skill directories", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "skuare-get-slink-"));
+  const localRepo = await mkdtemp(join(tmpdir(), "skuare-local-repo-"));
+  const sourceDir = join(localRepo, "examples", "root");
+  const restore = mockFetch({
+    "GET /api/v1/skills": new Response(JSON.stringify({
+      items: [{ skill_id: "demo/root", version: "1.0.0", name: "root", author: "demo", description: "Root description" }],
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+    "GET /api/v1/skills/demo%2Froot/1.0.0": skillDetail("demo/root", "1.0.0", "Root description"),
+  });
+
+  try {
+    await mkdir(sourceDir, { recursive: true });
+    await writeFile(join(sourceDir, "SKILL.md"), renderSkill("demo/root", "1.0.0", "Root description"), "utf8");
+
+    const logs = await captureConsole(async () => {
+      await new LocalRepoGetCommand(localRepo).execute(createContext(workspace, ["demo/root@1.0.0", "--slink"]));
+    });
+
+    const output = JSON.parse(logs.join("\n")) as { slink: boolean; skills: string[] };
+    const installPath = join(workspace, ".codex", "skills", "demo", "root");
+    assert.equal(output.slink, true);
+    assert.deepEqual(output.skills, ["demo/root"]);
+    assert.equal((await lstat(installPath)).isSymbolicLink(), true);
+    assert.equal(resolve(dirname(installPath), await readlink(installPath)), sourceDir);
+  } finally {
+    restore();
+    await rm(workspace, { recursive: true, force: true });
+    await rm(localRepo, { recursive: true, force: true });
+  }
+});
+
+test("get --slink reuses one install target when LOCALMODE tools share the same directory", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "skuare-get-slink-shared-"));
+  const localRepo = await mkdtemp(join(tmpdir(), "skuare-local-repo-"));
+  const sharedTarget = join(workspace, "shared-skills");
+  const rootSource = join(localRepo, "examples", "root");
+  const childSource = join(localRepo, "examples", "child");
+  const restore = mockFetch({
+    "GET /api/v1/skills": new Response(JSON.stringify({
+      items: [{ skill_id: "demo/root", version: "1.0.0", name: "root", author: "demo", description: "Root description" }],
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+    "GET /api/v1/skills/demo%2Froot/1.0.0": skillDetail("demo/root", "1.0.0", "Root description", [
+      { skill: "demo/child", version: "2.0.0", resolved: "2.0.0" },
+    ]),
+    "GET /api/v1/skills/demo%2Fchild/2.0.0": skillDetail("demo/child", "2.0.0", "Child description"),
+  });
+
+  try {
+    await mkdir(rootSource, { recursive: true });
+    await mkdir(childSource, { recursive: true });
+    await writeFile(join(rootSource, "SKILL.md"), renderSkill("demo/root", "1.0.0", "Root description"), "utf8");
+    await writeFile(join(childSource, "SKILL.md"), renderSkill("demo/child", "2.0.0", "Child description"), "utf8");
+
+    const logs = await captureConsole(async () => {
+      await new LocalRepoGetCommand(localRepo).execute(createContext(workspace, ["demo/root@1.0.0", "--slink"], {
+        llmTools: ["codex", "claudecode"],
+        toolSkillDirs: {
+          codex: sharedTarget,
+          claudecode: sharedTarget,
+        },
+      }));
+    });
+
+    const output = JSON.parse(logs.join("\n")) as {
+      slink: boolean;
+      llm_tools: string[];
+      targets: Array<{ target: string; tools: string[] }>;
+      skills: string[];
+    };
+    assert.equal(output.slink, true);
+    assert.deepEqual(output.llm_tools, ["codex", "claudecode"]);
+    assert.equal(output.targets.length, 1);
+    assert.deepEqual(output.targets[0], { target: sharedTarget, tools: ["codex", "claudecode"] });
+    assert.deepEqual(output.skills, ["demo/child", "demo/root"]);
+    assert.equal((await lstat(join(sharedTarget, "demo", "root"))).isSymbolicLink(), true);
+    assert.equal((await lstat(join(sharedTarget, "demo", "child"))).isSymbolicLink(), true);
+  } finally {
+    restore();
+    await rm(workspace, { recursive: true, force: true });
+    await rm(localRepo, { recursive: true, force: true });
   }
 });
 
