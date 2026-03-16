@@ -49,7 +49,7 @@
   - `help`、`version`
   - `init`：写本地配置文件
   - `config [--global]`：读取当前命中的配置文件内容与路径；默认从 `cwd` 开始逐级向上查找到 `/`，`--global` 直接读取 `~/.skuare/config.json`
-  - `skill`：将内嵌的 skuare LLM Skill 安装到 `cwd`
+  - `skill`：将 `skills/default` 中的 skuare 默认 Skill 模板安装到 `cwd`
   - `build <skillName> [refSkill...] [--all]`：本地生成/追加 `<skillName>/skill-deps.json` 与 `<skillName>/skill-deps.lock.json`；若目标 skill 缺失，会先交互式创建最小 `SKILL.md`
   - `format [skillDir...]` / `format --all`：本地格式化 `SKILL.md`
   - `detail <skillName|skillID> [relativePath...]`：本地展示目标已安装 skill 目录下的文件内容；不传文件路径时默认读取该 skill 的 `SKILL.md`
@@ -279,11 +279,12 @@ skuare detail skuare/report-generator references/details.md notes.txt
 - `skill-deps.lock.json` 固定输出 `lock_version: 1`，并为每个依赖写入 `resolved` 字段。
 - 可选别名：`refSkill` 可写为 `alias=refSkill`，落盘后依赖项会包含 `alias` 字段。
 
-`skill` 内嵌脚手架行为：
+`skill` 默认模板行为：
 - 命令格式：`skuare skill`。
 - 目标目录固定为 `cwd`，生成的 skill 名取 `basename(cwd)`。
 - `metadata.author` 固定为 `skuare`，`metadata.version` 固定为当前 `skuare-cli` 版本。
-- 默认写入 `SKILL.md` 与 `references/skuare-workflow.md`。
+- 模板来源固定为 `skuare-cli/skills/default`。
+- 默认写入 `SKILL.md`、`references/skuare-workflow.md` 与 `references/command-map.md`。
 - 若目标文件已存在且内容不同，命令会直接失败，避免覆盖本地自定义内容；若内容一致则视为幂等成功。
 
 `detail` 本地查看行为：
@@ -355,6 +356,7 @@ skuare --server http://127.0.0.1:15657 \
 - 2026-02-27：`get` 安装目录改为按 LLMTool 规则解析（`codex` -> `./skills`，`claudecode` -> `~/.claudecode/skills`）；`init` 支持为 custom 工具配置 skills 目录映射。
 - 2026-02-27：新增 `build <skillName> [refSkill...]`，用于本地自动创建/追加 `skill-deps.json` 与 `skill-deps.lock.json`。
 - 2026-03-01：`build` 新增 `--all`，用于扫描当前目录下全部合法 skillDir 并批量写入依赖；与显式 `refSkill...` 不可混用。目标 skill 缺失时会先交互式初始化最小 `SKILL.md` 模板。
+- 2026-03-16：`skill` 命令改为从 `skills/default` 安装默认 Skill 模板，模板内容改为面向 LLM 的精简工作流与参考文件结构。
 - 2026-03-11：新增 `skill` 命令，可将内嵌的 skuare-authored LLM Skill 安装到 `cwd`；生成内容的版本与当前 CLI 版本保持一致。
 - 2026-03-12：新增 `remove` 命令，用于删除本地或全局已安装 skill；支持 `--deps` 递归删除与共享依赖保护。
 - 2026-02-28：`author` 预填与回退默认值统一为 `undefined`（含 `format` 交互与 `list/peek` 展示）。
