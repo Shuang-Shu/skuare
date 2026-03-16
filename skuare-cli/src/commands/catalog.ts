@@ -56,8 +56,12 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
     create: () => new SkillCommand(),
     help: {
       name: "skill",
-      summary: "Install the embedded skuare skill into cwd",
+      summary: "Install the default skuare skill template into cwd",
       usage: ["skill"],
+      details: [
+        "Reads the template from skuare-cli/skills/default and copies it into the current directory",
+        "Replaces the template skill name with the current directory basename and keeps the CLI version metadata aligned",
+      ],
     },
   },
   {
