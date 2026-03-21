@@ -20,7 +20,8 @@
   - `scripts/dev-up.sh` 与 `make start-be` 默认 `SPEC_DIR` 已统一为 `$HOME/.skuare/skills`。
   - 启动参数：`--addr`、`--spec-dir`、`--authorized-keys-file`、`--local`、`--auth-max-skew-sec`。
   - CLI 配置优先级：`CLI 参数 > workspace > global > defaults`。
-  - CLI `remote.mode`：`local` / `remote`，仅描述目标服务端模式，不负责声明服务端存储目录。
+  - CLI `--server` 既可指向 `skuare-svc` HTTP 地址，也可指向 `git+<repo-url>` Git registry。
+  - CLI `remote.mode`：`local` / `remote`，仅描述 HTTP 服务端模式感知，不负责声明服务端存储目录。
   - CLI 本地安装根目录：默认 skill 安装到 `<cwd>/.{tool}/skills/`；加 `--global` 时安装到 `~/.{tool}/skills/`。
   - `agentsmd` 的安装目标为 `<cwd>/.{tool}/AGENTS.md`；加 `--global` 时安装到 `~/.{tool}/AGENTS.md`。
 - 鉴权：
@@ -49,6 +50,7 @@
   - `docs/commands*.md` 中的命令示例现已统一绑定仓库 `examples/` 目录中的真实样例；远程命令示例默认围绕 `observability-orchestrator` 样例链路复现。
 - 维护说明：
   - CLI 共享解析能力已收敛到独立工具模块（`utils/command_args`、`utils/skill_manifest`、`utils/install_paths`、`utils/skill_workspace`）以及 `commands/resource_type`；`query.ts` 内部的 `get` / `deps` 也已共享同一套 Skill 目标解析流程，不再维护分叉的匹配逻辑。
+  - CLI 新增 registry facade；命令层不再直接绑定 HTTP client，Git repo backend 与未来 backend 通过兼容层接入。
   - 后端 handler/store 仅采用轻量辅助方法收敛重复 JSON 响应与版本化资源文件流程，刻意避免引入过重的统一资源框架。
 
 ## 差距分析
