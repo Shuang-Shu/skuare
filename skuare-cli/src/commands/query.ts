@@ -4,7 +4,6 @@
 
 import type { CommandContext } from "./types";
 import { BaseCommand } from "./base";
-import { callApi } from "../registry/client";
 import type { JsonValue } from "./types";
 import { lstat, mkdir, readFile, readdir, readlink, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -15,6 +14,7 @@ import { parseSkillFrontmatter } from "../utils/skill_manifest";
 import { compareVersions } from "../utils/versioning";
 import { DetailAgentsMDCommand, GetAgentsMDCommand, ListAgentsMDCommand, PeekAgentsMDCommand } from "./agentsmd";
 import { normalizeResourceContext } from "./resource_type";
+import type { RegistryFile, RegistrySkillDetail, RegistrySkillEntry } from "../registry/types";
 
 type RemoteFile = { path: string; content: Buffer };
 type InstallResult = { skills: string[]; conflictFiles: string[] };
@@ -24,9 +24,9 @@ type NormalizedSkillItem = {
   id: string;
   name: string;
   author: string;
-  skill_id: JsonValue;
-  version: JsonValue;
-  description: JsonValue;
+  skill_id: string;
+  version: string;
+  description: string;
 };
 type ParsedSkillSelectorInput =
   | { type: "author-name"; author: string; name: string; version?: string }
@@ -155,20 +155,14 @@ function parseSkillIDParts(skillID: string): { authorFromID: string; nameFromID:
   };
 }
 
-function parseMetadataAuthorFromSkillFiles(filesValue: JsonValue | undefined): string {
-  if (!Array.isArray(filesValue)) {
-    return "";
-  }
-  for (const row of filesValue) {
-    if (!row || typeof row !== "object" || Array.isArray(row)) {
+function parseMetadataAuthorFromRegistryFiles(files: RegistryFile[]): string {
+  for (const file of files) {
+    if (normalizePath(file.path) !== "SKILL.md") {
       continue;
     }
-    const file = row as Record<string, JsonValue>;
-    const path = normalizePath(String(file.path || "").trim());
-    if (path !== "SKILL.md") {
-      continue;
-    }
-    return parseSkillFrontmatter(decodeRemoteFileJsonContent(file)).metadataAuthor;
+    return file.encoding === "base64"
+      ? parseSkillFrontmatter(Buffer.from(file.content, "base64").toString("utf8")).metadataAuthor
+      : parseSkillFrontmatter(file.content).metadataAuthor;
   }
   return "";
 }
@@ -229,9 +223,8 @@ function buildDisplayIdentity(input: {
   return { id, name, author };
 }
 
-function normalizeListItems(items: JsonValue[]): NormalizedSkillItem[] {
+function normalizeSkillEntries(items: RegistrySkillEntry[]): NormalizedSkillItem[] {
   return items
-    .filter((x): x is Record<string, JsonValue> => !!x && typeof x === "object" && !Array.isArray(x))
     .map((x) => {
       const skillID = String(x.skill_id || "").trim();
       const version = String(x.version || "").trim();
@@ -247,9 +240,9 @@ function normalizeListItems(items: JsonValue[]): NormalizedSkillItem[] {
         id: display.id,
         name: display.name,
         author: display.author,
-        skill_id: x.skill_id,
-        version: x.version,
-        description: x.description,
+        skill_id: skillID,
+        version,
+        description: String(x.description || "").trim(),
       };
     });
 }
@@ -485,17 +478,7 @@ export abstract class SkillCatalogCommand extends BaseCommand {
   }
 
   protected async loadCatalogItems(context: CommandContext): Promise<NormalizedSkillItem[]> {
-    const resp = await callApi({
-      method: "GET",
-      path: "/api/v1/skills",
-      server: context.server,
-      silent: true,
-    });
-    const itemsRaw = (resp.data && typeof resp.data === "object" && !Array.isArray(resp.data))
-      ? (resp.data as { items?: JsonValue }).items
-      : undefined;
-    const items = Array.isArray(itemsRaw) ? itemsRaw : [];
-    return normalizeListItems(items);
+    return normalizeSkillEntries(await (await this.getBackend(context)).listSkills());
   }
 
   protected createSkillSelectionCandidate(input: {
@@ -666,20 +649,8 @@ export class ListCommand extends BaseCommand {
     const q = this.parseOptionValue(args, "--q");
     const regexPattern = parseRegexOption(args);
     const regex = regexPattern ? this.compileRegex(regexPattern) : undefined;
-    const path = q ? `/api/v1/skills?q=${encodeURIComponent(q)}` : "/api/v1/skills";
-
-    const resp = await callApi({
-      method: "GET",
-      path,
-      server: resourceContext.context.server,
-      silent: true,
-    });
-
-    const itemsRaw = (resp.data && typeof resp.data === "object" && !Array.isArray(resp.data))
-      ? (resp.data as { items?: JsonValue }).items
-      : undefined;
-    const items = Array.isArray(itemsRaw) ? itemsRaw : [];
-    const normalizedItems = normalizeListItems(items);
+    const backend = await this.getBackend(resourceContext.context);
+    const normalizedItems = normalizeSkillEntries(await backend.listSkills(q || ""));
     const filtered = regex ? normalizedItems.filter((item) => matchesSkill(regex, item)) : normalizedItems;
 
     console.log(JSON.stringify({ items: filtered }, null, 2));
@@ -738,20 +709,13 @@ export class PeekCommand extends SkillCatalogCommand {
   }
 
   private async outputSkill(context: CommandContext, skillID: string, version?: string): Promise<void> {
+    const backend = await this.getBackend(context);
     if (version) {
-      const resp = await callApi({
-        method: "GET",
-        path: `/api/v1/skills/${encodeURIComponent(skillID)}/${encodeURIComponent(version)}`,
-        server: context.server,
-        silent: true,
-      });
-      const row = (resp.data && typeof resp.data === "object" && !Array.isArray(resp.data))
-        ? (resp.data as Record<string, JsonValue>)
-        : {};
-      const skillIDRaw = String(row.skill_id || skillID).trim();
-      const versionRaw = String(row.version || version).trim();
-      const nameRaw = String(row.name || "").trim();
-      const authorRaw = String(row.author || "").trim() || parseMetadataAuthorFromSkillFiles(row.files);
+      const row = await backend.getSkillVersion(skillID, version);
+      const skillIDRaw = row.skill_id.trim() || skillID;
+      const versionRaw = row.version.trim() || version;
+      const nameRaw = row.name.trim();
+      const authorRaw = row.author.trim() || parseMetadataAuthorFromRegistryFiles(row.files);
       const display = buildDisplayIdentity({
         skillID: skillIDRaw,
         version: versionRaw,
@@ -762,44 +726,22 @@ export class PeekCommand extends SkillCatalogCommand {
         id: display.id,
         name: display.name,
         author: display.author,
-        skill_id: row.skill_id ?? skillIDRaw,
-        version: row.version ?? versionRaw,
+        skill_id: row.skill_id || skillIDRaw,
+        version: row.version || versionRaw,
       };
-      if (row.description !== undefined) {
-        out.description = row.description;
-      }
-      if (row.overview !== undefined) {
-        out.overview = row.overview;
-      }
-      if (row.sections !== undefined) {
-        out.sections = row.sections;
-      }
-      if (row.files !== undefined) {
-        out.files = row.files;
-      }
-      if (row.path !== undefined) {
-        out.path = row.path;
-      }
-      if (row.updated_at !== undefined) {
-        out.updated_at = row.updated_at;
-      }
+      out.description = row.description;
+      out.files = row.files as unknown as JsonValue;
+      out.path = row.path;
+      out.updated_at = row.updated_at;
       console.log(JSON.stringify(out, null, 2));
       return;
     }
 
-    const resp = await callApi({
-      method: "GET",
-      path: `/api/v1/skills/${encodeURIComponent(skillID)}`,
-      server: context.server,
-      silent: true,
-    });
-    const row = (resp.data && typeof resp.data === "object" && !Array.isArray(resp.data))
-      ? (resp.data as Record<string, JsonValue>)
-      : {};
-    const skillIDRaw = String(row.skill_id || skillID).trim();
-    const versionsRaw = Array.isArray(row.versions) ? row.versions.map((v) => String(v).trim()).filter(Boolean) : [];
+    const row = await backend.getSkillOverview(skillID);
+    const skillIDRaw = row.skill_id.trim() || skillID;
+    const versionsRaw = row.versions;
     const latestVersion = versionsRaw.length > 0 ? versionsRaw[versionsRaw.length - 1] : "";
-    const authorRaw = String(row.author || "").trim();
+    const authorRaw = row.author.trim();
     const display = buildDisplayIdentity({
       skillID: skillIDRaw,
       version: latestVersion,
@@ -810,7 +752,7 @@ export class PeekCommand extends SkillCatalogCommand {
       id: display.id,
       name: display.name,
       author: display.author,
-      skill_id: row.skill_id ?? skillIDRaw,
+      skill_id: row.skill_id || skillIDRaw,
       latest_version: latestVersion || null,
       versions: versionsRaw,
       ids,
@@ -985,16 +927,7 @@ abstract class DependencyAwareCommand extends SkillCatalogCommand {
     if (preferred) {
       return preferred;
     }
-    const resp = await callApi({
-      method: "GET",
-      path: `/api/v1/skills/${encodeURIComponent(skillID)}`,
-      server: context.server,
-      silent: true,
-    });
-    const data = (resp.data && typeof resp.data === "object" && !Array.isArray(resp.data))
-      ? (resp.data as { versions?: JsonValue }).versions
-      : undefined;
-    const versions = Array.isArray(data) ? data.map((v) => String(v)).filter(Boolean) : [];
+    const versions = (await (await this.getBackend(context)).getSkillOverview(skillID)).versions;
     if (versions.length === 0) {
       this.fail(`No versions found for skill: ${skillID}`);
     }
@@ -1003,28 +936,16 @@ abstract class DependencyAwareCommand extends SkillCatalogCommand {
 
   protected async fetchRemoteSkillNode(context: CommandContext, skillID: string, preferredVersion?: string): Promise<SkillGraphNode> {
     const version = await this.resolveVersion(context, skillID, preferredVersion);
-    const resp = await callApi({
-      method: "GET",
-      path: `/api/v1/skills/${encodeURIComponent(skillID)}/${encodeURIComponent(version)}`,
-      server: context.server,
-      silent: true,
-    });
-    const row = (resp.data && typeof resp.data === "object" && !Array.isArray(resp.data))
-      ? (resp.data as Record<string, JsonValue>)
-      : {};
-    const filesRaw = Array.isArray(row.files) ? row.files : [];
+    const row: RegistrySkillDetail = await (await this.getBackend(context)).getSkillVersion(skillID, version);
+    const filesRaw = row.files;
     const files: RemoteFile[] = [];
     for (const entry of filesRaw) {
-      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-        continue;
-      }
-      const file = entry as Record<string, JsonValue>;
-      const path = String(file.path || "").trim();
+      const path = String(entry.path || "").trim();
       if (!path) {
         continue;
       }
-      const encoding = String(file.encoding || "").trim().toLowerCase();
-      const content = String(file.content || "");
+      const encoding = String(entry.encoding || "").trim().toLowerCase();
+      const content = String(entry.content || "");
       files.push({
         path,
         content: encoding === "base64"
@@ -1038,9 +959,9 @@ abstract class DependencyAwareCommand extends SkillCatalogCommand {
     const skillFile = files.find((file) => normalizePath(file.path) === "SKILL.md");
     const metadata = skillFile ? parseSkillFrontmatter(decodeRemoteTextFile(skillFile, `${skillID}@${version}`)) : { name: "", description: "", metadataVersion: "", metadataAuthor: "" };
     return {
-      skillID: String(row.skill_id || skillID).trim() || skillID,
-      version: String(row.version || version).trim() || version,
-      description: String(row.description || "").trim() || metadata.description,
+      skillID: row.skill_id.trim() || skillID,
+      version: row.version.trim() || version,
+      description: row.description.trim() || metadata.description,
       files,
       dependencies: this.parseDependencyRefs(files, `${skillID}@${version}`),
     };
@@ -2153,10 +2074,6 @@ export class ValidateCommand extends BaseCommand {
       this.fail("Usage: skuare validate <skillID> <version>");
     }
 
-    await callApi({
-      method: "POST",
-      path: `/api/v1/skills/${encodeURIComponent(skillID)}/${encodeURIComponent(version)}/validate`,
-      server: context.server,
-    });
+    console.log(JSON.stringify(await (await this.getBackend(context)).validateSkill(skillID, version), null, 2));
   }
 }

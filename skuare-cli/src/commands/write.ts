@@ -4,7 +4,6 @@
 
 import type { CommandContext, JsonValue } from "./types";
 import { BaseCommand } from "./base";
-import { callApi } from "../registry/client";
 import { isDomainError } from "../domain/errors";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, posix, relative, resolve } from "node:path";
@@ -63,16 +62,12 @@ export class PublishCommand extends BaseCommand {
         : await this.buildRequestFromSkillSource(skillContext.args, source, forceUpload);
 
       try {
-        const resp = await callApi({
-          method: "POST",
-          path: "/api/v1/skills",
+        const created = await (await this.getBackend(skillContext)).publishSkill({
           body: prepared.body,
           contentType: prepared.contentType,
-          server: skillContext.server,
           auth: skillContext.auth,
-          silent: true,
         });
-        this.printCreateResult(resp.data);
+        this.printCreateResult(created);
       } catch (err) {
         if (!this.isAlreadyExistsError(err)) {
           this.rethrowPublishError(err, prepared);
@@ -133,14 +128,10 @@ export class PublishCommand extends BaseCommand {
 
     const prepared = await this.buildRequestFromSkillSource([], { kind: "dir", path: depDir }, forceUpload);
     try {
-      await callApi({
-        method: "POST",
-        path: "/api/v1/skills",
+      await (await this.getBackend(context)).publishSkill({
         body: prepared.body,
         contentType: prepared.contentType,
-        server: context.server,
         auth: context.auth,
-        silent: true,
       });
     } catch (err) {
       if (!this.isAlreadyExistsError(err)) {
@@ -253,7 +244,7 @@ export class PublishCommand extends BaseCommand {
     return message.includes("HTTP 413");
   }
 
-  private printCreateResult(data: JsonValue | string | null): void {
+  private printCreateResult(data: { skill_id: string; version: string; name: string; description: string; author: string }): void {
     if (data && typeof data === "object" && !Array.isArray(data)) {
       const row = data as Record<string, JsonValue>;
       const out: Record<string, JsonValue> = {
@@ -268,7 +259,6 @@ export class PublishCommand extends BaseCommand {
       console.log(JSON.stringify(out, null, 2));
       return;
     }
-    console.log(JSON.stringify(data, null, 2));
   }
 
   private async buildRequestFromSkillSource(
@@ -607,27 +597,17 @@ export class UpdateCommand extends SkillCatalogCommand {
     skillID: string,
     expectedAuthor: string
   ): Promise<{ skillID: string; maxVersion: string }> {
-    const overviewResp = await callApi({
-      method: "GET",
-      path: `/api/v1/skills/${encodeURIComponent(skillID)}`,
-      server: context.server,
-      silent: true,
-    });
-    const overview = (overviewResp.data && typeof overviewResp.data === "object" && !Array.isArray(overviewResp.data))
-      ? (overviewResp.data as { versions?: JsonValue; author?: JsonValue; skill_id?: JsonValue })
-      : {};
-    const remoteAuthor = String(overview.author || "").trim();
+    const overview = await (await this.getBackend(context)).getSkillOverview(skillID);
+    const remoteAuthor = overview.author.trim();
     if (this.normalizeAuthor(remoteAuthor) !== this.normalizeAuthor(expectedAuthor)) {
       this.fail(`Remote skill ${skillID} belongs to author ${remoteAuthor || "(empty)"}, not ${expectedAuthor || "(empty)"}`);
     }
-    const versions = Array.isArray(overview.versions)
-      ? overview.versions.map((item) => String(item).trim()).filter(Boolean)
-      : [];
+    const versions = overview.versions.map((item) => String(item).trim()).filter(Boolean);
     if (versions.length === 0) {
       this.fail(`No versions found for remote skill: ${skillID}`);
     }
     return {
-      skillID: String(overview.skill_id || skillID).trim() || skillID,
+      skillID: overview.skill_id.trim() || skillID,
       maxVersion: maxVersion(versions),
     };
   }
@@ -1033,11 +1013,6 @@ export class DeleteCommand extends BaseCommand {
       this.fail("Usage: skuare delete <skillID> <version>");
     }
 
-    await callApi({
-      method: "DELETE",
-      path: `/api/v1/skills/${encodeURIComponent(skillID)}/${encodeURIComponent(version)}`,
-      server: normalized.context.server,
-      auth: normalized.context.auth,
-    });
+    await (await this.getBackend(normalized.context)).deleteSkill(skillID, version, normalized.context.auth);
   }
 }

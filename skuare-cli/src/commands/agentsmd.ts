@@ -2,19 +2,13 @@ import * as fs from "node:fs/promises";
 import { homedir } from "node:os";
 import * as path from "node:path";
 import { BaseCommand } from "./base";
-import type { CommandContext, JsonValue } from "./types";
-import { callApi } from "../registry/client";
+import type { CommandContext } from "./types";
 import { Status } from "../utils/format";
 import { collectPositionalArgs, parseRegexOption } from "../utils/command_args";
 import { resolvePrimaryTool, resolveToolHomeDir } from "../utils/install_paths";
+import type { RegistryAgentsMDEntry } from "../registry/types";
 
-type AgentsMDListItem = {
-  id?: JsonValue;
-  agentsmd_id?: JsonValue;
-  name?: JsonValue;
-  description?: JsonValue;
-  version?: JsonValue;
-};
+type AgentsMDListItem = RegistryAgentsMDEntry;
 
 function compileRegex(pattern: string): RegExp {
   return new RegExp(pattern);
@@ -31,6 +25,27 @@ function matchesAgentsMD(regex: RegExp, item: AgentsMDListItem): boolean {
     regex.lastIndex = 0;
     return regex.test(value);
   });
+}
+
+function toAgentsMDListOutput(item: AgentsMDListItem): Record<string, string> {
+  const out: Record<string, string> = {
+    id: String(item.id || ""),
+    agentsmd_id: String(item.agentsmd_id || ""),
+    version: String(item.version || ""),
+  };
+  const name = String(item.name || "").trim();
+  const author = String(item.author || "").trim();
+  const description = String(item.description || "").trim();
+  if (name) {
+    out.name = name;
+  }
+  if (author) {
+    out.author = author;
+  }
+  if (description) {
+    out.description = description;
+  }
+  return out;
 }
 
 async function readAgentsMDSource(dirPath?: string, filePath?: string): Promise<{
@@ -64,17 +79,6 @@ async function readAgentsMDSource(dirPath?: string, filePath?: string): Promise<
   };
 }
 
-function getItemsFromListResponse(data: JsonValue | string | null): AgentsMDListItem[] {
-  if (!data || typeof data !== "object" || Array.isArray(data)) {
-    return [];
-  }
-  const items = (data as { items?: unknown }).items;
-  if (!Array.isArray(items)) {
-    return [];
-  }
-  return items.filter((item): item is AgentsMDListItem => !!item && typeof item === "object" && !Array.isArray(item));
-}
-
 export class PublishAgentsMDCommand extends BaseCommand {
   readonly name = "publish-agentsmd";
   readonly description = "Publish AGENTS.md";
@@ -97,21 +101,14 @@ export class PublishAgentsMDCommand extends BaseCommand {
       this.fail("Missing agentsmd_id or version");
     }
 
-    const resp = await callApi({
-      method: "POST",
-      path: "/api/v1/agentsmd",
-      body: {
-        agentsmd_id: finalAgentsmdID,
-        version: finalVersion,
-        content: source.content,
-      },
-      server: ctx.server,
+    const backend = await this.getBackend(ctx);
+    const data = await backend.publishAgentsMD({
+      agentsmdID: finalAgentsmdID,
+      version: finalVersion,
+      content: source.content,
       auth: ctx.auth,
-      silent: true,
     });
-
-    const data = resp.data as { id?: string } | null;
-    console.log(`${Status.Success} Published ${data?.id || `${finalAgentsmdID}@${finalVersion}`}`);
+    console.log(`${Status.Success} Published ${data.id || `${finalAgentsmdID}@${finalVersion}`}`);
   }
 }
 
@@ -126,14 +123,7 @@ export class ListAgentsMDCommand extends BaseCommand {
     }
     const query = this.parseOptionValue(ctx.args, "--q") || "";
     const regexPattern = parseRegexOption(ctx.args);
-    const listPath = query ? `/api/v1/agentsmd?q=${encodeURIComponent(query)}` : "/api/v1/agentsmd";
-    const resp = await callApi({
-      method: "GET",
-      path: listPath,
-      server: ctx.server,
-      auth: ctx.auth,
-      silent: true,
-    });
+    const backend = await this.getBackend(ctx);
 
     const regex = regexPattern
       ? (() => {
@@ -145,9 +135,9 @@ export class ListAgentsMDCommand extends BaseCommand {
         })()
       : undefined;
 
-    const items = getItemsFromListResponse(resp.data);
+    const items = await backend.listAgentsMD(query);
     const filtered = regex ? items.filter((item) => matchesAgentsMD(regex, item)) : items;
-    console.log(JSON.stringify({ items: filtered }, null, 2));
+    console.log(JSON.stringify({ items: filtered.map(toAgentsMDListOutput) }, null, 2));
   }
 }
 
@@ -161,19 +151,11 @@ export class PeekAgentsMDCommand extends BaseCommand {
       this.fail("Missing agentsmd-id");
     }
 
-    const apiPath = version
-      ? `/api/v1/agentsmd/${encodeURIComponent(agentsmdID)}/${encodeURIComponent(version)}`
-      : `/api/v1/agentsmd/${encodeURIComponent(agentsmdID)}`;
-
-    const resp = await callApi({
-      method: "GET",
-      path: apiPath,
-      server: ctx.server,
-      auth: ctx.auth,
-      silent: true,
-    });
-
-    console.log(JSON.stringify(resp.data, null, 2));
+    const backend = await this.getBackend(ctx);
+    const data = version
+      ? await backend.getAgentsMDVersion(agentsmdID, version)
+      : await backend.getAgentsMDOverview(agentsmdID);
+    console.log(JSON.stringify(data, null, 2));
   }
 }
 
@@ -200,30 +182,18 @@ export class GetAgentsMDCommand extends BaseCommand {
 
     const isGlobal = ctx.args.includes("--global");
     let version = versionArg;
+    const backend = await this.getBackend(ctx);
     if (!version) {
-      const overview = await callApi({
-        method: "GET",
-        path: `/api/v1/agentsmd/${encodeURIComponent(agentsmdID)}`,
-        server: ctx.server,
-        auth: ctx.auth,
-        silent: true,
-      });
-      const data = overview.data as { versions?: string[] } | null;
-      const versions = Array.isArray(data?.versions) ? data.versions : [];
+      const overview = await backend.getAgentsMDOverview(agentsmdID);
+      const versions = overview.versions;
       version = versions[versions.length - 1];
       if (!version) {
         this.fail("No versions found");
       }
     }
 
-    const detail = await callApi({
-      method: "GET",
-      path: `/api/v1/agentsmd/${encodeURIComponent(agentsmdID)}/${encodeURIComponent(version)}`,
-      server: ctx.server,
-      auth: ctx.auth,
-      silent: true,
-    });
-    const content = String((detail.data as { content?: JsonValue } | null)?.content || "");
+    const detail = await backend.getAgentsMDVersion(agentsmdID, version);
+    const content = detail.content;
     if (!content) {
       this.fail("No content found");
     }
@@ -277,13 +247,7 @@ export class DeleteAgentsMDCommand extends BaseCommand {
       this.fail("Missing agentsmd-id or version");
     }
 
-    await callApi({
-      method: "DELETE",
-      path: `/api/v1/agentsmd/${encodeURIComponent(agentsmdID)}/${encodeURIComponent(version)}`,
-      server: ctx.server,
-      auth: ctx.auth,
-      silent: true,
-    });
+    await (await this.getBackend(ctx)).deleteAgentsMD(agentsmdID, version, ctx.auth);
     console.log(`${Status.Success} Deleted ${agentsmdID}@${version}`);
   }
 }
