@@ -12,7 +12,8 @@ Core value: version-controlled management of "Skill content + dependencies" — 
 - Production-ready convergence: `remote` mode enables signature verification for write operations.
 
 ## Project Components
-- `skuare-svc`: Backend service (Skill storage and API).
+- `skuare-svc`: HTTP backend (Skill storage and API).
+- Git repo backend: use a Git repository directory directly as the remote registry.
 - `skuare-cli`: Command-line tool (`skr` / `skuare`).
 
 Default repository root path: `$HOME/.skuare`
@@ -30,7 +31,16 @@ Default repository root path: `$HOME/.skuare`
   - Default installation root: `~/.skuare`
 - Server write commands: `publish`, `update`, `create`, `delete`
   - Main purpose: write to remote repository
-  - Whether unsigned writes are allowed is determined by the server; CLI only attaches signatures when signing credentials are provided
+  - Whether unsigned writes are allowed on the HTTP backend is determined by the server; CLI only attaches signatures when signing credentials are provided
+
+## Remote Backends
+- `skr --server <url>` can now point to either registry backend:
+  - `http://` / `https://`: `skuare-svc`
+  - `git+file://...`, `git+https://...`, `git+ssh://...`: Git repo backend
+- Git repo backend reuses the current default service layout:
+  - Skill: `<repoRoot>/<author>/<skillID>/<version>/...`
+  - AGENTS.md: `<repoRoot>/agentsmd/<agentsmdID>/<version>/AGENTS.md`
+- `skr init` still primarily writes HTTP address/port config; for now, use Git repo backend via `--server` or `SKUARE_SVC_URL`.
 
 ## Core Capability: Dependency Management
 - Dependency description file: `skill-deps.json`
@@ -86,10 +96,12 @@ skr detail observability-orchestrator
 skr health
 skr list
 skr peek observability-orchestrator
+skr --server git+file:///tmp/skuare-registry.git list
 
 # 7) Server write commands: publish Skill (recursively handles dependencies)
 skr publish --dir ./skills/observability-orchestrator
 skr publish --dir ./skills/observability-orchestrator --force
+skr --server git+file:///tmp/skuare-registry.git publish --dir ./skills/observability-orchestrator
 
 # 8) Hybrid commands: fetch and install
 skr get observability-orchestrator

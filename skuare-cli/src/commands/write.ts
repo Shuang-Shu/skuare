@@ -4,7 +4,7 @@
 
 import type { CommandContext, JsonValue } from "./types";
 import { BaseCommand } from "./base";
-import { callApi } from "../http/client";
+import { callApi } from "../registry/client";
 import { isDomainError } from "../domain/errors";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, posix, relative, resolve } from "node:path";

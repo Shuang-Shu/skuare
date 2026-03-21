@@ -4,7 +4,7 @@
 
 import type { CommandContext } from "./types";
 import { BaseCommand } from "./base";
-import { callApi } from "../http/client";
+import { callApi } from "../registry/client";
 
 export class HealthCommand extends BaseCommand {
   readonly name = "health";

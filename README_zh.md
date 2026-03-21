@@ -10,7 +10,8 @@
 - 生产模式可收敛：`remote` 模式对写操作启用签名校验。
 
 ## 项目组成
-- `skuare-svc`：后端服务（Skill 存储与 API）。
+- `skuare-svc`：HTTP backend（Skill 存储与 API）。
+- Git repo backend：直接以 Git 仓库目录作为远端 registry。
 - `skuare-cli`：命令行工具（`skr` / `skuare`）。
 
 默认仓库根路径：`$HOME/.skuare`
@@ -28,7 +29,16 @@
   - 默认安装根目录：`~/.skuare`
 - server 写命令：`publish`、`update`、`create`、`delete`
   - 主要作用：写远程仓库
-  - 是否允许无签名写入由服务端决定；CLI 只有在提供签名凭证时才附加签名
+  - HTTP backend 下是否允许无签名写入由服务端决定；CLI 只有在提供签名凭证时才附加签名
+
+## 远端 backend
+- `skr --server <url>` 现在可以直接选择 registry backend：
+  - `http://` / `https://`：`skuare-svc`
+  - `git+file://...`、`git+https://...`、`git+ssh://...`：Git repo backend
+- Git repo backend 复用当前服务端默认文件布局：
+  - Skill：`<repoRoot>/<author>/<skillID>/<version>/...`
+  - AGENTS.md：`<repoRoot>/agentsmd/<agentsmdID>/<version>/AGENTS.md`
+- 现阶段 `skr init` 仍主要生成 HTTP 地址/端口配置；Git repo backend 建议通过 `--server` 或 `SKUARE_SVC_URL` 使用。
 
 ## 核心能力：依赖管理
 - 依赖描述文件：`skill-deps.json`
@@ -80,10 +90,12 @@ skr detail observability-orchestrator
 skr health
 skr list
 skr peek observability-orchestrator
+skr --server git+file:///tmp/skuare-registry.git list
 
 # 7) server 写命令：发布 Skill（会递归处理依赖）
 skr publish --dir ./skills/observability-orchestrator
 skr publish --dir ./skills/observability-orchestrator --force
+skr --server git+file:///tmp/skuare-registry.git publish --dir ./skills/observability-orchestrator
 
 # 8) 混合命令：拉取并安装
 skr get observability-orchestrator

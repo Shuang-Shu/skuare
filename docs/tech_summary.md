@@ -22,7 +22,8 @@
   - `scripts/dev-up.sh` and `make start-be` default `SPEC_DIR` unified to `$HOME/.skuare/skills`.
   - Startup parameters: `--addr`, `--spec-dir`, `--authorized-keys-file`, `--local`, `--auth-max-skew-sec`.
   - CLI config priority: `CLI args > workspace > global > defaults`.
-  - CLI `remote.mode`: `local` / `remote`, only describes target server mode, not responsible for declaring server storage directory.
+  - CLI `--server` can target either a `skuare-svc` HTTP endpoint or a `git+<repo-url>` Git registry.
+  - CLI `remote.mode`: `local` / `remote`, only describes HTTP server mode awareness, not responsible for declaring server storage directory.
   - CLI local installation root: default skill install path is `<cwd>/.{tool}/skills/`; `--global` switches to `~/.{tool}/skills/`.
   - `agentsmd` install target is `<cwd>/.{tool}/AGENTS.md`; `--global` switches to `~/.{tool}/AGENTS.md`.
 - Authentication:
@@ -51,6 +52,7 @@
   - Examples in `docs/commands*.md` are now backed by real fixtures under `examples/`; remote command examples use the `observability-orchestrator` sample chain by default.
 - Maintainer Notes:
   - CLI shared parsing logic now lives in dedicated helper modules (`utils/command_args`, `utils/skill_manifest`, `utils/install_paths`, `utils/skill_workspace`) plus `commands/resource_type`; inside `query.ts`, `peek/get/deps` now share one skill selector flow instead of maintaining separate target-matching branches.
+  - CLI now routes remote skill operations through a registry facade; the command layer no longer binds directly to the HTTP client, which allows Git repo backend reuse and future backend additions.
   - Backend handler/store layers use lightweight helper methods for repeated JSON response and versioned-resource filesystem flows; the project intentionally avoids introducing a heavy generic resource framework.
 
 ## Gap Analysis

@@ -6,8 +6,8 @@
 > 适用范围：skuare-cli
 
 ## 目标与范围
-- 提供 Skuare 命令行入口，作为前端控制层调用 `skuare-svc`。
-- 通过统一 `--server` 参数对接后端 HTTP API，实现基础 Skill 管理链路。
+- 提供 Skuare 命令行入口，作为前端控制层调用统一 registry backend。
+- 通过统一 `--server` 参数对接后端兼容层；当前支持 `skuare-svc` HTTP server 与 Git 仓库 registry。
 
 ## 命令分组总览
 - 纯本地命令：`help`、`version`、`init`、`build`、`format`
@@ -31,12 +31,21 @@
   - 其中 `<workspace>` 为执行 `skuare/skr` 命令时的当前目录（`cwd`）
   - 覆盖优先级：`CLI 参数 > 工作区配置 > 全局配置 > 默认值`
 - 仓库角色：
-  - `skuare-svc`：远程存储仓库（Remote Registry）
+  - `skuare-svc`：HTTP registry backend
+  - Git repo：基于仓库目录布局的 registry backend
   - `skuare-cli`：本地局部仓库（Local Partial Repository）消费者
   - CLI 本地仓库默认根目录：global=`~/.skuare`，workspace=`<cwd>/.skuare`
 - 后端地址：
   - 默认由配置项 `remote.address + remote.port` 组合得到
   - CLI 参数 `--server <url>` 优先级最高
+  - `--server` 当前支持：
+    - `http://` / `https://`：`skuare-svc` HTTP backend
+    - `git+file://...`、`git+https://...`、`git+ssh://...`：Git registry backend
+  - Git backend 首版建议通过 `--server` 或 `SKUARE_SVC_URL` 使用；`skuare init` 目前仍主要面向 HTTP 地址/端口配置
+- Git registry 布局：
+  - Skill：`<repoRoot>/<author>/<skillID>/<version>/...`
+  - AGENTS.md：`<repoRoot>/agentsmd/<agentsmdID>/<version>/AGENTS.md`
+  - 该布局与 `skuare-svc --spec-dir` 默认文件布局保持一致，便于两种 backend 复用同一份仓库内容
 - 远端模式：
   - `remote.mode=local`：表示目标服务端处于本地模式，是否允许无签名写操作由服务端自己决定
   - `remote.mode=remote`：表示目标服务端处于远端模式，通常要求签名写请求
@@ -93,6 +102,7 @@
 
 ## 鉴权机制说明
 - 写操作（`publish/update/create`、`delete`）若提供 `--key-id` 与 `--privkey-file` 会附加数字签名；是否允许免签写入由服务端决定。
+- Git backend 不消费 HTTP 签名头；签名逻辑仅对 HTTP backend 生效。
 - `remote.mode` 仅用于 CLI 保存服务端连接配置；是否允许免签写操作由服务端自身模式决定。
 - CLI 签名参数：
   - 参数：`--key-id <id>`、`--privkey-file <path>`
@@ -117,6 +127,7 @@ skuare init
 skuare help
 skuare help list
 skuare --server http://127.0.0.1:15657 health
+skuare --server git+file:///tmp/skuare-registry.git list
 # 或
 skr help
 skr help get

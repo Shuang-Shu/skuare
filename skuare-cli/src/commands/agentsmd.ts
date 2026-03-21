@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import * as path from "node:path";
 import { BaseCommand } from "./base";
 import type { CommandContext, JsonValue } from "./types";
-import { callApi } from "../http/client";
+import { callApi } from "../registry/client";
 import { Status } from "../utils/format";
 import { collectPositionalArgs, parseRegexOption } from "../utils/command_args";
 import { resolvePrimaryTool, resolveToolHomeDir } from "../utils/install_paths";
