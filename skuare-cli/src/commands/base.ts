@@ -6,6 +6,8 @@ import type { Command, CommandContext } from "./types";
 import { DomainError } from "../domain/errors";
 import { parseOptionValue } from "../utils/command_args";
 import { readJsonFile } from "../utils/fs";
+import { getRegistryBackend } from "../registry/factory";
+import type { RegistryBackend } from "../registry/backend";
 
 export abstract class BaseCommand implements Command {
   abstract readonly name: string;
@@ -32,6 +34,10 @@ export abstract class BaseCommand implements Command {
    */
   protected fail(message: string): never {
     throw new DomainError("CLI_OPERATION_FAILED", message);
+  }
+
+  protected async getBackend(context: CommandContext): Promise<RegistryBackend> {
+    return getRegistryBackend(context.server);
   }
 
   /**

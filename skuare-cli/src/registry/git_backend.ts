@@ -4,58 +4,32 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { gunzipSync } from "node:zlib";
-import type { ApiRequestOptions, ApiResponse } from "../http/client";
 import { DomainError } from "../domain/errors";
+import type { JsonValue, WriteAuth } from "../types";
 import { parseSkillFrontmatter, parseSkillMarkdown, toYamlString } from "../utils/skill_manifest";
+import type { RegistryBackend } from "./backend";
+import type {
+  PublishAgentsMDRequest,
+  PublishSkillRequest,
+  RegistryAgentsMDDetail,
+  RegistryAgentsMDEntry,
+  RegistryAgentsMDOverview,
+  RegistryHealth,
+  RegistrySkillDetail,
+  RegistrySkillEntry,
+  RegistrySkillOverview,
+} from "./types";
 
 const execFileAsync = promisify(execFile);
 const anonymousSkillAuthorDir = "_anonymous";
-const gitBackends = new Map<string, Promise<GitRegistryBackend>>();
-
-type JsonValue = null | boolean | number | string | JsonValue[] | { [k: string]: JsonValue };
-type SkillEntry = {
-  skill_id: string;
-  version: string;
-  name: string;
-  author: string;
-  description: string;
-  path: string;
-  updated_at: string;
-};
-type SkillDetail = SkillEntry & {
-  files: Array<{ path: string; content: string; encoding?: string; size?: number }>;
-};
-type AgentsMDEntry = {
-  agentsmd_id: string;
-  version: string;
-  id: string;
-  name: string;
-  author: string;
-  description: string;
-};
 
 export function isGitRegistryServer(server: string): boolean {
   const trimmed = server.trim();
   return trimmed.startsWith("git+") || trimmed.endsWith(".git") || trimmed.startsWith("/") || /^[A-Za-z]:[\\/]/.test(trimmed);
 }
 
-export async function callGitApi(options: ApiRequestOptions): Promise<ApiResponse> {
-  const backend = await getGitBackend(options.server);
-  return backend.call(options);
-}
-
-async function getGitBackend(server: string): Promise<GitRegistryBackend> {
-  let existing = gitBackends.get(server);
-  if (!existing) {
-    existing = GitRegistryBackend.create(server);
-    gitBackends.set(server, existing);
-  }
-  return existing;
-}
-
-class GitRegistryBackend {
+export class GitRegistryBackend implements RegistryBackend {
   private constructor(
-    private readonly server: string,
     private readonly repoUrl: string,
     private readonly checkoutDir: string
   ) {}
@@ -83,91 +57,12 @@ class GitRegistryBackend {
       void cleanup();
     });
 
-    return new GitRegistryBackend(server, repoUrl, checkoutDir);
+    return new GitRegistryBackend(repoUrl, checkoutDir);
   }
 
-  async call(options: ApiRequestOptions): Promise<ApiResponse> {
+  async health(): Promise<RegistryHealth> {
     await this.refresh();
-    const parsed = new URL(options.path, "http://registry.local");
-    const pathname = parsed.pathname;
-    const segments = pathname.split("/").filter(Boolean).map((segment) => decodeURIComponent(segment));
-
-    let data: JsonValue | string | null;
-    if (options.method === "GET" && pathname === "/healthz") {
-      data = { status: "ok", name: "skuare-git" };
-    } else if (segments[0] === "api" && segments[1] === "v1" && segments[2] === "skills") {
-      data = await this.handleSkills(options, segments.slice(3), parsed.searchParams);
-    } else if (segments[0] === "api" && segments[1] === "v1" && segments[2] === "agentsmd") {
-      data = await this.handleAgentsMD(options, segments.slice(3), parsed.searchParams);
-    } else if (options.method === "POST" && pathname === "/api/v1/reindex") {
-      data = { count: (await this.scanSkills()).length };
-    } else {
-      throw new DomainError("CLI_OPERATION_FAILED", `Unsupported git registry path: ${options.method} ${pathname}`);
-    }
-
-    if (!options.silent) {
-      console.log(JSON.stringify(data, null, 2));
-    }
-    return { status: 200, data };
-  }
-
-  private async handleSkills(
-    options: ApiRequestOptions,
-    segments: string[],
-    searchParams: URLSearchParams
-  ): Promise<JsonValue> {
-    if (options.method === "GET" && segments.length === 0) {
-      const query = searchParams.get("q") || "";
-      return { items: await this.listSkills(query) };
-    }
-    if (options.method === "POST" && segments.length === 0) {
-      const created = await this.createSkill(options.body, options.contentType);
-      await this.commitAndPush(`feat: publish skill ${created.skill_id}@${created.version}`);
-      return created;
-    }
-    if (segments.length === 1 && options.method === "GET") {
-      return this.getSkillOverview(segments[0]);
-    }
-    if (segments.length === 2 && options.method === "GET") {
-      return this.getSkillDetail(segments[0], segments[1]);
-    }
-    if (segments.length === 2 && options.method === "DELETE") {
-      await this.deleteSkill(segments[0], segments[1]);
-      await this.commitAndPush(`feat: delete skill ${segments[0]}@${segments[1]}`);
-      return { deleted: true };
-    }
-    if (segments.length === 3 && segments[2] === "validate" && options.method === "POST") {
-      return this.validateSkill(segments[0], segments[1]);
-    }
-    throw new DomainError("CLI_OPERATION_FAILED", `Unsupported git skill operation: ${options.method} ${segments.join("/")}`);
-  }
-
-  private async handleAgentsMD(
-    options: ApiRequestOptions,
-    segments: string[],
-    searchParams: URLSearchParams
-  ): Promise<JsonValue> {
-    if (options.method === "GET" && segments.length === 0) {
-      const query = searchParams.get("q") || "";
-      return { items: await this.listAgentsMD(query) };
-    }
-    if (options.method === "POST" && segments.length === 0) {
-      const created = await this.createAgentsMD(options.body);
-      await this.commitAndPush(`feat: publish agentsmd ${created.agentsmd_id}@${created.version}`);
-      return created;
-    }
-    if (segments.length === 1 && options.method === "GET") {
-      return this.getAgentsMDOverview(segments[0]);
-    }
-    if (segments.length === 2 && options.method === "GET") {
-      return this.getAgentsMDDetail(segments[0], segments[1]);
-    }
-    if (segments.length === 2 && options.method === "DELETE") {
-      await this.deleteAgentsMD(segments[0], segments[1]);
-      await this.commitAndPush(`feat: delete agentsmd ${segments[0]}@${segments[1]}`);
-      return { deleted: true };
-    }
-    throw new DomainError("CLI_OPERATION_FAILED", `Unsupported git agentsmd operation: ${options.method} ${segments.join("/")}`);
+    return { status: "ok", name: "skuare-git" };
   }
 
   private async refresh(): Promise<void> {
@@ -176,7 +71,8 @@ class GitRegistryBackend {
     });
   }
 
-  private async listSkills(query: string): Promise<SkillEntry[]> {
+  async listSkills(query = ""): Promise<RegistrySkillEntry[]> {
+    await this.refresh();
     const items = await this.scanSkills();
     const q = query.trim().toLowerCase();
     return items
@@ -184,9 +80,9 @@ class GitRegistryBackend {
       .sort((left, right) => left.skill_id.localeCompare(right.skill_id) || left.version.localeCompare(right.version));
   }
 
-  private async scanSkills(): Promise<SkillEntry[]> {
+  private async scanSkills(): Promise<RegistrySkillEntry[]> {
     const entries = await readdir(this.checkoutDir, { withFileTypes: true });
-    const out: SkillEntry[] = [];
+    const out: RegistrySkillEntry[] = [];
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === "agentsmd") {
         continue;
@@ -220,7 +116,8 @@ class GitRegistryBackend {
     return out;
   }
 
-  private async getSkillOverview(skillID: string): Promise<JsonValue> {
+  async getSkillOverview(skillID: string): Promise<RegistrySkillOverview> {
+    await this.refresh();
     const entries = (await this.scanSkills()).filter((item) => item.skill_id === skillID);
     if (entries.length === 0) {
       throw notFoundError();
@@ -232,7 +129,8 @@ class GitRegistryBackend {
     };
   }
 
-  private async getSkillDetail(skillID: string, version: string): Promise<SkillDetail> {
+  async getSkillVersion(skillID: string, version: string): Promise<RegistrySkillDetail> {
+    await this.refresh();
     const versionDir = await this.findSkillVersionDir(skillID, version);
     const skillFile = join(versionDir, "SKILL.md");
     const parsed = parseSkillFrontmatter(await readFile(skillFile, "utf8"));
@@ -260,8 +158,8 @@ class GitRegistryBackend {
     };
   }
 
-  private async validateSkill(skillID: string, version: string): Promise<SkillEntry> {
-    const detail = await this.getSkillDetail(skillID, version);
+  async validateSkill(skillID: string, version: string): Promise<RegistrySkillEntry> {
+    const detail = await this.getSkillVersion(skillID, version);
     const skillFile = detail.files.find((item) => item.path === "SKILL.md");
     if (!skillFile) {
       throw invalidArgumentError("missing SKILL.md");
@@ -278,11 +176,19 @@ class GitRegistryBackend {
     };
   }
 
-  private async createSkill(body: JsonValue | Uint8Array | undefined, contentType?: string): Promise<SkillEntry> {
+  async publishSkill(request: PublishSkillRequest): Promise<RegistrySkillEntry> {
+    await this.refresh();
+    const { body, contentType } = request;
     if (body === undefined) {
       throw invalidArgumentError("missing request body");
     }
     const payload = body instanceof Uint8Array ? parseMultipartSkillUpload(body, contentType) : parseJsonSkillUpload(body);
+    const created = await this.writeSkillPayload(payload);
+    await this.commitAndPush(`feat: publish skill ${created.skill_id}@${created.version}`);
+    return created;
+  }
+
+  private async writeSkillPayload(payload: ParsedSkillUpload): Promise<RegistrySkillEntry> {
     const authorDir = resolveAuthorDir(payload.author);
     const targetDir = join(this.checkoutDir, authorDir, ...payload.skill_id.split("/"), payload.version);
     const existingDir = await this.tryFindSkillVersionDir(payload.skill_id, payload.version);
@@ -313,13 +219,16 @@ class GitRegistryBackend {
     };
   }
 
-  private async deleteSkill(skillID: string, version: string): Promise<void> {
+  async deleteSkill(skillID: string, version: string, _auth?: WriteAuth): Promise<void> {
+    await this.refresh();
     const versionDir = await this.findSkillVersionDir(skillID, version);
     await rm(versionDir, { recursive: true, force: true });
     await cleanupEmptyParents(dirname(versionDir), this.checkoutDir);
+    await this.commitAndPush(`feat: delete skill ${skillID}@${version}`);
   }
 
-  private async listAgentsMD(query: string): Promise<AgentsMDEntry[]> {
+  async listAgentsMD(query = ""): Promise<RegistryAgentsMDEntry[]> {
+    await this.refresh();
     const items = await this.scanAgentsMD();
     const q = query.trim().toLowerCase();
     return items
@@ -327,14 +236,14 @@ class GitRegistryBackend {
       .sort((left, right) => left.agentsmd_id.localeCompare(right.agentsmd_id) || left.version.localeCompare(right.version));
   }
 
-  private async scanAgentsMD(): Promise<AgentsMDEntry[]> {
+  private async scanAgentsMD(): Promise<RegistryAgentsMDEntry[]> {
     const root = join(this.checkoutDir, "agentsmd");
     const info = await stat(root).catch(() => undefined);
     if (!info?.isDirectory()) {
       return [];
     }
     const files = await walkFiles(root);
-    const out: AgentsMDEntry[] = [];
+    const out: RegistryAgentsMDEntry[] = [];
     for (const file of files) {
       if (basename(file) !== "AGENTS.md") {
         continue;
@@ -358,7 +267,8 @@ class GitRegistryBackend {
     return out;
   }
 
-  private async getAgentsMDOverview(agentsmdID: string): Promise<JsonValue> {
+  async getAgentsMDOverview(agentsmdID: string): Promise<RegistryAgentsMDOverview> {
+    await this.refresh();
     const items = (await this.scanAgentsMD()).filter((item) => item.agentsmd_id === agentsmdID);
     if (items.length === 0) {
       throw notFoundError();
@@ -370,7 +280,8 @@ class GitRegistryBackend {
     };
   }
 
-  private async getAgentsMDDetail(agentsmdID: string, version: string): Promise<JsonValue> {
+  async getAgentsMDVersion(agentsmdID: string, version: string): Promise<RegistryAgentsMDDetail> {
+    await this.refresh();
     const versionDir = await this.findAgentsMDVersionDir(agentsmdID, version);
     const content = await readFile(join(versionDir, "AGENTS.md"), "utf8");
     return {
@@ -381,7 +292,18 @@ class GitRegistryBackend {
     };
   }
 
-  private async createAgentsMD(body: JsonValue | Uint8Array | undefined): Promise<AgentsMDEntry> {
+  async publishAgentsMD(request: PublishAgentsMDRequest): Promise<RegistryAgentsMDEntry> {
+    await this.refresh();
+    const created = await this.writeAgentsMD({
+      agentsmd_id: request.agentsmdID,
+      version: request.version,
+      content: request.content,
+    });
+    await this.commitAndPush(`feat: publish agentsmd ${created.agentsmd_id}@${created.version}`);
+    return created;
+  }
+
+  private async writeAgentsMD(body: JsonValue | Uint8Array | undefined): Promise<RegistryAgentsMDEntry> {
     if (!body || body instanceof Uint8Array || typeof body !== "object" || Array.isArray(body)) {
       throw invalidArgumentError("invalid agentsmd body");
     }
@@ -414,10 +336,12 @@ class GitRegistryBackend {
     };
   }
 
-  private async deleteAgentsMD(agentsmdID: string, version: string): Promise<void> {
+  async deleteAgentsMD(agentsmdID: string, version: string, _auth?: WriteAuth): Promise<void> {
+    await this.refresh();
     const versionDir = await this.findAgentsMDVersionDir(agentsmdID, version);
     await rm(versionDir, { recursive: true, force: true });
     await cleanupEmptyParents(dirname(versionDir), join(this.checkoutDir, "agentsmd"));
+    await this.commitAndPush(`feat: delete agentsmd ${agentsmdID}@${version}`);
   }
 
   private async findSkillVersionDir(skillID: string, version: string): Promise<string> {
@@ -512,13 +436,15 @@ function resolveAuthorDir(author: string): string {
   return trimmed ? trimmed : anonymousSkillAuthorDir;
 }
 
-function parseJsonSkillUpload(body: JsonValue): {
+type ParsedSkillUpload = {
   skill_id: string;
   version: string;
   force: boolean;
   author: string;
   files: Array<{ path: string; content: Buffer }>;
-} {
+};
+
+function parseJsonSkillUpload(body: JsonValue): ParsedSkillUpload {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw invalidArgumentError("invalid skill body");
   }
@@ -572,13 +498,7 @@ function parseJsonSkillUpload(body: JsonValue): {
 function parseMultipartSkillUpload(
   body: Uint8Array,
   contentType?: string
-): {
-  skill_id: string;
-  version: string;
-  force: boolean;
-  author: string;
-  files: Array<{ path: string; content: Buffer }>;
-} {
+): ParsedSkillUpload {
   const boundaryMatch = String(contentType || "").match(/boundary=([^;]+)/);
   if (!boundaryMatch) {
     throw invalidArgumentError("multipart boundary missing");
