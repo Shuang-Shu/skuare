@@ -81,6 +81,7 @@ test("buildCommandHelpText renders remote command help page", () => {
   assert.match(helpText, /skr remote delete \[--type <skill\|agentsmd\|agmd>] <resourceID> <version>/);
   assert.match(helpText, /skuare remote source add \[--global] <originName> \[--git\|--svc] <remoteUrl>/);
   assert.match(helpText, /skuare remote source select \[--global] <originName>/);
+  assert.match(helpText, /skuare remote migrate <src> <dst> \[--type <all\|skill\|agentsmd\|agmd>] \[--dry-run] \[--skip-existing]/);
   assert.match(helpText, /`remote source use` is kept as a compatibility alias for `remote source select`/);
 });
 

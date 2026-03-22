@@ -27,7 +27,7 @@
   - 主要作用：从 server 拉取 Skill，并安装到本地局部仓库
   - 同时访问 server 和写本地仓库
   - 默认安装根目录：`~/.skuare`
-- server 写命令：`remote publish`、`remote update`、`remote create`、`remote delete`
+- server 写命令：`remote publish`、`remote update`、`remote create`、`remote delete`、`remote migrate`
   - 主要作用：写远程仓库
   - HTTP backend 下是否允许无签名写入由服务端决定；CLI 只有在提供签名凭证时才附加签名
 - 远端源管理命令：`remote source list`、`remote source add`、`remote source remove`、`remote source select`
@@ -42,7 +42,7 @@
   - Skill：`<repoRoot>/<author>/<skillID>/<version>/...`
   - AGENTS.md：`<repoRoot>/agentsmd/<agentsmdID>/<version>/AGENTS.md`
 - 现阶段 `skr init` 仍主要生成 HTTP 地址/端口配置；Git repo backend 建议通过 `--server` 或 `SKUARE_SVC_URL` 使用。
-- 也可以通过 `skr remote source add/use` 手动维护命名源；其中 `--git` 仅接受 SSH Git 地址。
+- 也可以通过 `skr remote source add/select` 手动维护命名源；其中 `--git` 仅接受 SSH Git 地址。
 
 ## 使用 Git Repo 作为远端仓库
 适用场景：
@@ -66,6 +66,9 @@ skr remote source select repo
 
 # 4) 发布 Skill
 skr remote publish --dir ./skills/observability-orchestrator
+
+# 4.1) 预演从当前源迁移到另一个远端
+skr remote migrate repo https://backup.example.com --dry-run
 
 # 5) 查询与拉取
 skr list
@@ -91,6 +94,7 @@ skr --server git+file:///tmp/skuare-registry.git list
 - 依赖描述文件：`skill-deps.json`
 - 依赖锁定文件：`skill-deps.lock.json`
 - `skr remote publish --dir <skill-dir> [--force|-f]`：读取依赖描述并递归上传依赖 Skill 到远程仓库；`--force/-f` 可覆盖已存在版本。
+- `skr remote migrate <src> <dst> [--type <all|skill|agentsmd|agmd>] [--dry-run] [--skip-existing]`：从源远端枚举资源并迁移到目标远端；`src/dst` 支持命名 source 或直接 URL。
 - `skr remote update <skillRef> <newSkillDir>`：查询远端 skill 的 `maxVersion`，仅允许发布更大版本，并在发布前回写本地 `SKILL.md` 的 `metadata.version`。`skillRef` 支持 `skillID`、`name`、`author/name`；多候选时会复用 `get/peek` 的同一交互选择器。
 - `skr skill`：将内嵌的、作者为 `skuare` 的 LLM Skill 安装到 `cwd`；生成内容的 `metadata.version` 与当前 `skuare` 版本一致。
 - `skr build <skillName> [refSkill...] [--all]`：为本地 skill 自动创建或追加更新依赖文件（`skill-deps.json` / `skill-deps.lock.json`），当目标 skill 不存在时会先交互式创建最小 `SKILL.md` 模板，支持 `alias=refSkill`；`--all` 会将当前目录下全部合法 skillDir 作为引用 skill。
@@ -195,6 +199,8 @@ skr remote source add repo --git git@github.com:team/skills.git
 skr remote source select repo
 skr remote publish --dir ./skills/observability-orchestrator
 skr remote publish --dir ./skills/observability-orchestrator --force
+skr remote migrate origin repo --dry-run
+skr remote migrate origin repo --skip-existing
 skr remote update observability-orchestrator ./examples/observability-orchestrator
 skr remote create --dir ./skills/observability-orchestrator
 skr remote delete observability-orchestrator 1.0.0

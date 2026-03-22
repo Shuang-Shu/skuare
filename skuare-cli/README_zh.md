@@ -18,7 +18,7 @@
   - `get`：先访问 server 拉取 Skill，再写入本地局部仓库。
   - `deps`：围绕 wrap 根 Skill 查看或安装依赖子树。
   - `remove`：直接删除本地或全局已安装 Skill。
-- server 写命令：`remote publish`、`remote update`、`remote create`、`remote delete`
+- server 写命令：`remote publish`、`remote update`、`remote create`、`remote delete`、`remote migrate`
   - 会写远程仓库；CLI 仅在提供签名凭证时附加签名，最终是否接受无签名写入由服务端决定。
 - 远端源管理命令：`remote source list/add/remove/select`
   - 管理 `remote.sources` 与 `remote.defaultSource`
@@ -64,6 +64,7 @@ skuare remote source select repo
 
 # 之后读写命令默认走该 Git 仓库
 skuare remote publish --dir ./skills/pdf-reader
+skuare remote migrate repo https://backup.example.com --dry-run
 skuare list
 skuare peek team/pdf-reader
 ```
@@ -133,6 +134,7 @@ skuare --server git+file:///tmp/skuare-registry.git list
   - `remote create ... [--force|-f]` -> `remote publish` 的兼容别名，保留但标记弃用
   - `remote delete <skillID> <version>` -> `DELETE /api/v1/skills/:skillID/:version`
   - `remote delete --type agentsmd|agmd <agentsmd-id> <version>` -> `DELETE /api/v1/agentsmd/:agentsmdID/:version`
+  - `remote migrate <src> <dst> [--type <all|skill|agentsmd|agmd>] [--dry-run] [--skip-existing]` -> 从源远端读取资源详情并重发到目标远端；`src/dst` 支持命名 source 或直接 URL
 - 远端源管理命令：
   - `remote source list [--global]` -> 列出当前可见的命名远端源与默认源
   - `remote source add [--global] <originName> [--git|--svc] <remoteUrl>` -> 写入命名远端源
@@ -141,7 +143,7 @@ skuare --server git+file:///tmp/skuare-registry.git list
   - `remote source use [--global] <originName>` -> `remote source select` 的兼容别名
 
 ## 鉴权机制说明
-- 写操作（`remote publish/update/create/delete`）若提供 `--key-id` 与 `--privkey-file` 会附加数字签名；是否允许免签写入由服务端决定。
+- 写操作（`remote publish/update/create/delete/migrate`）若提供 `--key-id` 与 `--privkey-file` 会附加数字签名；是否允许免签写入由服务端决定。
 - Git backend 不消费 HTTP 签名头；签名逻辑仅对 HTTP backend 生效。
 - `remote.mode` 仅用于 CLI 保存服务端连接配置；是否允许免签写操作由服务端自身模式决定。
 - CLI 签名参数：
@@ -177,7 +179,7 @@ skr help get
 - 先看根 README 的 Quick Start，理解 server、本地仓库与 `skr` 的关系。
 - 只想改本地 Skill 文件时，优先使用 `build`、`format`，不需要先启动 server。
 - 只读查询时，使用 `health/list/peek/validate`。
-- 涉及远程发布、更新或删除时，使用 `remote publish/update/create/delete`；是否要求签名由服务端决定。
+- 涉及远程发布、更新、删除或远端迁移时，使用 `remote publish/update/create/delete/migrate`；是否要求签名由服务端决定。
 - 需要维护多个远端 registry 时，使用 `remote source list/add/remove/select`；其中 Git 源仅支持 SSH。
 - 需要把远程 Skill 安装到本地局部仓库时，使用 `get`。
 - 需要先只落根 Skill、后续再按需查看或安装依赖时，使用 `get --wrap` 配合 `deps`。

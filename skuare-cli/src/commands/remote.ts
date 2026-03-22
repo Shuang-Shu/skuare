@@ -2,9 +2,10 @@ import type { Command, CommandContext } from "./types";
 import { BaseCommand } from "./base";
 import { withCommandArgs } from "./resource_type";
 import { RemoteSourceCommand } from "./remote_source";
+import { RemoteMigrateCommand } from "./remote_migrate";
 import { CreateCommand, DeleteCommand, PublishCommand, UpdateCommand } from "./write";
 
-export const REMOTE_SUBCOMMAND_NAMES = ["publish", "update", "create", "delete", "source"] as const;
+export const REMOTE_SUBCOMMAND_NAMES = ["publish", "update", "create", "delete", "source", "migrate"] as const;
 
 export const REMOTE_HELP_ENTRY: {
   name: string;
@@ -24,11 +25,13 @@ export const REMOTE_HELP_ENTRY: {
     "remote source add [--global] <originName> [--git|--svc] <remoteUrl>",
     "remote source remove [--global] <originName>",
     "remote source select [--global] <originName>",
+    "remote migrate <src> <dst> [--type <all|skill|agentsmd|agmd>] [--dry-run] [--skip-existing]",
   ],
   details: [
     "remote is the unified entry for remote registry operations",
     "publish, update, create, and delete reuse the existing write command implementations",
     "source manages named remote registry sources stored in config.json",
+    "migrate copies skill and/or AGENTS.md resources from one remote registry to another",
     "`remote source use` is kept as a compatibility alias for `remote source select`",
     "Run `skuare help remote` to inspect the supported remote subcommands",
   ],
@@ -43,6 +46,7 @@ function createDefaultRemoteSubcommands(): Map<string, RemoteSubcommandFactory> 
     ["create", () => new CreateCommand()],
     ["delete", () => new DeleteCommand()],
     ["source", () => new RemoteSourceCommand()],
+    ["migrate", () => new RemoteMigrateCommand()],
   ]);
 }
 
