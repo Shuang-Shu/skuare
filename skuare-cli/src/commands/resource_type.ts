@@ -11,8 +11,12 @@ const TYPE_VALUE_ALIASES: Record<string, ResourceType> = {
 };
 
 const REMOVED_COMMAND_REPLACEMENTS: Record<string, string> = {
-  "publish-agentsmd": "publish --type agentsmd",
-  "publish-agmd": "publish --type agmd",
+  publish: "remote publish",
+  update: "remote update",
+  create: "remote create",
+  delete: "remote delete",
+  "publish-agentsmd": "remote publish --type agentsmd",
+  "publish-agmd": "remote publish --type agmd",
   "list-agentsmd": "list --type agentsmd",
   "list-agmd": "list --type agmd",
   "peek-agentsmd": "peek --type agentsmd",
@@ -21,8 +25,8 @@ const REMOVED_COMMAND_REPLACEMENTS: Record<string, string> = {
   "get-agmd": "get --type agmd",
   "detail-agentsmd": "detail --type agentsmd",
   "detail-agmd": "detail --type agmd",
-  "delete-agentsmd": "delete --type agentsmd",
-  "delete-agmd": "delete --type agmd",
+  "delete-agentsmd": "remote delete --type agentsmd",
+  "delete-agmd": "remote delete --type agmd",
 };
 
 export function parseResourceType(args: string[]): ResourceType {

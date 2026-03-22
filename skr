@@ -44,6 +44,21 @@ dist_help_supports_publish() {
   return 1
 }
 
+dist_help_supports_remote() {
+  local help_output
+
+  if [ ! -f "${DIST_ENTRY}" ]; then
+    return 1
+  fi
+
+  help_output="$(node "${DIST_ENTRY}" help 2>/dev/null || true)"
+  if [ -n "${help_output}" ] && printf '%s\n' "${help_output}" | grep -Eq '^[[:space:]]+remote([[:space:]]|$)'; then
+    return 0
+  fi
+
+  return 1
+}
+
 dist_supports_publish() {
   # 检查 dist 目录是否支持 publish 命令
   if [ ! -d "${CLI_DIR}/dist" ]; then
@@ -58,8 +73,41 @@ dist_supports_publish() {
   return 1
 }
 
+dist_supports_remote() {
+  if [ ! -d "${CLI_DIR}/dist" ]; then
+    return 1
+  fi
+  if dist_help_supports_remote; then
+    return 0
+  fi
+  if command -v rg >/dev/null 2>&1 && rg -q "remote <publish\\|update\\|create\\|delete>|Unknown remote subcommand" "${CLI_DIR}/dist" 2>/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
 rewrite_legacy_command() {
   # 重写旧版命令以兼容新版本
+  if [ "$#" -gt 1 ] && [ "$1" = "remote" ]; then
+    local subcommand="$2"
+    local target="${subcommand}"
+    if [ "${subcommand}" = "publish" ] && ! dist_supports_publish; then
+      target="create"
+    fi
+
+    if [ "${subcommand}" = "publish" ] || [ "${subcommand}" = "update" ] || [ "${subcommand}" = "create" ] || [ "${subcommand}" = "delete" ]; then
+      if ! dist_supports_remote; then
+        if [ "${USED_FALLBACK_DIST}" -eq 1 ]; then
+          echo "[WARN] Legacy dist detected during fallback; mapping 'remote ${subcommand}' to '${target}' for compatibility." >&2
+        else
+          echo "[WARN] Current dist does not support 'remote'; mapping 'remote ${subcommand}' to '${target}' for compatibility." >&2
+        fi
+        shift 2
+        set -- "${target}" "$@"
+      fi
+    fi
+  fi
+
   if [ "$#" -gt 0 ] && [ "$1" = "publish" ] && ! dist_supports_publish; then
     if [ "${USED_FALLBACK_DIST}" -eq 1 ]; then
       echo "[WARN] Legacy dist detected during fallback; mapping 'publish' to 'create' for compatibility." >&2

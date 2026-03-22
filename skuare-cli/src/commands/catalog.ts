@@ -3,8 +3,9 @@ import { HealthCommand } from "./admin";
 import { ConfigCommand } from "./config";
 import { InitCommand } from "./init";
 import { DepsCommand, DetailCommand, GetCommand, ListCommand, PeekCommand, RemoveCommand, ValidateCommand } from "./query";
+import { RemoteCommand, REMOTE_HELP_ENTRY } from "./remote";
 import { SkillCommand } from "./skill";
-import { BuildCommand, CreateCommand, DeleteCommand, FormatCommand, PublishCommand, UpdateCommand } from "./write";
+import { BuildCommand, FormatCommand } from "./write";
 
 export type HelpEntry = {
   name: string;
@@ -178,47 +179,8 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
     },
   },
   {
-    create: () => new PublishCommand(),
-    help: {
-      name: "publish",
-      summary: "Publish skill or AGENTS.md",
-      usage: [
-        "publish [--type <skill|agentsmd|agmd>] --file <request.json|AGENTS.md> [--force|-f]",
-        "publish --skill <SKILL.md> [--skill-id <id>] [--version <v>] [--force|-f]",
-        "publish --dir <skillDir> [--skill-id <id>] [--version <v>] [--force|-f]",
-        "publish <path...> [--all] [--skill-id <id>] [--version <v>] [--force|-f]",
-        "publish --type <agentsmd|agmd> --file <AGENTS.md> --agentsmd-id <id> --version <v>",
-        "publish --type <agentsmd|agmd> --dir <dir>",
-      ],
-      details: [
-        "--skill uses explicit SKILL.md mode and reads version from frontmatter metadata.version",
-        "--dir uses explicit skill directory mode and reads version from <dir>/SKILL.md frontmatter metadata.version",
-        "Positional publish auto-detects each path as SKILL.md -> dir -> JSON fallback",
-        "Use --force/-f to overwrite an existing skill version",
-        "--type <agentsmd|agmd> publishes AGENTS.md via /api/v1/agentsmd",
-      ],
-    },
-  },
-  {
-    create: () => new UpdateCommand(),
-    help: {
-      name: "update",
-      summary: "Publish a new version for an existing remote skill",
-      usage: ["update <skillRef> <newSkillDir>"],
-      details: [
-        "<skillRef> supports skillID | name | author/name; ambiguous matches reuse the shared selector",
-        "Queries remote maxVersion, prompts with a greater suggested version",
-        "Writes metadata.version back to <newSkillDir>/SKILL.md before publish",
-      ],
-    },
-  },
-  {
-    create: () => new CreateCommand(),
-    help: {
-      name: "create",
-      summary: "Deprecated alias of publish",
-      usage: ["create ... [--type <skill|agentsmd|agmd>] [--force|-f]"],
-    },
+    create: () => new RemoteCommand(),
+    help: REMOTE_HELP_ENTRY,
   },
   {
     create: () => new BuildCommand(),
@@ -229,14 +191,6 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
       details: [
         "Builds dependency files, scans current skill dirs with --all, initializes missing target interactively",
       ],
-    },
-  },
-  {
-    create: () => new DeleteCommand(),
-    help: {
-      name: "delete",
-      summary: "Delete skill or AGENTS.md version",
-      usage: ["delete [--type <skill|agentsmd|agmd>] <resourceID> <version>"],
     },
   },
   {

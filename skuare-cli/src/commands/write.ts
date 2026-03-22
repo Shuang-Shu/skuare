@@ -358,7 +358,9 @@ export class PublishCommand extends BaseCommand {
       : positional;
     const unique = Array.from(new Set(allPositional.map((v) => v.trim()).filter(Boolean)));
     if (unique.length === 0) {
-      this.fail("Usage: skuare publish --skill <SKILL.md> | --dir <skillDir> | --file <request.json> | publish <path...> [--all]");
+      this.fail(
+        "Usage: skuare remote publish --skill <SKILL.md> | --dir <skillDir> | --file <request.json> | remote publish <path...> [--all]"
+      );
     }
 
     const out: CreateSource[] = [];
@@ -466,14 +468,14 @@ export class PublishCommand extends BaseCommand {
 }
 
 /**
- * 兼容命令：create（已弃用，建议迁移为 publish）
+ * 兼容命令：create（已弃用，建议迁移为 remote publish）
  */
 export class CreateCommand extends PublishCommand {
   readonly name: string = "create";
-  readonly description: string = "Create skill version (deprecated, use publish)";
+  readonly description: string = "Create skill version (deprecated, use remote publish)";
 
   async execute(context: CommandContext): Promise<void> {
-    console.log(`${this.yellow("[WARN]")} command 'create' is deprecated, use 'publish' instead`);
+    console.log(`${this.yellow("[WARN]")} command 'create' is deprecated, use 'remote publish' instead`);
     await super.execute(context);
   }
 }
@@ -490,7 +492,7 @@ export class UpdateCommand extends SkillCatalogCommand {
 
     const [targetRef, newSkillDir] = normalized.context.args;
     if (!targetRef || !newSkillDir || normalized.context.args.length !== 2) {
-      this.fail("Usage: skuare update <skillRef> <newSkillDir>");
+      this.fail("Usage: skuare remote update <skillRef> <newSkillDir>");
     }
 
     const skillFile = await this.resolveSkillFilePath(newSkillDir);
@@ -1010,7 +1012,7 @@ export class DeleteCommand extends BaseCommand {
     const [skillID, version] = normalized.context.args;
 
     if (!skillID || !version) {
-      this.fail("Usage: skuare delete <skillID> <version>");
+      this.fail("Usage: skuare remote delete <skillID> <version>");
     }
 
     await (await this.getBackend(normalized.context)).deleteSkill(skillID, version, normalized.context.auth);

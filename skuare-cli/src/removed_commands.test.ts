@@ -21,3 +21,18 @@ test("removed agentsmd suffix commands show migration hint", async () => {
     );
   }
 });
+
+test("removed top-level remote write commands show migration hint", async () => {
+  try {
+    await execFile(process.execPath, [CLI_PATH, "publish", "--skill", "demo.md"]);
+    assert.fail("Expected removed command to exit with error");
+  } catch (error) {
+    const result = error as Error & { code?: number | string; stdout?: string; stderr?: string };
+    assert.equal(result.code, 1);
+    assert.equal(result.stdout || "", "");
+    assert.match(
+      result.stderr || "",
+      /\[CLI_INVALID_ARGUMENT\] Command 'publish' was removed\. Use: remote publish --skill demo\.md/
+    );
+  }
+});
