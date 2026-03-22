@@ -17,12 +17,13 @@ export const REMOTE_SOURCE_HELP_ENTRY: HelpEntry = {
     "remote source list [--global]",
     "remote source add [--global] <originName> [--git|--svc] <remoteUrl>",
     "remote source remove [--global] <originName>",
-    "remote source use [--global] <originName>",
+    "remote source select [--global] <originName>",
   ],
   details: [
     "--global writes ~/.skuare/config.json; default writes the nearest workspace config or creates <cwd>/.skuare/config.json",
     "--git only accepts SSH URLs and stores them as git+ssh://...",
     "--svc accepts http:// or https:// registry URLs",
+    "`use` is kept as a compatibility alias for `select`",
   ],
 };
 
@@ -58,11 +59,12 @@ export class RemoteSourceCommand extends BaseCommand {
       case "remove":
         await new RemoveRemoteSourceCommand().execute(nextContext);
         return;
+      case "select":
       case "use":
-        await new UseRemoteSourceCommand().execute(nextContext);
+        await new SelectRemoteSourceCommand().execute(nextContext);
         return;
       default:
-        this.fail("Unknown remote source subcommand: " + subcommand + ". Supported: list, add, remove, use");
+        this.fail("Unknown remote source subcommand: " + subcommand + ". Supported: list, add, remove, select");
     }
   }
 }
@@ -181,14 +183,14 @@ class RemoveRemoteSourceCommand extends BaseCommand {
   }
 }
 
-class UseRemoteSourceCommand extends BaseCommand {
-  readonly name = "use";
-  readonly description = "Set the default remote registry source";
+class SelectRemoteSourceCommand extends BaseCommand {
+  readonly name = "select";
+  readonly description = "Select the default remote registry source";
 
   async execute(context: CommandContext): Promise<void> {
     const { isGlobal, positional } = parseScopedSourceArgs(
       context.args,
-      "Usage: skuare remote source use [--global] <originName>",
+      "Usage: skuare remote source select [--global] <originName>",
       1
     );
     const [originNameRaw] = positional;
@@ -205,7 +207,7 @@ class UseRemoteSourceCommand extends BaseCommand {
     next.remote.defaultSource = originName;
     await persistTargetConfig(target.path, next);
     console.log(JSON.stringify({
-      action: "use",
+      action: "select",
       scope: target.scope,
       path: target.path,
       default_source: originName,

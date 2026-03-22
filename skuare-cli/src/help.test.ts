@@ -80,6 +80,8 @@ test("buildCommandHelpText renders remote command help page", () => {
   assert.match(helpText, /skuare remote publish \[--type <skill\|agentsmd\|agmd>] --file <request\.json\|AGENTS\.md> \[--force\|-f]/);
   assert.match(helpText, /skr remote delete \[--type <skill\|agentsmd\|agmd>] <resourceID> <version>/);
   assert.match(helpText, /skuare remote source add \[--global] <originName> \[--git\|--svc] <remoteUrl>/);
+  assert.match(helpText, /skuare remote source select \[--global] <originName>/);
+  assert.match(helpText, /`remote source use` is kept as a compatibility alias for `remote source select`/);
 });
 
 test("buildHelpText describes aligned peek selector forms", () => {

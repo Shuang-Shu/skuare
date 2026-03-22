@@ -20,7 +20,7 @@
   - `remove`：直接删除本地或全局已安装 Skill。
 - server 写命令：`remote publish`、`remote update`、`remote create`、`remote delete`
   - 会写远程仓库；CLI 仅在提供签名凭证时附加签名，最终是否接受无签名写入由服务端决定。
-- 远端源管理命令：`remote source list/add/remove/use`
+- 远端源管理命令：`remote source list/add/remove/select`
   - 管理 `remote.sources` 与 `remote.defaultSource`
   - `remote source add --git` 仅接受 SSH Git URL
 - 统一资源切换：`list`、`peek`、`get`、`detail`、`remote publish`、`remote create`、`remote delete`
@@ -60,7 +60,7 @@
 skuare remote source add repo --git git@github.com:team/skuare-registry.git
 
 # 切换默认源
-skuare remote source use repo
+skuare remote source select repo
 
 # 之后读写命令默认走该 Git 仓库
 skuare remote publish --dir ./skills/pdf-reader
@@ -137,7 +137,8 @@ skuare --server git+file:///tmp/skuare-registry.git list
   - `remote source list [--global]` -> 列出当前可见的命名远端源与默认源
   - `remote source add [--global] <originName> [--git|--svc] <remoteUrl>` -> 写入命名远端源
   - `remote source remove [--global] <originName>` -> 删除指定命名远端源
-  - `remote source use [--global] <originName>` -> 切换默认源
+  - `remote source select [--global] <originName>` -> 选择默认源
+  - `remote source use [--global] <originName>` -> `remote source select` 的兼容别名
 
 ## 鉴权机制说明
 - 写操作（`remote publish/update/create/delete`）若提供 `--key-id` 与 `--privkey-file` 会附加数字签名；是否允许免签写入由服务端决定。
@@ -177,7 +178,7 @@ skr help get
 - 只想改本地 Skill 文件时，优先使用 `build`、`format`，不需要先启动 server。
 - 只读查询时，使用 `health/list/peek/validate`。
 - 涉及远程发布、更新或删除时，使用 `remote publish/update/create/delete`；是否要求签名由服务端决定。
-- 需要维护多个远端 registry 时，使用 `remote source list/add/remove/use`；其中 Git 源仅支持 SSH。
+- 需要维护多个远端 registry 时，使用 `remote source list/add/remove/select`；其中 Git 源仅支持 SSH。
 - 需要把远程 Skill 安装到本地局部仓库时，使用 `get`。
 - 需要先只落根 Skill、后续再按需查看或安装依赖时，使用 `get --wrap` 配合 `deps`。
 

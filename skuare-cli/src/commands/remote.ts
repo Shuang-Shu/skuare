@@ -23,12 +23,13 @@ export const REMOTE_HELP_ENTRY: {
     "remote source list [--global]",
     "remote source add [--global] <originName> [--git|--svc] <remoteUrl>",
     "remote source remove [--global] <originName>",
-    "remote source use [--global] <originName>",
+    "remote source select [--global] <originName>",
   ],
   details: [
     "remote is the unified entry for remote registry operations",
     "publish, update, create, and delete reuse the existing write command implementations",
     "source manages named remote registry sources stored in config.json",
+    "`remote source use` is kept as a compatibility alias for `remote source select`",
     "Run `skuare help remote` to inspect the supported remote subcommands",
   ],
 };
