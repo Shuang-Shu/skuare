@@ -2,7 +2,7 @@
 
 > 文档类型：README
 > 状态：已完成
-> 更新时间：2026-03-10
+> 更新时间：2026-03-22
 > 适用范围：skuare-cli
 
 ## 目标与范围
@@ -10,7 +10,7 @@
 - 通过统一 `--server` 参数对接后端兼容层；当前支持 `skuare-svc` HTTP server 与 Git 仓库 registry。
 
 ## 命令分组总览
-- 纯本地命令：`help`、`version`、`init`、`config`、`build`、`format`
+- 纯本地命令：`help`、`version`、`init`、`build`、`format`
   - 不依赖 server，可直接修改本地配置、Skill 文件和依赖文件。
 - server 只读命令：`health`、`list`、`peek`、`validate`
   - 会访问 server，但不会写远程仓库。
@@ -18,9 +18,12 @@
   - `get`：先访问 server 拉取 Skill，再写入本地局部仓库。
   - `deps`：围绕 wrap 根 Skill 查看或安装依赖子树。
   - `remove`：直接删除本地或全局已安装 Skill。
-- server 写命令：`publish`、`update`、`create`、`delete`
+- server 写命令：`remote publish`、`remote update`、`remote create`、`remote delete`、`remote migrate`
   - 会写远程仓库；CLI 仅在提供签名凭证时附加签名，最终是否接受无签名写入由服务端决定。
-- 统一资源切换：`list`、`peek`、`get`、`detail`、`publish`、`create`、`delete`
+- 远端源管理命令：`remote source list/add/remove/select`
+  - 管理 `remote.sources` 与 `remote.defaultSource`
+  - `remote source add --git` 仅接受 SSH Git URL
+- 统一资源切换：`list`、`peek`、`get`、`detail`、`remote publish`、`remote create`、`remote delete`
   - 默认操作 Skill；传入 `--type agentsmd` 或 `--type agmd` 时切换为 AGENTS.md 资源。
 
 ## 架构与 API 设计
@@ -36,16 +39,52 @@
   - `skuare-cli`：本地局部仓库（Local Partial Repository）消费者
   - CLI 本地仓库默认根目录：global=`~/.skuare`，workspace=`<cwd>/.skuare`
 - 后端地址：
-  - 默认由配置项 `remote.address + remote.port` 组合得到
+  - 默认先看 `remote.defaultSource -> remote.sources[name].url`，未配置时再回退到 `remote.address + remote.port`
   - CLI 参数 `--server <url>` 优先级最高
   - `--server` 当前支持：
     - `http://` / `https://`：`skuare-svc` HTTP backend
     - `git+file://...`、`git+https://...`、`git+ssh://...`：Git registry backend
-  - Git backend 首版建议通过 `--server` 或 `SKUARE_SVC_URL` 使用；`skuare init` 目前仍主要面向 HTTP 地址/端口配置
+  - `remote source add --git` 当前只接受 SSH Git 地址，会规范化保存为 `git+ssh://...`
+  - Git backend 首版建议通过 `--server`、`SKUARE_SVC_URL` 或 `remote source` 命令使用；`skuare init` 目前仍主要面向 HTTP 地址/端口配置
 - Git registry 布局：
   - Skill：`<repoRoot>/<author>/<skillID>/<version>/...`
   - AGENTS.md：`<repoRoot>/agentsmd/<agentsmdID>/<version>/AGENTS.md`
   - 该布局与 `skuare-svc --spec-dir` 默认文件布局保持一致，便于两种 backend 复用同一份仓库内容
+
+### 用 Git 仓库作为远端 registry
+
+推荐做法是把 Git 远端注册为命名 source，再切成默认源：
+
+```bash
+# 添加 SSH Git 源
+skuare remote source add repo --git git@github.com:team/skuare-registry.git
+
+# 切换默认源
+skuare remote source select repo
+
+# 之后读写命令默认走该 Git 仓库
+skuare remote publish --dir ./skills/pdf-reader
+skuare remote migrate repo https://backup.example.com --dry-run
+skuare list
+skuare peek team/pdf-reader
+```
+
+如果只是临时指定，也可以直接传 `--server`：
+
+```bash
+skuare --server git+ssh://git@github.com/team/skuare-registry.git remote publish --dir ./skills/pdf-reader
+skuare --server git+file:///tmp/skuare-registry.git list
+```
+
+约束与说明：
+- `remote source add --git` 只接受 SSH Git 地址，会规范化保存为 `git+ssh://...`
+- `git+file://` 与 `git+https://` 只支持通过 `--server` 直接使用，不支持写入命名 source
+- Git backend 会把远端仓库缓存到本地目录，默认缓存根为 `~/.skuare/cache/git-registry`，读缓存 TTL 默认为 1 天
+- Git backend 的远端写操作会自动执行 `pull/commit/push`；只读命令在缓存未过期时直接使用本地缓存
+- 当前 commit message 模板统一为 `registry(<resource>): <action> <id>@<version>`
+- 可选环境变量：
+  - `SKUARE_GIT_CACHE_DIR`：覆盖 Git registry 本地缓存根目录
+  - `SKUARE_GIT_CACHE_TTL_SEC`：覆盖缓存 TTL，单位秒，默认 `86400`
 - 远端模式：
   - `remote.mode=local`：表示目标服务端处于本地模式，是否允许无签名写操作由服务端自己决定
   - `remote.mode=remote`：表示目标服务端处于远端模式，通常要求签名写请求
@@ -66,9 +105,9 @@
   - `detail --type agentsmd` / `detail --type agmd`：本地展示 `<cwd>/.{tool}/AGENTS.md` 或 `~/.{tool}/AGENTS.md`
 - server 只读命令：
   - `health` -> `GET /healthz`
-  - `list [--q] [--rgx]` -> `GET /api/v1/skills` (search text must be passed via `--q` or `--rgx`; bare positional arguments are rejected)
-  - `list --type agentsmd|agmd [--q] [--rgx]` -> `GET /api/v1/agentsmd` (same rule: no bare positional arguments)
-  - `peek <skillRef> [version]` -> shared selector supporting `skillID` / `name` / `author/name` (also accepts `name@version` / `author/name@version` inside `skillRef`); when version is omitted, `peek` resolves the target skill first and then shows the skill overview -> `GET /api/v1/skills/:skillID[/version]`
+  - `list [--q] [--rgx]` -> `GET /api/v1/skills`（搜索词必须通过 `--q` 或 `--rgx` 传入；不接受裸位置参数）
+  - `list --type agentsmd|agmd [--q] [--rgx]` -> `GET /api/v1/agentsmd`（同样不接受裸位置参数）
+  - `peek <skillRef> [version]` -> 统一 selector，支持 `skillID` / `name` / `author/name`（也支持在 `skillRef` 内写 `name@version` / `author/name@version`）；未指定版本时，先解析目标 skill，再展示 skill 概览 -> `GET /api/v1/skills/:skillID[/version]`
   - `peek --type agentsmd|agmd <agentsmd-id> [version]` -> `GET /api/v1/agentsmd/:agentsmdID[/version]`
   - `peek --rgx <pattern> [version]` -> 先查询列表，再正则筛选唯一 skill
   - `validate <skillID> <version>` -> `POST /api/v1/skills/:skillID/:version/validate`
@@ -76,11 +115,9 @@
   - `get <skillRef> [version] [--rgx] [--global] [--wrap] [--slink]`
   - 默认安装到 `<cwd>/.{llmTool}/skills/<skillID>/`
   - `--global`：安装到 `~/.{llmTool}/skills/<skillID>/`
-  - `--slink`：不复制远端文件，而是将目标 `<skillID>` 目录创建为指向本地 CLI 仓库 skill 目录的软连接
+  - `--slink`：不复制远端文件，而是把目标 `<skillID>` 目录创建为指向本地 CLI 仓库 skill 目录的软连接
   - 默认模式会把完整依赖图平铺安装；`--wrap` 只安装根 Skill，并写入本地 wrap 元数据供后续 `deps` 使用
-  - 当本地已安装内容会被覆盖时，`get` 会在 TTY 中展示交互式确认；非交互环境会直接失败，不再静默覆盖
-  - 若多个已安装 root Skill 共享同一个子 Skill，确认页会提示该子 Skill 还被哪些其他 root Skill 使用
-  - When a command directly targets one skill, `peek/get/deps` now reuse the same selector flow: `skillID`, `name`, and `author/name`, with the same multi-match interaction
+  - 当直接指定 skill 时，`peek/get/deps` 统一复用同一 selector：支持 `skillID`、`name`、`author/name`，多候选时复用同一交互选择逻辑
   - `get --type agentsmd|agmd <agentsmd-id> [version] [--global]`
   - 默认安装到 `<cwd>/.{llmTool}/AGENTS.md`；`--global` 时安装到 `~/.{llmTool}/AGENTS.md`
   - `deps --brief <rootSkillDir>`：列出全部后代依赖的 `skill_id/version/description`
@@ -91,21 +128,35 @@
   - 默认从所有已配置工具的工作区 skill 根目录删除；`--global` 时会从所有已配置工具的全局 skill 根目录删除
   - 传 `skillID` 时按精确目录删除；传 `author/name` 或 `name` 且命中多个已安装 skill 时，会进入交互式多选
   - 默认只删除指定 skill 本体；`--deps` 会递归删除其依赖子树，但会保留仍被其他已安装 skill 引用的共享依赖
-  - `deps --install` 与 `get` 共用同一套覆盖确认语义：TTY 中交互确认，非交互环境直接失败
 - server 写命令：
-  - `publish --file <json> [--force|-f]` -> `POST /api/v1/skills`
-  - `publish --skill <SKILL.md> [--skill-id] [--version] [--force|-f]` -> `POST /api/v1/skills`；CLI will pack the whole skill directory as `multipart/form-data` (`metadata` JSON + `bundle.tar.gz`)
-  - `publish --dir <skillDir> [--skill-id] [--version] [--force|-f]` -> `POST /api/v1/skills`；binary files are preserved inside the bundle
-  - `publish <path...> [--all] [--skill-id] [--version] [--force|-f]` -> 自动检测每个 path：`SKILL.md` 文件 -> 目录 -> JSON 回退；目录模式沿用 multipart bundle 上传
-  - `update <skillRef> <newSkillDir>` -> query remote `maxVersion`, rewrite local `metadata.version` to a greater value, then reuse `publish --dir`; `skillRef` supports `skillID/name/author/name`, and ambiguous matches reuse the same selector as `get/peek/deps`
-  - `publish --type agentsmd|agmd --file <AGENTS.md> --agentsmd-id <id> --version <v>` -> `POST /api/v1/agentsmd`
-  - `publish --type agentsmd|agmd --dir <dir>` -> 自动读取 `<dir>/AGENTS.md` 与可选 `<dir>/agentsmd-meta.json`
-  - `create ... [--force|-f]` -> `publish` 的兼容别名，保留但标记弃用
-  - `delete <skillID> <version>` -> `DELETE /api/v1/skills/:skillID/:version`
-  - `delete --type agentsmd|agmd <agentsmd-id> <version>` -> `DELETE /api/v1/agentsmd/:agentsmdID/:version`
+  - `remote publish --file <json> [--force|-f]` -> `POST /api/v1/skills`
+  - `remote publish --skill <SKILL.md> [--skill-id] [--version] [--force|-f]` -> `POST /api/v1/skills`；CLI 会将整个 skill 目录打成 `multipart/form-data`（`metadata` JSON + `bundle.tar.gz`）
+  - `remote publish --dir <skillDir> [--skill-id] [--version] [--force|-f]` -> `POST /api/v1/skills`；bundle 内会保留二进制文件
+  - `remote publish <path...> [--all] [--skill-id] [--version] [--force|-f]` -> 自动检测每个 path：`SKILL.md` 文件 -> 目录 -> JSON 回退；目录模式沿用 multipart bundle 上传
+  - `remote update <skillRef> <newSkillDir>` -> 先查询远端 `maxVersion`，再以更大版本回写本地 `metadata.version` 并复用 `remote publish --dir`；`skillRef` 支持 `skillID/name/author/name`，多候选时复用 `get/peek/deps` 的同一选择器
+  - `remote publish --type agentsmd|agmd --file <AGENTS.md> --agentsmd-id <id> --version <v>` -> `POST /api/v1/agentsmd`
+  - `remote publish --type agentsmd|agmd --dir <dir>` -> 自动读取 `<dir>/AGENTS.md` 与可选 `<dir>/agentsmd-meta.json`
+  - `remote create ... [--force|-f]` -> `remote publish` 的兼容别名，保留但标记弃用
+  - `remote delete <skillID> <version>` -> `DELETE /api/v1/skills/:skillID/:version`
+  - `remote delete --type agentsmd|agmd <agentsmd-id> <version>` -> `DELETE /api/v1/agentsmd/:agentsmdID/:version`
+  - `remote migrate <src> <dst> [--type <all|skill|agentsmd|agmd>] [--dry-run] [--skip-existing]` -> 从源远端批量导出资源 bundle，再批量导入到目标远端；`src/dst` 支持命名 source 或直接 URL
+- 远端源管理命令：
+  - `remote source list [--global]` -> 列出当前可见的命名远端源与默认源
+  - `remote source add [--global] <originName> [--git|--svc] <remoteUrl>` -> 写入命名远端源
+  - `remote source remove [--global] <originName>` -> 删除指定命名远端源
+  - `remote source select [--global] <originName>` -> 选择默认源
+  - `remote source use [--global] <originName>` -> `remote source select` 的兼容别名
+
+`remote migrate` 的当前实现说明：
+- HTTP backend 走 `GET /api/v1/migrate/export` 与 `POST /api/v1/migrate/import`
+- Git backend 在导出时只刷新一次仓库，在导入时整批写入后只做一次 `commit/push`
+- `--dry-run` 只输出迁移计划，不写目标端
+- `--skip-existing` 会跳过目标端已存在且内容冲突的同版本资源，并在结果中标记为 `version_conflict`
+- 当目标端同版本资源内容完全一致时，会自动跳过并标记为 `unchanged`
+- 当目标端同版本资源内容不一致时，默认报冲突；传 `--skip-existing` 时会跳过并标记为 `version_conflict`
 
 ## 鉴权机制说明
-- 写操作（`publish/update/create`、`delete`）若提供 `--key-id` 与 `--privkey-file` 会附加数字签名；是否允许免签写入由服务端决定。
+- 写操作（`remote publish/update/create/delete/migrate`）若提供 `--key-id` 与 `--privkey-file` 会附加数字签名；是否允许免签写入由服务端决定。
 - Git backend 不消费 HTTP 签名头；签名逻辑仅对 HTTP backend 生效。
 - `remote.mode` 仅用于 CLI 保存服务端连接配置；是否允许免签写操作由服务端自身模式决定。
 - CLI 签名参数：
@@ -155,12 +206,13 @@ skr help get
 - 先看根 README 的 Quick Start，理解 server、本地仓库与 `skr` 的关系。
 - 只想改本地 Skill 文件时，优先使用 `build`、`format`，不需要先启动 server。
 - 只读查询时，使用 `health/list/peek/validate`。
-- 涉及远程发布、更新或删除时，使用 `publish/update/create/delete`；是否要求签名由服务端决定。
+- 涉及远程发布、更新、删除或远端迁移时，使用 `remote publish/update/create/delete/migrate`；是否要求签名由服务端决定。
+- 需要维护多个远端 registry 时，使用 `remote source list/add/remove/select`；其中 Git 源仅支持 SSH。
 - 需要把远程 Skill 安装到本地局部仓库时，使用 `get`。
 - 需要先只落根 Skill、后续再按需查看或安装依赖时，使用 `get --wrap` 配合 `deps`。
 
 - 根目录 `skr` 会优先执行自动重建；若本地缺少 TypeScript 工具链但仓库中已存在 `skuare-cli/dist/index.js`，则会输出 `WARN` 并回退到现有预构建产物继续运行。
-- 若该回退产物仍停留在旧命令集，`skr publish ...` 会在包装脚本层桥接为 `create ...` 以保持基础兼容；桥接发生时会额外输出 `WARN`。
+- 若该回退产物仍停留在旧命令集，`skr remote publish ...` 会在包装脚本层桥接为 `publish ...` 或 `create ...` 以保持基础兼容；桥接发生时会额外输出 `WARN`。
 - 若 `dist/index.js` 不存在，`skr` 仍会因无法完成构建而直接失败；此时需要先在 `skuare-cli` 目录执行 `npm install && npm run build`。
 
 后端二进制自动安装（GitHub Releases）：
@@ -225,26 +277,26 @@ cat > /tmp/create-skill.json <<'EOF'
 }
 EOF
 
-skuare --server http://127.0.0.1:15657 publish --file /tmp/create-skill.json
+skuare --server http://127.0.0.1:15657 remote publish --file /tmp/create-skill.json
 
 # 从 SKILL.md 发布（自动解析 frontmatter 的 name/description + metadata.version + 正文）
-skuare --server http://127.0.0.1:15657 publish --skill ./skills/pdf-reader/SKILL.md
+skuare --server http://127.0.0.1:15657 remote publish --skill ./skills/pdf-reader/SKILL.md
 
 # 从目录发布（自动查找 <dir>/SKILL.md，并将整个 skill 目录打成 multipart bundle）
-skuare --server http://127.0.0.1:15657 publish --dir ./skills/pdf-reader
+skuare --server http://127.0.0.1:15657 remote publish --dir ./skills/pdf-reader
 
 # skuare-svc 默认允许 64MB 上传；可通过 --max-request-body-size-bytes 或 SKUARE_MAX_REQUEST_BODY_SIZE_BYTES 调整
 
 # 自动检测多个 source 路径；可叠加 --all 扫描当前目录所有子目录
-skuare --server http://127.0.0.1:15657 publish ./skills/pdf-reader ./skills/api-debugger
-skuare --server http://127.0.0.1:15657 publish --all
-skuare --server http://127.0.0.1:15657 publish /tmp/create-skill.json
+skuare --server http://127.0.0.1:15657 remote publish ./skills/pdf-reader ./skills/api-debugger
+skuare --server http://127.0.0.1:15657 remote publish --all
+skuare --server http://127.0.0.1:15657 remote publish /tmp/create-skill.json
 
 # 可选：传 --version 做一致性校验（与 frontmatter metadata.version 不一致会报错）
-skuare --server http://127.0.0.1:15657 publish --dir ./skills/pdf-reader --version 1.0.0
+skuare --server http://127.0.0.1:15657 remote publish --dir ./skills/pdf-reader --version 1.0.0
 
 # 可选：传 --force/-f 覆盖同版本 Skill
-skuare --server http://127.0.0.1:15657 publish --dir ./skills/pdf-reader --force
+skuare --server http://127.0.0.1:15657 remote publish --dir ./skills/pdf-reader --force
 
 # 拉取到本地局部仓库
 skuare get pdf-reader
@@ -255,12 +307,12 @@ skuare deps --install ./.codex/skills/pdf-reader skuare/text-splitter
 skuare deps --content ./.codex/skills/pdf-reader text-splitter
 
 # AGENTS.md 资源统一走 --type
-skuare --server http://127.0.0.1:15657 publish --type agentsmd --file ./agents/AGENTS.md --agentsmd-id team/agents --version 1.0.0
+skuare --server http://127.0.0.1:15657 remote publish --type agentsmd --file ./agents/AGENTS.md --agentsmd-id team/agents --version 1.0.0
 skuare --server http://127.0.0.1:15657 list --type agmd --rgx '^team/'
 skuare --server http://127.0.0.1:15657 peek --type agentsmd team/agents 1.0.0
 skuare --server http://127.0.0.1:15657 get --type agmd team/agents --global
 skuare detail --type agentsmd
-skuare --server http://127.0.0.1:15657 delete --type agentsmd team/agents 1.0.0
+skuare --server http://127.0.0.1:15657 remote delete --type agentsmd team/agents 1.0.0
 
 # 本地构建依赖文件（add 语义，存量依赖会保留并增量更新）
 skuare build report-generator data-normalizer schema-validator
@@ -272,13 +324,13 @@ skuare detail report-generator
 skuare detail skuare/report-generator references/details.md notes.txt
 ```
 
-`publish` 依赖上传行为：
+`remote publish` 依赖上传行为：
 - 若来源是 `--skill`/`--dir`/`<path>` 且解析到技能目录，CLI 会读取 `skill-deps.json` 并递归上传依赖技能。
 - 依赖已存在（`409 SKILL_VERSION_ALREADY_EXISTS`）默认会自动跳过；若传入 `--force/-f` 则会改为覆盖上传。
 - 依赖目录默认按同级目录解析（例如 `skills/<depSkillID>`）。
 - 当前 skill 若已存在（`409 SKILL_VERSION_ALREADY_EXISTS`），CLI 会输出 `WARN` 和 `--force/-f` 提示，并返回成功，不再报错退出。
 - 传入 `--force/-f` 时，请求体会附带 `force: true`，服务端支持时会覆盖已存在版本。
-- 当 `SKILL.md metadata.author` 存在时，`skr publish` 成功返回会包含 `author`，后续 `list/peek` 也会直接展示该值。
+- 当 `SKILL.md metadata.author` 存在时，`skr remote publish` 成功返回会包含 `author`，后续 `list/peek` 也会直接展示该值。
 
 `build` 依赖文件行为：
 - 命令格式：`skuare build <skillName> [refSkill...] [--all]`。
@@ -340,7 +392,7 @@ skuare detail skuare/report-generator references/details.md notes.txt
 skuare --server http://127.0.0.1:15657 \
   --key-id writer-a \
   --privkey-file ~/.skuare/keys/writer-a.pem \
-  publish --dir ./skills/pdf-reader
+  remote publish --dir ./skills/pdf-reader
 ```
 
 ## 验收标准与风险
