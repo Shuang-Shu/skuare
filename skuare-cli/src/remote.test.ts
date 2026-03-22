@@ -24,14 +24,15 @@ test("RemoteCommand prints help when no subcommand is provided", async () => {
   });
 
   assert.equal(logs.length, 1);
-  assert.match(logs[0], /^remote\n\nRun remote write operations\n\nUsage:/);
+  assert.match(logs[0], /^remote\n\nRun remote registry operations\n\nUsage:/);
   assert.match(logs[0], /skuare remote update <skillRef> <newSkillDir>/);
+  assert.match(logs[0], /skuare remote source add \[--global] <originName> \[--git\|--svc] <remoteUrl>/);
 });
 
 test("RemoteCommand rejects unknown subcommands", async () => {
   await assert.rejects(
     () => new RemoteCommand().execute(createContext(["push"])),
-    /Unknown remote subcommand: push\. Supported: publish, update, create, delete/,
+    /Unknown remote subcommand: push\. Supported: publish, update, create, delete, source/,
   );
 });
 

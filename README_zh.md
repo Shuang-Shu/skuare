@@ -30,6 +30,9 @@
 - server 写命令：`remote publish`、`remote update`、`remote create`、`remote delete`
   - 主要作用：写远程仓库
   - HTTP backend 下是否允许无签名写入由服务端决定；CLI 只有在提供签名凭证时才附加签名
+- 远端源管理命令：`remote source list`、`remote source add`、`remote source remove`、`remote source use`
+  - 主要作用：维护配置中的命名远端源与默认源
+  - `remote source add --git` 仅支持 SSH Git 地址
 
 ## 远端 backend
 - `skr --server <url>` 现在可以直接选择 registry backend：
@@ -39,6 +42,50 @@
   - Skill：`<repoRoot>/<author>/<skillID>/<version>/...`
   - AGENTS.md：`<repoRoot>/agentsmd/<agentsmdID>/<version>/AGENTS.md`
 - 现阶段 `skr init` 仍主要生成 HTTP 地址/端口配置；Git repo backend 建议通过 `--server` 或 `SKUARE_SVC_URL` 使用。
+- 也可以通过 `skr remote source add/use` 手动维护命名源；其中 `--git` 仅接受 SSH Git 地址。
+
+## 使用 Git Repo 作为远端仓库
+适用场景：
+- 不想部署 `skuare-svc`，直接把一个 Git 仓库当成远端 registry。
+- 希望通过 Git commit/push 管理 Skill 与 AGENTS.md 版本。
+
+前置条件：
+- 远端 Git 仓库已创建，并且本机具备可用的 SSH 访问权限。
+- `git push` 对目标仓库可用。
+
+推荐流程：
+```bash
+# 1) 先准备一个裸仓库，或使用已有远端仓库
+git init --bare /tmp/skuare-registry.git
+
+# 2) 把它注册成命名远端源
+skr remote source add repo --git git@github.com:team/skuare-registry.git
+
+# 3) 切换默认源
+skr remote source use repo
+
+# 4) 发布 Skill
+skr remote publish --dir ./skills/observability-orchestrator
+
+# 5) 查询与拉取
+skr list
+skr peek team/observability-orchestrator
+skr get team/observability-orchestrator
+```
+
+如果你只是本地验证 Git backend，也可以绕过 source 管理，直接显式传 `--server`：
+```bash
+skr --server git+file:///tmp/skuare-registry.git remote publish --dir ./skills/observability-orchestrator
+skr --server git+file:///tmp/skuare-registry.git list
+```
+
+注意：
+- `skr remote source add --git` 只接受 SSH Git 地址，例如 `git@github.com:team/skuare-registry.git` 或 `ssh://git@github.com/team/skuare-registry.git`。
+- `git+file://` 与 `git+https://` 仍可通过 `--server` 直接使用，但不会被 `remote source add --git` 接受。
+- Git backend 会在每次远端写操作后自动提交并推送；当前 commit message 模板为 `registry(<resource>): <action> <id>@<version>`。
+- Git 仓库目录布局需要保持为：
+  - Skill：`<repoRoot>/<author>/<skillID>/<version>/...`
+  - AGENTS.md：`<repoRoot>/agentsmd/<agentsmdID>/<version>/AGENTS.md`
 
 ## 核心能力：依赖管理
 - 依赖描述文件：`skill-deps.json`
@@ -93,6 +140,9 @@ skr peek observability-orchestrator
 skr --server git+file:///tmp/skuare-registry.git list
 
 # 7) server 写命令：发布 Skill（会递归处理依赖）
+skr remote source add origin --svc https://registry.example.com
+skr remote source add repo --git git@github.com:team/skills.git
+skr remote source use origin
 skr remote publish --dir ./skills/observability-orchestrator
 skr remote publish --dir ./skills/observability-orchestrator --force
 skr --server git+file:///tmp/skuare-registry.git remote publish --dir ./skills/observability-orchestrator
@@ -139,6 +189,10 @@ skr deps --install ./.codex/skills/skuare/observability-orchestrator skuare/core
 
 - server 写命令：
 ```bash
+skr remote source list
+skr remote source add origin --svc https://registry.example.com
+skr remote source add repo --git git@github.com:team/skills.git
+skr remote source use repo
 skr remote publish --dir ./skills/observability-orchestrator
 skr remote publish --dir ./skills/observability-orchestrator --force
 skr remote update observability-orchestrator ./examples/observability-orchestrator

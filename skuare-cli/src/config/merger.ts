@@ -4,6 +4,7 @@
 
 import type { SkuareConfig } from "../types";
 import { createDefaultConfig } from "../types";
+import { normalizeRemoteSources, normalizeSourceName } from "./sources";
 
 /**
  * 合并多个配置对象，后面的配置会覆盖前面的配置
@@ -28,6 +29,18 @@ export function mergeConfig(...items: Array<Partial<SkuareConfig> | undefined>):
 
     if (typeof item.remote?.port === "number") {
       result.remote.port = item.remote.port;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(item.remote ?? {}, "defaultSource")) {
+      const normalized = normalizeSourceName(String(item.remote?.defaultSource ?? ""));
+      result.remote.defaultSource = normalized || undefined;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(item.remote ?? {}, "sources")) {
+      result.remote.sources = {
+        ...(result.remote.sources || {}),
+        ...normalizeRemoteSources(item.remote?.sources),
+      };
     }
 
     if (typeof item.auth?.keyId === "string") {

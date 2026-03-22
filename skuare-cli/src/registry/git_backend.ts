@@ -184,7 +184,7 @@ export class GitRegistryBackend implements RegistryBackend {
     }
     const payload = body instanceof Uint8Array ? parseMultipartSkillUpload(body, contentType) : parseJsonSkillUpload(body);
     const created = await this.writeSkillPayload(payload);
-    await this.commitAndPush(`feat: publish skill ${created.skill_id}@${created.version}`);
+    await this.commitAndPush(buildRegistryCommitMessage("publish", "skill", created.skill_id, created.version));
     return created;
   }
 
@@ -224,7 +224,7 @@ export class GitRegistryBackend implements RegistryBackend {
     const versionDir = await this.findSkillVersionDir(skillID, version);
     await rm(versionDir, { recursive: true, force: true });
     await cleanupEmptyParents(dirname(versionDir), this.checkoutDir);
-    await this.commitAndPush(`feat: delete skill ${skillID}@${version}`);
+    await this.commitAndPush(buildRegistryCommitMessage("delete", "skill", skillID, version));
   }
 
   async listAgentsMD(query = ""): Promise<RegistryAgentsMDEntry[]> {
@@ -299,7 +299,7 @@ export class GitRegistryBackend implements RegistryBackend {
       version: request.version,
       content: request.content,
     });
-    await this.commitAndPush(`feat: publish agentsmd ${created.agentsmd_id}@${created.version}`);
+    await this.commitAndPush(buildRegistryCommitMessage("publish", "agentsmd", created.agentsmd_id, created.version));
     return created;
   }
 
@@ -341,7 +341,7 @@ export class GitRegistryBackend implements RegistryBackend {
     const versionDir = await this.findAgentsMDVersionDir(agentsmdID, version);
     await rm(versionDir, { recursive: true, force: true });
     await cleanupEmptyParents(dirname(versionDir), join(this.checkoutDir, "agentsmd"));
-    await this.commitAndPush(`feat: delete agentsmd ${agentsmdID}@${version}`);
+    await this.commitAndPush(buildRegistryCommitMessage("delete", "agentsmd", agentsmdID, version));
   }
 
   private async findSkillVersionDir(skillID: string, version: string): Promise<string> {
@@ -400,6 +400,15 @@ function normalizeGitServer(server: string): string {
     return trimmed.slice(4);
   }
   return trimmed;
+}
+
+function buildRegistryCommitMessage(
+  action: "publish" | "delete",
+  resource: "skill" | "agentsmd",
+  resourceID: string,
+  version: string
+): string {
+  return `registry(${resource}): ${action} ${resourceID}@${version}`;
 }
 
 function normalizePath(value: string): string {

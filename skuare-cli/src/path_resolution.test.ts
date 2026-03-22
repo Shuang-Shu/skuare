@@ -117,6 +117,44 @@ test("workspace config clears inherited global toolSkillDirs so get installs int
   }
 });
 
+test("resolveConfig prefers configured default remote source before legacy remote.address", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "skuare-source-config-"));
+  const home = await mkdtemp(join(tmpdir(), "skuare-source-home-"));
+  const originalHome = process.env.HOME;
+  process.env.HOME = home;
+
+  try {
+    await mkdir(join(home, ".skuare"), { recursive: true });
+    await writeConfig(join(home, ".skuare", "config.json"), {
+      remote: {
+        mode: "remote",
+        address: "legacy.example",
+        port: 15657,
+        defaultSource: "prod",
+        sources: {
+          prod: {
+            kind: "svc",
+            url: "https://registry.example.com",
+          },
+        },
+      },
+      auth: {
+        keyId: "",
+        privateKeyFile: "",
+      },
+      llmTools: ["codex"],
+      toolSkillDirs: {},
+    });
+
+    const resolved = await resolveConfig(workspace, { rest: [] });
+    assert.equal(resolved.server, "https://registry.example.com");
+  } finally {
+    process.env.HOME = originalHome;
+    await rm(workspace, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 function createContext(
   cwd: string,
   args: string[],
