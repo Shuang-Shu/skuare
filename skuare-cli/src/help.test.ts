@@ -37,6 +37,11 @@ test("buildHelpText uses unified --type entry and hides removed suffix commands"
   const helpText = buildHelpText();
 
   assert.match(helpText, /--type <skill\|agentsmd\|agmd>/);
+  assert.match(helpText, /\n  remote\n    Run remote write operations\n    Usage:\n      remote <publish\|update\|create\|delete> \.\.\./);
+  assert.doesNotMatch(helpText, /\n  publish\n/);
+  assert.doesNotMatch(helpText, /\n  update\n/);
+  assert.doesNotMatch(helpText, /\n  create\n/);
+  assert.doesNotMatch(helpText, /\n  delete\n/);
   assert.doesNotMatch(helpText, /publish-agentsmd/);
   assert.doesNotMatch(helpText, /publish-agmd/);
   assert.doesNotMatch(helpText, /list-agentsmd/);
@@ -67,6 +72,15 @@ test("buildCommandHelpText returns undefined for unknown command", () => {
   assert.equal(buildCommandHelpText("missing"), undefined);
 });
 
+test("buildCommandHelpText renders remote command help page", () => {
+  const helpText = buildCommandHelpText("remote");
+
+  assert.ok(helpText);
+  assert.match(helpText, /^remote\n\nRun remote write operations\n\nUsage:/);
+  assert.match(helpText, /skuare remote publish \[--type <skill\|agentsmd\|agmd>] --file <request\.json\|AGENTS\.md> \[--force\|-f]/);
+  assert.match(helpText, /skr remote delete \[--type <skill\|agentsmd\|agmd>] <resourceID> <version>/);
+});
+
 test("buildHelpText describes aligned peek selector forms", () => {
   const helpText = buildHelpText();
 
@@ -90,6 +104,16 @@ test("HelpCommand supports help <command>", async () => {
   assert.equal(logs.length, 1);
   assert.match(logs[0], /^list\n\nList skills or AGENTS\.md\n\nUsage:/);
   assert.doesNotMatch(logs[0], /\n  get\n/);
+});
+
+test("HelpCommand supports help remote", async () => {
+  const logs = await captureConsole(async () => {
+    await new HelpCommand().execute(createContext(["remote"]));
+  });
+
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /^remote\n\nRun remote write operations\n\nUsage:/);
+  assert.match(logs[0], /skuare remote <publish\|update\|create\|delete> \.\.\./);
 });
 
 test("HelpCommand rejects unknown help topic", async () => {

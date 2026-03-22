@@ -27,7 +27,7 @@
   - 主要作用：从 server 拉取 Skill，并安装到本地局部仓库
   - 同时访问 server 和写本地仓库
   - 默认安装根目录：`~/.skuare`
-- server 写命令：`publish`、`update`、`create`、`delete`
+- server 写命令：`remote publish`、`remote update`、`remote create`、`remote delete`
   - 主要作用：写远程仓库
   - HTTP backend 下是否允许无签名写入由服务端决定；CLI 只有在提供签名凭证时才附加签名
 
@@ -43,8 +43,8 @@
 ## 核心能力：依赖管理
 - 依赖描述文件：`skill-deps.json`
 - 依赖锁定文件：`skill-deps.lock.json`
-- `skr publish --dir <skill-dir> [--force|-f]`：读取依赖描述并递归上传依赖 Skill 到远程仓库；`--force/-f` 可覆盖已存在版本。
-- `skr update <skillRef> <newSkillDir>`：查询远端 skill 的 `maxVersion`，仅允许发布更大版本，并在发布前回写本地 `SKILL.md` 的 `metadata.version`。`skillRef` 支持 `skillID`、`name`、`author/name`；多候选时会复用 `get/peek` 的同一交互选择器。
+- `skr remote publish --dir <skill-dir> [--force|-f]`：读取依赖描述并递归上传依赖 Skill 到远程仓库；`--force/-f` 可覆盖已存在版本。
+- `skr remote update <skillRef> <newSkillDir>`：查询远端 skill 的 `maxVersion`，仅允许发布更大版本，并在发布前回写本地 `SKILL.md` 的 `metadata.version`。`skillRef` 支持 `skillID`、`name`、`author/name`；多候选时会复用 `get/peek` 的同一交互选择器。
 - `skr skill`：将内嵌的、作者为 `skuare` 的 LLM Skill 安装到 `cwd`；生成内容的 `metadata.version` 与当前 `skuare` 版本一致。
 - `skr build <skillName> [refSkill...] [--all]`：为本地 skill 自动创建或追加更新依赖文件（`skill-deps.json` / `skill-deps.lock.json`），当目标 skill 不存在时会先交互式创建最小 `SKILL.md` 模板，支持 `alias=refSkill`；`--all` 会将当前目录下全部合法 skillDir 作为引用 skill。
 - `skr detail <skillName|skillID> [relativePath...]`：展示本地已安装 skill 下的文件内容；不传文件路径时默认输出目标 skill 的 `SKILL.md`。
@@ -70,7 +70,7 @@ export PATH=/tmp/skuare-bin/bin:$PATH
 
 # 若仓库已自带 skuare-cli/dist，skr 会优先复用预构建产物；
 # 只有在需要重建且本地具备 TypeScript 工具链时才会重新编译。
-# 若当前只能回退到旧 dist，`skr publish ...` 会桥接为旧命令 `create ...` 以保持基础兼容。
+# 若当前只能回退到旧 dist，`skr remote publish ...` 会桥接为旧命令 `publish ...` 或 `create ...` 以保持基础兼容。
 # `make install` 依赖本机 PATH 中已存在 `npm` 和 `go`；
 # 它会先安装 `skuare-cli` 依赖、执行 `skuare-svc` 的 `go mod download`，再把 `skr` 注册到 `LOCAL_BIN`。
 
@@ -93,9 +93,9 @@ skr peek observability-orchestrator
 skr --server git+file:///tmp/skuare-registry.git list
 
 # 7) server 写命令：发布 Skill（会递归处理依赖）
-skr publish --dir ./skills/observability-orchestrator
-skr publish --dir ./skills/observability-orchestrator --force
-skr --server git+file:///tmp/skuare-registry.git publish --dir ./skills/observability-orchestrator
+skr remote publish --dir ./skills/observability-orchestrator
+skr remote publish --dir ./skills/observability-orchestrator --force
+skr --server git+file:///tmp/skuare-registry.git remote publish --dir ./skills/observability-orchestrator
 
 # 8) 混合命令：拉取并安装
 skr get observability-orchestrator
@@ -139,11 +139,11 @@ skr deps --install ./.codex/skills/skuare/observability-orchestrator skuare/core
 
 - server 写命令：
 ```bash
-skr publish --dir ./skills/observability-orchestrator
-skr publish --dir ./skills/observability-orchestrator --force
-skr update observability-orchestrator ./examples/observability-orchestrator
-skr create --dir ./skills/observability-orchestrator
-skr delete observability-orchestrator 1.0.0
+skr remote publish --dir ./skills/observability-orchestrator
+skr remote publish --dir ./skills/observability-orchestrator --force
+skr remote update observability-orchestrator ./examples/observability-orchestrator
+skr remote create --dir ./skills/observability-orchestrator
+skr remote delete observability-orchestrator 1.0.0
 ```
 
 ## 运行模式

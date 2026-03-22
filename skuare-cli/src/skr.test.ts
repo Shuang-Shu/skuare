@@ -9,55 +9,80 @@ import { promisify } from "node:util";
 const execFile = promisify(execFileCallback);
 const SKR_PATH = resolve(__dirname, "..", "..", "skr");
 
-test("skr keeps publish when dist help exposes publish", async () => {
+test("skr keeps remote publish when dist help exposes remote", async () => {
   const workspace = await createFakeWorkspace({
     helpText: [
       "skuare",
       "",
       "Commands:",
-      "  publish --file <request.json>      Publish from request JSON",
-      "  create ...                         Deprecated alias of publish",
+      "  remote <publish|update|create|delete>  Run remote write operations",
     ].join("\n"),
+    remotePublishOutput: "MODE=remote-publish",
     publishOutput: "MODE=publish",
     createOutput: "MODE=create",
     createStderr: "[WARN] command 'create' is deprecated, use 'publish' instead",
   });
 
   try {
-    const result = await execFile(workspace.scriptPath, ["publish", "--skill", "demo.md"], {
+    const result = await execFile(workspace.scriptPath, ["remote", "publish", "--skill", "demo.md"], {
       cwd: workspace.root,
       env: { ...process.env },
     });
 
-    assert.match(result.stdout, /MODE=publish/);
-    assert.doesNotMatch(result.stderr, /Current dist does not support 'publish'/);
-    assert.doesNotMatch(result.stderr, /command 'create' is deprecated/);
+    assert.match(result.stdout, /MODE=remote-publish/);
+    assert.doesNotMatch(result.stderr, /Current dist does not support 'remote'/);
   } finally {
     await rm(workspace.root, { recursive: true, force: true });
   }
 });
 
-test("skr maps publish to create only when dist help lacks publish", async () => {
+test("skr maps remote publish to publish when dist help lacks remote", async () => {
+  const workspace = await createFakeWorkspace({
+    helpText: [
+      "skuare",
+      "",
+      "Commands:",
+      "  publish --file <request.json>      Publish from request JSON",
+    ].join("\n"),
+    remotePublishOutput: "MODE=remote-publish",
+    publishOutput: "MODE=publish",
+    createOutput: "MODE=create",
+  });
+
+  try {
+    const result = await execFile(workspace.scriptPath, ["remote", "publish", "--skill", "demo.md"], {
+      cwd: workspace.root,
+      env: { ...process.env },
+    });
+
+    assert.match(result.stdout, /MODE=publish/);
+    assert.match(result.stderr, /Current dist does not support 'remote'; mapping 'remote publish' to 'publish' for compatibility\./);
+  } finally {
+    await rm(workspace.root, { recursive: true, force: true });
+  }
+});
+
+test("skr maps remote publish to create when dist lacks remote and publish", async () => {
   const workspace = await createFakeWorkspace({
     helpText: [
       "skuare",
       "",
       "Commands:",
       "  create ...                         Deprecated alias of publish",
-      "  publish-agentsmd --file <AGENTS.md> Publish AGENTS.md",
     ].join("\n"),
+    remotePublishOutput: "MODE=remote-publish",
     publishOutput: "MODE=publish",
     createOutput: "MODE=create",
   });
 
   try {
-    const result = await execFile(workspace.scriptPath, ["publish", "--skill", "demo.md"], {
+    const result = await execFile(workspace.scriptPath, ["remote", "publish", "--skill", "demo.md"], {
       cwd: workspace.root,
       env: { ...process.env },
     });
 
     assert.match(result.stdout, /MODE=create/);
-    assert.match(result.stderr, /Current dist does not support 'publish'; mapping to 'create' for compatibility\./);
+    assert.match(result.stderr, /Current dist does not support 'remote'; mapping 'remote publish' to 'create' for compatibility\./);
   } finally {
     await rm(workspace.root, { recursive: true, force: true });
   }
@@ -65,6 +90,7 @@ test("skr maps publish to create only when dist help lacks publish", async () =>
 
 async function createFakeWorkspace(options: {
   helpText: string;
+  remotePublishOutput: string;
   publishOutput: string;
   createOutput: string;
   createStderr?: string;
@@ -82,6 +108,7 @@ async function createFakeWorkspace(options: {
     join(cliDistDir, "index.js"),
     createFakeDistEntry({
       helpText: options.helpText,
+      remotePublishOutput: options.remotePublishOutput,
       publishOutput: options.publishOutput,
       createOutput: options.createOutput,
       createStderr: options.createStderr,
@@ -94,6 +121,7 @@ async function createFakeWorkspace(options: {
 
 function createFakeDistEntry(options: {
   helpText: string;
+  remotePublishOutput: string;
   publishOutput: string;
   createOutput: string;
   createStderr?: string;
@@ -103,6 +131,11 @@ const args = process.argv.slice(2);
 
 if (args[0] === "help") {
   console.log(${JSON.stringify(options.helpText)});
+  process.exit(0);
+}
+
+if (args[0] === "remote" && args[1] === "publish") {
+  console.log(${JSON.stringify(options.remotePublishOutput)});
   process.exit(0);
 }
 
