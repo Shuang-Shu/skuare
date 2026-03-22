@@ -30,7 +30,7 @@
 - server 写命令：`remote publish`、`remote update`、`remote create`、`remote delete`
   - 主要作用：写远程仓库
   - HTTP backend 下是否允许无签名写入由服务端决定；CLI 只有在提供签名凭证时才附加签名
-- 远端源管理命令：`remote source list`、`remote source add`、`remote source remove`、`remote source use`
+- 远端源管理命令：`remote source list`、`remote source add`、`remote source remove`、`remote source select`
   - 主要作用：维护配置中的命名远端源与默认源
   - `remote source add --git` 仅支持 SSH Git 地址
 
@@ -62,7 +62,7 @@ git init --bare /tmp/skuare-registry.git
 skr remote source add repo --git git@github.com:team/skuare-registry.git
 
 # 3) 切换默认源
-skr remote source use repo
+skr remote source select repo
 
 # 4) 发布 Skill
 skr remote publish --dir ./skills/observability-orchestrator
@@ -142,7 +142,7 @@ skr --server git+file:///tmp/skuare-registry.git list
 # 7) server 写命令：发布 Skill（会递归处理依赖）
 skr remote source add origin --svc https://registry.example.com
 skr remote source add repo --git git@github.com:team/skills.git
-skr remote source use origin
+skr remote source select origin
 skr remote publish --dir ./skills/observability-orchestrator
 skr remote publish --dir ./skills/observability-orchestrator --force
 skr --server git+file:///tmp/skuare-registry.git remote publish --dir ./skills/observability-orchestrator
@@ -192,7 +192,7 @@ skr deps --install ./.codex/skills/skuare/observability-orchestrator skuare/core
 skr remote source list
 skr remote source add origin --svc https://registry.example.com
 skr remote source add repo --git git@github.com:team/skills.git
-skr remote source use repo
+skr remote source select repo
 skr remote publish --dir ./skills/observability-orchestrator
 skr remote publish --dir ./skills/observability-orchestrator --force
 skr remote update observability-orchestrator ./examples/observability-orchestrator

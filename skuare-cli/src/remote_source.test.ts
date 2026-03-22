@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { RemoteCommand } from "./commands/remote";
 import type { CommandContext } from "./commands/types";
 
-test("remote source add/list/use/remove manages workspace sources", async () => {
+test("remote source add/list/select/remove manages workspace sources", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "skuare-remote-source-"));
 
   try {
@@ -39,12 +39,13 @@ test("remote source add/list/use/remove manages workspace sources", async () => 
       ]));
     });
 
-    const useOutput = await captureConsole(async () => {
-      await new RemoteCommand().execute(createContext(workspace, ["source", "use", "backup"]));
+    const selectOutput = await captureConsole(async () => {
+      await new RemoteCommand().execute(createContext(workspace, ["source", "select", "backup"]));
     });
-    const used = JSON.parse(useOutput.join("\n")) as { default_source: string; source: { url: string } };
-    assert.equal(used.default_source, "backup");
-    assert.equal(used.source.url, "git+ssh://git@github.com/team/skills.git");
+    const selected = JSON.parse(selectOutput.join("\n")) as { action: string; default_source: string; source: { url: string } };
+    assert.equal(selected.action, "select");
+    assert.equal(selected.default_source, "backup");
+    assert.equal(selected.source.url, "git+ssh://git@github.com/team/skills.git");
 
     const removeOutput = await captureConsole(async () => {
       await new RemoteCommand().execute(createContext(workspace, ["source", "remove", "origin"]));
@@ -90,8 +91,8 @@ test("remote source add rejects non-ssh git URLs", async () => {
   }
 });
 
-test("remote source use can point workspace default to a global source", async () => {
-  const workspace = await mkdtemp(join(tmpdir(), "skuare-remote-source-use-"));
+test("remote source select can point workspace default to a global source", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "skuare-remote-source-select-"));
   const home = await mkdtemp(join(tmpdir(), "skuare-remote-source-home-"));
   const originalHome = process.env.HOME;
   process.env.HOME = home;
@@ -116,11 +117,11 @@ test("remote source use can point workspace default to a global source", async (
       toolSkillDirs: {},
     }, null, 2), "utf8");
 
-    const useOutput = await captureConsole(async () => {
-      await new RemoteCommand().execute(createContext(workspace, ["source", "use", "prod"]));
+    const selectOutput = await captureConsole(async () => {
+      await new RemoteCommand().execute(createContext(workspace, ["source", "select", "prod"]));
     });
-    const used = JSON.parse(useOutput.join("\n")) as { default_source: string };
-    assert.equal(used.default_source, "prod");
+    const selected = JSON.parse(selectOutput.join("\n")) as { default_source: string };
+    assert.equal(selected.default_source, "prod");
 
     const workspaceConfig = JSON.parse(await readFile(join(workspace, ".skuare", "config.json"), "utf8")) as {
       remote: { defaultSource: string };
@@ -130,6 +131,31 @@ test("remote source use can point workspace default to a global source", async (
     process.env.HOME = originalHome;
     await rm(workspace, { recursive: true, force: true });
     await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("remote source use remains a compatibility alias for select", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "skuare-remote-source-use-alias-"));
+
+  try {
+    await captureConsole(async () => {
+      await new RemoteCommand().execute(createContext(workspace, [
+        "source",
+        "add",
+        "origin",
+        "--svc",
+        "https://registry.example.com/",
+      ]));
+    });
+
+    const aliasOutput = await captureConsole(async () => {
+      await new RemoteCommand().execute(createContext(workspace, ["source", "use", "origin"]));
+    });
+    const selected = JSON.parse(aliasOutput.join("\n")) as { action: string; default_source: string };
+    assert.equal(selected.action, "select");
+    assert.equal(selected.default_source, "origin");
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
   }
 });
 
