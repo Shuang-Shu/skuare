@@ -8,6 +8,10 @@ import type {
   RegistryAgentsMDEntry,
   RegistryAgentsMDOverview,
   RegistryHealth,
+  RegistryImportOptions,
+  RegistryImportResult,
+  RegistryMigrationBundle,
+  RegistryMigrationType,
   RegistrySkillDetail,
   RegistrySkillEntry,
   RegistrySkillOverview,
@@ -118,7 +122,7 @@ test("remote migrate publishes migrated skill and agentsmd resources to destinat
 
 test("remote migrate --skip-existing skips existing versions and continues", async () => {
   const destination = createStubBackend({
-    publishSkillError: new DomainError("SKILL_VERSION_ALREADY_EXISTS", "skill version already exists", {
+    importSkillError: new DomainError("SKILL_VERSION_ALREADY_EXISTS", "skill version already exists with different content", {
       details: { status: 409 },
     }),
   });
@@ -153,10 +157,42 @@ test("remote migrate --skip-existing skips existing versions and continues", asy
   };
 
   assert.deepEqual(output.skipped, [
-    { type: "skill", skill_id: "team/demo", version: "1.0.0", reason: "already_exists" },
+    { type: "skill", skill_id: "team/demo", version: "1.0.0", reason: "version_conflict" },
   ]);
   assert.deepEqual(output.migrated, [
     { type: "agentsmd", agentsmd_id: "team/guide", version: "1.0.0" },
+  ]);
+});
+
+test("remote migrate reports unchanged entries returned by destination import", async () => {
+  const destination = createStubBackend({ importSkillSkipReason: "unchanged" });
+  const command = new RemoteMigrateCommand(
+    async (server) => server === "src-server" ? createStubBackend({
+      skills: [{
+        skill_id: "team/demo",
+        version: "1.0.0",
+        name: "demo",
+        author: "team",
+        description: "Demo skill",
+        path: "/src/team/demo/1.0.0",
+        updated_at: "2026-03-22T00:00:00Z",
+        files: [{ path: "SKILL.md", content: "# Demo\n" }],
+      }],
+    }) : destination,
+    async (_cwd, token) => token === "src" ? "src-server" : token === "dst" ? "dst-server" : token
+  );
+
+  const logs = await captureConsole(async () => {
+    await command.execute(createContext(["src", "dst"]));
+  });
+  const output = JSON.parse(logs.join("\n")) as {
+    migrated: Array<{ type: string }>;
+    skipped: Array<{ type: string; reason: string }>;
+  };
+
+  assert.deepEqual(output.migrated, []);
+  assert.deepEqual(output.skipped, [
+    { type: "skill", skill_id: "team/demo", version: "1.0.0", reason: "unchanged" },
   ]);
 });
 
@@ -215,7 +251,8 @@ async function captureConsole(run: () => Promise<void>): Promise<string[]> {
 type StubOptions = {
   skills?: RegistrySkillDetail[];
   agentsmd?: RegistryAgentsMDDetail[];
-  publishSkillError?: Error;
+  importSkillError?: Error;
+  importSkillSkipReason?: string;
 };
 
 type StubBackend = RegistryBackend & {
@@ -223,9 +260,9 @@ type StubBackend = RegistryBackend & {
   publishedAgentsMD: Array<Record<string, unknown>>;
 };
 
-function createStubBackend(options: StubOptions = {}): StubBackend {
-  const skills = options.skills || [];
-  const agentsmd = options.agentsmd || [];
+function createStubBackend(stubOptions: StubOptions = {}): StubBackend {
+  const skills = stubOptions.skills || [];
+  const agentsmd = stubOptions.agentsmd || [];
   const publishedSkills: Array<Record<string, unknown>> = [];
   const publishedAgentsMD: Array<Record<string, unknown>> = [];
 
@@ -248,9 +285,6 @@ function createStubBackend(options: StubOptions = {}): StubBackend {
       return detail;
     },
     async publishSkill(request: PublishSkillRequest): Promise<RegistrySkillEntry> {
-      if (options.publishSkillError) {
-        throw options.publishSkillError;
-      }
       assert.ok(!(request.body instanceof Uint8Array), "test stub only expects JSON body");
       const body = request.body as Record<string, unknown>;
       publishedSkills.push(body);
@@ -306,6 +340,44 @@ function createStubBackend(options: StubOptions = {}): StubBackend {
       };
     },
     async deleteAgentsMD(): Promise<void> {},
+    async exportResources(type: RegistryMigrationType = "all"): Promise<RegistryMigrationBundle> {
+      return {
+        type,
+        skills: type === "all" || type === "skill" ? skills : [],
+        agentsmd: type === "all" || type === "agentsmd" ? agentsmd : [],
+      };
+    },
+    async importResources(bundle: RegistryMigrationBundle, options: RegistryImportOptions = {}): Promise<RegistryImportResult> {
+      const result: RegistryImportResult = { imported: [], skipped: [] };
+      for (const detail of bundle.skills) {
+        if (stubOptions.importSkillSkipReason) {
+          result.skipped.push({ type: "skill", skill_id: detail.skill_id, version: detail.version, reason: stubOptions.importSkillSkipReason });
+          continue;
+        }
+        if (options.skipExisting && stubOptions.importSkillError) {
+          result.skipped.push({ type: "skill", skill_id: detail.skill_id, version: detail.version, reason: "version_conflict" });
+          continue;
+        }
+        if (stubOptions.importSkillError) {
+          throw stubOptions.importSkillError;
+        }
+        publishedSkills.push({
+          skill_id: detail.skill_id,
+          version: detail.version,
+          files: detail.files,
+        });
+        result.imported.push({ type: "skill", skill_id: detail.skill_id, version: detail.version });
+      }
+      for (const detail of bundle.agentsmd) {
+        publishedAgentsMD.push({
+          agentsmdID: detail.agentsmd_id,
+          version: detail.version,
+          content: detail.content,
+        });
+        result.imported.push({ type: "agentsmd", agentsmd_id: detail.agentsmd_id, version: detail.version });
+      }
+      return result;
+    },
   };
 }
 

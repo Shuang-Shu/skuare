@@ -10,6 +10,7 @@ import { HealthCommand } from "./commands/admin";
 import { GetCommand, ListCommand, PeekCommand, ValidateCommand } from "./commands/query";
 import { DeleteCommand, PublishCommand, UpdateCommand } from "./commands/write";
 import type { CommandContext } from "./commands/types";
+import { getRegistryBackend } from "./registry/factory";
 
 const execFileAsync = promisify(execFile);
 
@@ -125,6 +126,49 @@ test("git registry supports agentsmd flows", async () => {
   }
 });
 
+test("git registry bulk import writes one commit for one migration bundle", async () => {
+  const sourceRepo = await createGitRegistry();
+  const destinationRepo = await createGitRegistry();
+
+  try {
+    await seedRegistry(sourceRepo);
+    const sourceBackend = await getRegistryBackend(sourceRepo.server);
+    const destinationBackend = await getRegistryBackend(destinationRepo.server);
+    const bundle = await sourceBackend.exportResources("all");
+    const result = await destinationBackend.importResources(bundle);
+
+    assert.equal(result.imported.length, 2);
+    await assertCommitCount(destinationRepo.remoteDir, 1);
+  } finally {
+    await rm(sourceRepo.rootDir, { recursive: true, force: true });
+    await rm(destinationRepo.rootDir, { recursive: true, force: true });
+  }
+});
+
+test("git registry bulk import skips unchanged versions without creating extra commits", async () => {
+  const sourceRepo = await createGitRegistry();
+  const destinationRepo = await createGitRegistry();
+
+  try {
+    await seedRegistry(sourceRepo);
+    await seedRegistry(destinationRepo);
+    const sourceBackend = await getRegistryBackend(sourceRepo.server);
+    const destinationBackend = await getRegistryBackend(destinationRepo.server);
+    const bundle = await sourceBackend.exportResources("all");
+    const result = await destinationBackend.importResources(bundle);
+
+    assert.deepEqual(result.imported, []);
+    assert.deepEqual(result.skipped, [
+      { type: "skill", skill_id: "demo-skill", version: "1.0.0", reason: "unchanged" },
+      { type: "agentsmd", agentsmd_id: "team/guide", version: "1.0.0", reason: "unchanged" },
+    ]);
+    await assertCommitCount(destinationRepo.remoteDir, 1);
+  } finally {
+    await rm(sourceRepo.rootDir, { recursive: true, force: true });
+    await rm(destinationRepo.rootDir, { recursive: true, force: true });
+  }
+});
+
 async function createGitRegistry(): Promise<{ rootDir: string; remoteDir: string; server: string }> {
   const rootDir = await mkdtemp(join(tmpdir(), "skuare-git-registry-"));
   const remoteDir = join(rootDir, "remote.git");
@@ -214,4 +258,12 @@ async function captureConsole(run: () => Promise<void>): Promise<string[]> {
 
 async function git(args: string[], cwd: string): Promise<void> {
   await execFileAsync("git", args, { cwd, encoding: "utf8" });
+}
+
+async function assertCommitCount(remoteDir: string, expected: number): Promise<void> {
+  const { stdout } = await execFileAsync("git", ["rev-list", "--count", "master"], {
+    cwd: remoteDir,
+    encoding: "utf8",
+  });
+  assert.equal(Number(stdout.trim()), expected);
 }

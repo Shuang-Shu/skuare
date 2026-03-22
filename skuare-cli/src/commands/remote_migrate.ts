@@ -1,10 +1,10 @@
-import type { JsonValue, SkuareConfig } from "../types";
+import type { SkuareConfig } from "../types";
 import { BaseCommand } from "./base";
 import type { CommandContext } from "./types";
-import { DomainError, isDomainError } from "../domain/errors";
+import { DomainError } from "../domain/errors";
 import { getRegistryBackend } from "../registry/factory";
 import type { RegistryBackend } from "../registry/backend";
-import type { RegistryFile, RegistrySkillDetail } from "../registry/types";
+import type { RegistryImportResult, RegistryMigrationBundle, RegistryMigrationRef } from "../registry/types";
 import { getGlobalConfigPath, getWorkspaceConfigPath } from "../config/resolver";
 import { loadConfig } from "../config/loader";
 import { mergeConfig } from "../config/merger";
@@ -53,91 +53,29 @@ export class RemoteMigrateCommand extends BaseCommand {
 
     const sourceBackend = await this.backendResolver(source);
     const destinationBackend = await this.backendResolver(destination);
+    const exported = await sourceBackend.exportResources(parsed.type);
+    const plan = buildPlan(exported);
     const summary: MigrationSummary = {
       source,
       destination,
       type: parsed.type,
       dry_run: parsed.dryRun,
       skip_existing: parsed.skipExisting,
-      plan: [],
+      plan,
       migrated: [],
       skipped: [],
     };
 
-    if (parsed.type === "all" || parsed.type === "skill") {
-      await this.migrateSkills(sourceBackend, destinationBackend, context, parsed, summary);
-    }
-    if (parsed.type === "all" || parsed.type === "agentsmd") {
-      await this.migrateAgentsMD(sourceBackend, destinationBackend, context, parsed, summary);
+    if (!parsed.dryRun) {
+      const result = await destinationBackend.importResources(exported, {
+        auth: context.auth,
+        skipExisting: parsed.skipExisting,
+      });
+      summary.migrated = result.imported;
+      summary.skipped = result.skipped;
     }
 
     console.log(JSON.stringify(summary, null, 2));
-  }
-
-  private async migrateSkills(
-    sourceBackend: RegistryBackend,
-    destinationBackend: RegistryBackend,
-    context: CommandContext,
-    parsed: ParsedMigrateArgs,
-    summary: MigrationSummary
-  ): Promise<void> {
-    const items = await sourceBackend.listSkills();
-    for (const item of items) {
-      const ref: MigrationResourceRef = { type: "skill", skill_id: item.skill_id, version: item.version };
-      summary.plan.push(ref);
-      if (parsed.dryRun) {
-        continue;
-      }
-
-      const detail = await sourceBackend.getSkillVersion(item.skill_id, item.version);
-      try {
-        await destinationBackend.publishSkill({
-          body: buildSkillMigrateBody(detail),
-          auth: context.auth,
-        });
-        summary.migrated.push(ref);
-      } catch (err) {
-        if (parsed.skipExisting && isAlreadyExistsError(err)) {
-          summary.skipped.push({ ...ref, reason: "already_exists" });
-          continue;
-        }
-        throw err;
-      }
-    }
-  }
-
-  private async migrateAgentsMD(
-    sourceBackend: RegistryBackend,
-    destinationBackend: RegistryBackend,
-    context: CommandContext,
-    parsed: ParsedMigrateArgs,
-    summary: MigrationSummary
-  ): Promise<void> {
-    const items = await sourceBackend.listAgentsMD();
-    for (const item of items) {
-      const ref: MigrationResourceRef = { type: "agentsmd", agentsmd_id: item.agentsmd_id, version: item.version };
-      summary.plan.push(ref);
-      if (parsed.dryRun) {
-        continue;
-      }
-
-      const detail = await sourceBackend.getAgentsMDVersion(item.agentsmd_id, item.version);
-      try {
-        await destinationBackend.publishAgentsMD({
-          agentsmdID: detail.agentsmd_id,
-          version: detail.version,
-          content: detail.content,
-          auth: context.auth,
-        });
-        summary.migrated.push(ref);
-      } catch (err) {
-        if (parsed.skipExisting && isAlreadyExistsError(err)) {
-          summary.skipped.push({ ...ref, reason: "already_exists" });
-          continue;
-        }
-        throw err;
-      }
-    }
   }
 }
 
@@ -208,22 +146,6 @@ function parseMigrateType(input: string): MigrateResourceType {
   throw new DomainError("CLI_INVALID_ARGUMENT", `Invalid value for --type: ${input}. Expected one of: all, skill, agentsmd, agmd`);
 }
 
-function buildSkillMigrateBody(detail: RegistrySkillDetail): JsonValue {
-  return {
-    skill_id: detail.skill_id,
-    version: detail.version,
-    files: detail.files.map(toJsonFileBody),
-  } satisfies JsonValue;
-}
-
-function toJsonFileBody(file: RegistryFile): JsonValue {
-  return {
-    path: file.path,
-    content: file.content,
-    ...(file.encoding ? { encoding: file.encoding } : {}),
-  } satisfies JsonValue;
-}
-
 async function resolveRemoteEndpoint(cwd: string, token: string): Promise<string> {
   const trimmed = String(token || "").trim();
   if (!trimmed) {
@@ -254,23 +176,9 @@ function looksLikeDirectServer(value: string): boolean {
   return /^https?:\/\//i.test(value) || isGitRegistryServer(value);
 }
 
-function isAlreadyExistsError(err: unknown): boolean {
-  if (isDomainError(err)) {
-    const code = String(err.code || "");
-    if (code.includes("ALREADY_EXISTS")) {
-      return true;
-    }
-    const status = extractStatus(err.details);
-    return status === 409;
-  }
-  const message = err instanceof Error ? err.message : String(err);
-  return /already exists/i.test(message) || /\b409\b/.test(message);
-}
-
-function extractStatus(details: unknown): number | undefined {
-  if (!details || typeof details !== "object" || Array.isArray(details)) {
-    return undefined;
-  }
-  const status = (details as { status?: unknown }).status;
-  return typeof status === "number" ? status : undefined;
+function buildPlan(bundle: RegistryMigrationBundle): MigrationSummary["plan"] {
+  return [
+    ...bundle.skills.map((item) => ({ type: "skill", skill_id: item.skill_id, version: item.version }) satisfies RegistryMigrationRef),
+    ...bundle.agentsmd.map((item) => ({ type: "agentsmd", agentsmd_id: item.agentsmd_id, version: item.version }) satisfies RegistryMigrationRef),
+  ];
 }
