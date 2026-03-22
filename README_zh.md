@@ -17,22 +17,24 @@
 默认仓库根路径：`$HOME/.skuare`
 
 ## 命令分组
-- 纯本地命令：`help`、`version`、`init`、`build`、`format`、`detail`
+- 纯本地命令：`help`、`version`、`init`、`config`、`skill`、`build`、`format`、`detail`
   - 主要作用：生成或修改本地配置、Skill 文件、依赖文件
   - 默认不访问 server
 - server 只读命令：`health`、`list`、`peek`、`validate`
   - 主要作用：检查服务状态、查询远程仓库内容、触发服务端校验
   - 会访问 server，但不写远程仓库
-- 混合命令：`get`
-  - 主要作用：从 server 拉取 Skill，并安装到本地局部仓库
-  - 同时访问 server 和写本地仓库
-  - 默认安装根目录：`~/.skuare`
+- 混合命令：`get`、`deps`、`remove`
+  - `get`：从 server 拉取 Skill 或 AGENTS.md，并安装到本地局部仓库
+  - `deps`：围绕 `get --wrap` 的根 Skill 按需查看或安装依赖子树
+  - `remove`：删除本地或全局已安装 Skill，并可按需级联依赖删除
 - server 写命令：`remote publish`、`remote update`、`remote create`、`remote delete`、`remote migrate`
   - 主要作用：写远程仓库
   - HTTP backend 下是否允许无签名写入由服务端决定；CLI 只有在提供签名凭证时才附加签名
 - 远端源管理命令：`remote source list`、`remote source add`、`remote source remove`、`remote source select`
   - 主要作用：维护配置中的命名远端源与默认源
   - `remote source add --git` 仅支持 SSH Git 地址
+- 统一资源切换：`list`、`peek`、`get`、`detail`、`remote publish`、`remote create`、`remote delete`
+  - 默认操作 Skill；传入 `--type agentsmd` 或 `--type agmd` 时切换为 AGENTS.md 资源
 
 ## 远端 backend
 - `skr --server <url>` 现在可以直接选择 registry backend：
@@ -99,15 +101,22 @@ skr --server git+file:///tmp/skuare-registry.git list
 - `skr remote migrate <src> <dst> [--type <all|skill|agentsmd|agmd>] [--dry-run] [--skip-existing]`：从源远端批量导出资源 bundle，再批量导入到目标远端；`src/dst` 支持命名 source 或直接 URL。
   - 重复迁移时，若目标端同版本内容一致会自动跳过；若内容不同则视为冲突，传 `--skip-existing` 时会按冲突项跳过。
 - `skr remote update <skillRef> <newSkillDir>`：查询远端 skill 的 `maxVersion`，仅允许发布更大版本，并在发布前回写本地 `SKILL.md` 的 `metadata.version`。`skillRef` 支持 `skillID`、`name`、`author/name`；多候选时会复用 `get/peek` 的同一交互选择器。
+- `skr config [--global]`：展示当前命中的配置文件路径与 JSON 内容；默认从 `cwd` 向上查找工作区配置，`--global` 直接读取 `~/.skuare/config.json`。
 - `skr skill`：将内嵌的、作者为 `skuare` 的 LLM Skill 安装到 `cwd`；生成内容的 `metadata.version` 与当前 `skuare` 版本一致。
 - `skr build <skillName> [refSkill...] [--all]`：为本地 skill 自动创建或追加更新依赖文件（`skill-deps.json` / `skill-deps.lock.json`），当目标 skill 不存在时会先交互式创建最小 `SKILL.md` 模板，支持 `alias=refSkill`；`--all` 会将当前目录下全部合法 skillDir 作为引用 skill。
 - `skr detail <skillName|skillID> [relativePath...]`：展示本地已安装 skill 下的文件内容；不传文件路径时默认输出目标 skill 的 `SKILL.md`。
-- `skr get <skill-ref> [version] [--global] [--wrap]`：从远程仓库拉取 Skill；直接指定目标时支持 `skillID`、`name`、`author/name` 三种 selector，并与 `peek/deps` 复用同一交互逻辑。
+- `skr get <skill-ref> [version] [--global] [--wrap] [--slink]`：从远程仓库拉取 Skill；直接指定目标时支持 `skillID`、`name`、`author/name` 三种 selector，并与 `peek/deps` 复用同一交互逻辑。
   - 不带 `--global`：安装到全部已配置工具各自的 workspace skill 目录，默认形如 `<cwd>/.{llmTool}/skills/<skillID>/`
   - 带 `--global`：安装到全部已配置工具各自的全局 skill 目录，默认形如 `~/.{llmTool}/skills/<skillID>/`
   - `--global` 只影响安装位置，不影响安装到哪些工具
+  - `--slink`：把本地安装目录创建成指向 CLI 仓库 Skill 目录的软链接，而不是复制远端文件
   - 默认会把完整依赖图平铺安装；带 `--wrap` 时只安装根 Skill，依赖留给 `skr deps` 按需查看和安装
 - `skr deps --brief|--content|--tree|--install <rootSkillDir> ...`：围绕 wrap 根 Skill 查看依赖摘要、内容、文件树，并按需安装子树；目标依赖支持 `skillID/name/author/name` 与 `@version`。
+- `skr remove <skillID|author/name|name> [--global] [--deps]`：删除已安装 Skill；默认只删目标本体，`--deps` 会递归删除其依赖子树，但会保留仍被其他根 Skill 共享引用的依赖。
+- 资源类型扩展：
+  - `skr get --type agentsmd <agentsmd-id> [version] [--global]`：把远端 AGENTS.md 安装到 `<cwd>/.{tool}/AGENTS.md` 或 `~/.{tool}/AGENTS.md`
+  - `skr detail --type agentsmd`：展示本地已安装 AGENTS.md
+  - `skr remote publish/delete --type agentsmd ...`：发布或删除远端 AGENTS.md 资源
 
 示例：
 - 若 `a` 依赖 `b` 和 `c`，执行 `skr get a` 后，目标工具目录下会得到 `a`、`b`、`c` 三个技能目录。
@@ -135,6 +144,9 @@ skr init
 skr health
 
 # 5) 纯本地命令：初始化/构建/格式化/查看
+skr config
+skr config --global
+skr skill
 skr build observability-orchestrator core-time-utils report-generator
 skr build observability-orchestrator --all
 skr format ./skills/observability-orchestrator
@@ -158,6 +170,7 @@ skr --server git+file:///tmp/skuare-registry.git remote publish --dir ./skills/o
 skr get observability-orchestrator
 skr get observability-orchestrator --wrap
 skr deps --brief ./.codex/skills/skuare/observability-orchestrator
+skr remove observability-orchestrator
 
 # 9) 停止后端守护进程
 make stop-be
@@ -166,6 +179,8 @@ make stop-be
 ## 常用命令
 - 纯本地命令：
 ```bash
+skr config
+skr skill
 skr build observability-orchestrator core-time-utils report-generator
 skr format ./skills/observability-orchestrator
 skr format --all
@@ -189,9 +204,11 @@ skr get --rgx "observability"
 skr get observability-orchestrator
 skr get observability-orchestrator --global
 skr get observability-orchestrator --wrap
+skr get observability-orchestrator --slink
 skr deps --brief ./.codex/skills/skuare/observability-orchestrator
 skr deps --content ./.codex/skills/skuare/observability-orchestrator skuare/core-time-utils
 skr deps --install ./.codex/skills/skuare/observability-orchestrator skuare/core-time-utils
+skr remove observability-orchestrator --deps
 ```
 
 - server 写命令：
@@ -221,6 +238,7 @@ skr remote delete observability-orchestrator 1.0.0
 - CLI 说明：`skuare-cli/README.md`
 
 ## 变更记录
+- 2026-03-22：根 README 与当前 CLI 对齐，补充 `config`、`skill`、`deps`、`remove`、AGENTS.md 资源切换与 `remote source/migrate` 说明。
 - 2026-02-26：README 调整为更通用的 GitHub 风格，保留原有信息并优化表达。
 - 2026-02-26：命令语义调整：`peek` 查询、`get` 安装、`format` 格式化，`create` 支持多路径与 `--all`。
 - 2026-02-27：`get` 安装目录按 LLMTool 区分（`codex`/`claudecode`/custom），`init` 支持 custom 工具 skills 目录配置。

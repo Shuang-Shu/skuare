@@ -19,19 +19,24 @@ Core value: version-controlled management of "Skill content + dependencies" — 
 Default repository root path: `$HOME/.skuare`
 
 ## Command Groups
-- Pure local commands: `help`, `version`, `init`, `config`, `build`, `format`, `detail`
+- Pure local commands: `help`, `version`, `init`, `config`, `skill`, `build`, `format`, `detail`
   - Main purpose: generate or modify local config, Skill files, dependency files
   - Do not access server by default
 - Server read-only commands: `health`, `list`, `peek`, `validate`
   - Main purpose: check service status, query remote repository content, trigger server-side validation
   - Access server but do not write to remote repository
-- Hybrid commands: `get`
-  - Main purpose: fetch Skills from server and install to local partial repository
-  - Access server and write to local repository
-  - Default installation root: `~/.skuare`
-- Server write commands: `publish`, `update`, `create`, `delete`
+- Hybrid commands: `get`, `deps`, `remove`
+  - `get`: fetch Skills or AGENTS.md from a registry and install them locally
+  - `deps`: inspect or install dependency subtrees for a wrapped root Skill
+  - `remove`: delete installed local/global Skills, optionally with dependency cleanup
+- Server write commands: `remote publish`, `remote update`, `remote create`, `remote delete`, `remote migrate`
   - Main purpose: write to remote repository
   - Whether unsigned writes are allowed on the HTTP backend is determined by the server; CLI only attaches signatures when signing credentials are provided
+- Remote source management commands: `remote source list`, `remote source add`, `remote source remove`, `remote source select`
+  - Main purpose: manage named registry sources in config
+  - `remote source add --git` only accepts SSH Git URLs
+- Shared resource switching: `list`, `peek`, `get`, `detail`, `remote publish`, `remote create`, `remote delete`
+  - Skill is the default resource; pass `--type agentsmd` or `--type agmd` to switch to AGENTS.md resources
 
 ## Remote Backends
 - `skr --server <url>` can now point to either registry backend:
@@ -40,23 +45,48 @@ Default repository root path: `$HOME/.skuare`
 - Git repo backend reuses the current default service layout:
   - Skill: `<repoRoot>/<author>/<skillID>/<version>/...`
   - AGENTS.md: `<repoRoot>/agentsmd/<agentsmdID>/<version>/AGENTS.md`
-- `skr init` still primarily writes HTTP address/port config; for now, use Git repo backend via `--server` or `SKUARE_SVC_URL`.
+- `skr init` still primarily writes HTTP address/port config; for now, use Git repo backend via `--server`, `SKUARE_SVC_URL`, or named `remote source` entries.
+
+## Git Registry Workflow
+- Recommended flow:
+```bash
+skr remote source add repo --git git@github.com:team/skuare-registry.git
+skr remote source select repo
+skr remote publish --dir ./skills/observability-orchestrator
+skr remote migrate repo https://backup.example.com --dry-run
+skr list
+skr peek team/observability-orchestrator
+```
+- Direct `--server` also works for one-off usage:
+```bash
+skr --server git+file:///tmp/skuare-registry.git remote publish --dir ./skills/observability-orchestrator
+skr --server git+file:///tmp/skuare-registry.git list
+```
+- Notes:
+  - `remote source add --git` only accepts SSH Git URLs and normalizes them to `git+ssh://...`
+  - `git+file://` and `git+https://` are supported through `--server`, but are not stored as named Git sources
+  - Git backend caches repositories under `~/.skuare/cache/git-registry` by default and applies a 1-day TTL for read cache
+  - Git backend write operations auto-run `pull/commit/push` with commit messages like `registry(<resource>): <action> <id>@<version>`
 
 ## Core Capability: Dependency Management
 - Dependency description file: `skill-deps.json`
 - Dependency lock file: `skill-deps.lock.json`
-- `skr publish --dir <skill-dir> [--force|-f]`: read dependency description and recursively upload dependent Skills to remote repository; `--force/-f` overwrites an existing version.
-- `skr update <skillRef> <newSkillDir>`: query the remote skill's `maxVersion`, only allow a higher version, and rewrite local `SKILL.md metadata.version` before publishing. `skillRef` supports `skillID`, `name`, and `author/name`; ambiguous matches reuse the same interactive selector as `get/peek`.
+- `skr remote publish --dir <skill-dir> [--force|-f]`: read dependency description and recursively upload dependent Skills to the remote registry; `--force/-f` overwrites an existing version.
+- `skr remote migrate <src> <dst> [--type <all|skill|agentsmd|agmd>] [--dry-run] [--skip-existing]`: batch export resources from one registry and import them into another; `src/dst` accept named sources or direct URLs.
+- `skr remote update <skillRef> <newSkillDir>`: query the remote skill's `maxVersion`, require a higher version, rewrite local `SKILL.md metadata.version`, then publish. `skillRef` supports `skillID`, `name`, and `author/name`; ambiguous matches reuse the same selector as `get/peek/deps`.
+- `skr config [--global]`: print the matched config path and JSON content; default lookup walks upward from `cwd`, while `--global` reads `~/.skuare/config.json`.
 - `skr skill`: install the embedded skuare-authored LLM skill into `cwd`; generated `metadata.version` matches the current `skuare` version.
-- `skr build <skillName> [refSkill...] [--all]`: automatically create or append dependency files (`skill-deps.json` / `skill-deps.lock.json`) for local skill. When target skill doesn't exist, it will interactively create a minimal `SKILL.md` template first. Supports `alias=refSkill`; `--all` will use all valid skillDirs in current directory as reference skills.
-- `skr config [--global]`: print the matched config file path and JSON content. By default it walks upward from `cwd` until `/` and returns the first `.skuare/config.json`; `--global` reads `~/.skuare/config.json`.
-- `skr detail <skillName|skillID> [relativePath...]`: show files under a local installed skill. Defaults to the target skill's `SKILL.md` when no path is provided.
-- `skr get <skill-ref> [version] [--global] [--wrap]`: fetch Skill from remote repository. When directly targeting one skill, `peek/get/deps` share the same selector logic for `skillID`, `name`, and `author/name`. If local files would be overwritten, `get` now requires interactive confirmation in TTY and refuses to overwrite in non-interactive sessions.
-  - Without `--global`: install to every configured tool's workspace skill directory, by default `<cwd>/.{llmTool}/skills/<skillID>/`
-  - With `--global`: install to every configured tool's global skill directory, by default `~/.{llmTool}/skills/<skillID>/`
+- `skr build <skillName> [refSkill...] [--all]`: automatically create or append dependency files (`skill-deps.json` / `skill-deps.lock.json`) for a local Skill. When the target Skill does not exist, it interactively creates a minimal `SKILL.md` template first. Supports `alias=refSkill`; `--all` uses all valid Skill directories in the current directory as references.
+- `skr detail <skillName|skillID> [relativePath...]`: show files under a local installed Skill. Defaults to the target Skill's `SKILL.md` when no path is provided.
+- `skr get <skill-ref> [version] [--global] [--wrap] [--slink]`: fetch a Skill from a remote registry. When directly targeting one Skill, `peek/get/deps` share the same selector logic for `skillID`, `name`, and `author/name`.
+  - Without `--global`: install to every configured tool's workspace Skill directory, by default `<cwd>/.{llmTool}/skills/<skillID>/`
+  - With `--global`: install to every configured tool's global Skill directory, by default `~/.{llmTool}/skills/<skillID>/`
   - `--global` changes install location only; the configured tool set stays the same
-  - Default mode installs the full dependency graph flatly; `--wrap` installs only the root skill and leaves dependencies queryable via `skr deps`
+  - `--slink` creates symlinks to the local CLI repository Skill directory instead of copying remote files
+  - Default mode installs the full dependency graph flatly; `--wrap` installs only the root Skill and leaves dependencies queryable via `skr deps`
 - `skr deps --brief|--content|--tree|--install <rootSkillDir> ...`: inspect or install wrapped dependency subtrees on demand; dependency targets also accept `skillID/name/author/name` plus optional `@version`.
+- `skr remove <skillID|author/name|name> [--global] [--deps]`: remove installed Skills. `--deps` recursively removes the selected dependency subtree while preserving shared dependencies still referenced by other roots.
+- AGENTS.md resources use the same shared command surface through `--type agentsmd|agmd`, for example `skr get --type agentsmd`, `skr detail --type agentsmd`, and `skr remote publish --type agentsmd`.
 
 Example:
 - If `a` depends on `b` and `c`, after executing `skr get a`, you'll get three skill directories `a`, `b`, `c` under the target tool directory.
@@ -74,7 +104,7 @@ export PATH=/tmp/skuare-bin/bin:$PATH
 
 # If the repo already has skuare-cli/dist, skr will reuse the pre-built artifacts;
 # It will only rebuild when needed and local TypeScript toolchain is available.
-# If falling back to old dist, `skr publish ...` will bridge to old command `create ...` for basic compatibility.
+# If falling back to old dist, `skr remote publish ...` will bridge to old command `publish ...` or `create ...` for basic compatibility.
 # `make install` requires local `npm` and `go` in PATH; it installs `skuare-cli` dependencies,
 # runs `go mod download` for `skuare-svc`, and then registers `skr` into `LOCAL_BIN`.
 
@@ -84,9 +114,10 @@ skr init
 # 4) Health check
 skr health
 
-# 5) Pure local commands: init/config/build/format/detail
+# 5) Pure local commands: init/config/skill/build/format/detail
 skr config
 skr config --global
+skr skill
 skr build observability-orchestrator core-time-utils report-generator
 skr build observability-orchestrator --all
 skr format ./skills/observability-orchestrator
@@ -98,15 +129,19 @@ skr list
 skr peek observability-orchestrator
 skr --server git+file:///tmp/skuare-registry.git list
 
-# 7) Server write commands: publish Skill (recursively handles dependencies)
-skr publish --dir ./skills/observability-orchestrator
-skr publish --dir ./skills/observability-orchestrator --force
-skr --server git+file:///tmp/skuare-registry.git publish --dir ./skills/observability-orchestrator
+# 7) Server write commands: publish/migrate registry resources
+skr remote source add origin --svc https://registry.example.com
+skr remote source add repo --git git@github.com:team/skills.git
+skr remote source select origin
+skr remote publish --dir ./skills/observability-orchestrator
+skr remote publish --dir ./skills/observability-orchestrator --force
+skr --server git+file:///tmp/skuare-registry.git remote publish --dir ./skills/observability-orchestrator
 
-# 8) Hybrid commands: fetch and install
+# 8) Hybrid commands: fetch, inspect dependencies, remove
 skr get observability-orchestrator
 skr get observability-orchestrator --wrap
 skr deps --brief ./.codex/skills/skuare/observability-orchestrator
+skr remove observability-orchestrator
 
 # 9) Stop backend daemon
 make stop-be
@@ -115,6 +150,8 @@ make stop-be
 ## Common Commands
 - Pure local commands:
 ```bash
+skr config
+skr skill
 skr build observability-orchestrator core-time-utils report-generator
 skr format ./skills/observability-orchestrator
 skr format --all
@@ -138,18 +175,26 @@ skr get --rgx "observability"
 skr get observability-orchestrator
 skr get observability-orchestrator --global
 skr get observability-orchestrator --wrap
+skr get observability-orchestrator --slink
 skr deps --brief ./.codex/skills/skuare/observability-orchestrator
 skr deps --content ./.codex/skills/skuare/observability-orchestrator skuare/core-time-utils
 skr deps --install ./.codex/skills/skuare/observability-orchestrator skuare/core-time-utils
+skr remove observability-orchestrator --deps
 ```
 
 - Server write commands:
 ```bash
-skr publish --dir ./skills/observability-orchestrator
-skr publish --dir ./skills/observability-orchestrator --force
-skr update observability-orchestrator ./examples/observability-orchestrator
-skr create --dir ./skills/observability-orchestrator
-skr delete observability-orchestrator 1.0.0
+skr remote source list
+skr remote source add origin --svc https://registry.example.com
+skr remote source add repo --git git@github.com:team/skills.git
+skr remote source select repo
+skr remote publish --dir ./skills/observability-orchestrator
+skr remote publish --dir ./skills/observability-orchestrator --force
+skr remote migrate origin repo --dry-run
+skr remote migrate origin repo --skip-existing
+skr remote update observability-orchestrator ./examples/observability-orchestrator
+skr remote create --dir ./skills/observability-orchestrator
+skr remote delete observability-orchestrator 1.0.0
 ```
 
 ## Running Modes
@@ -164,6 +209,7 @@ skr delete observability-orchestrator 1.0.0
 - CLI Documentation: `skuare-cli/README.md`
 
 ## Changelog
+- 2026-03-22: Root README synced with the current CLI surface, including `skill`, `deps`, `remove`, AGENTS.md resource switching, and `remote source/migrate`.
 - 2026-02-26: README adjusted to more generic GitHub style, retaining original information with optimized expression.
 - 2026-02-26: Command semantics adjusted: `peek` for query, `get` for installation, `format` for formatting, `create` supports multiple paths and `--all`.
 - 2026-02-27: `get` installation directory distinguished by LLMTool (`codex`/`claudecode`/custom`), `init` supports custom tool skills directory configuration.

@@ -26,6 +26,7 @@ test("skill installs the default skuare skill template into cwd", async () => {
     const skillMD = await readFile(join(skillRoot, "SKILL.md"), "utf8");
     const workflow = await readFile(join(skillRoot, "references", "skuare-workflow.md"), "utf8");
     const commandMap = await readFile(join(skillRoot, "references", "command-map.md"), "utf8");
+    const usageGuide = await readFile(join(skillRoot, "references", "usage-guide.md"), "utf8");
 
     assert.equal(output.skill, "workspace-agent");
     assert.equal(output.author, "skuare");
@@ -33,11 +34,12 @@ test("skill installs the default skuare skill template into cwd", async () => {
     assert.match(skillMD, /name: "workspace-agent"/);
     assert.match(skillMD, /author: "skuare"/);
     assert.match(skillMD, new RegExp(`version: "${escapeRegex(APP_VERSION)}"`));
-    assert.match(skillMD, /Operate Skuare CLI workflows in the current workspace/);
-    assert.match(skillMD, /Read `references\/skuare-workflow\.md` before editing local skill files/);
+    assert.match(skillMD, /Operate the current Skuare CLI end to end in the current workspace/);
+    assert.match(skillMD, /Read `references\/usage-guide\.md` to identify the correct command family/);
     assert.match(workflow, /Work from the current workspace/);
     assert.match(commandMap, /skr get <skillRef> \[version] \[--global] \[--wrap] \[--slink]/);
-    assert.equal(output.installed.length, 3);
+    assert.match(usageGuide, /Remote source management/);
+    assert.equal(output.installed.length, 4);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -54,7 +56,7 @@ test("skill is idempotent when embedded files already match", async () => {
     });
     const output = JSON.parse(logs.join("\n")) as { installed: string[]; unchanged: string[] };
     assert.deepEqual(output.installed, []);
-    assert.equal(output.unchanged.length, 3);
+    assert.equal(output.unchanged.length, 4);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
