@@ -10,6 +10,11 @@ import type {
   RegistryAgentsMDOverview,
   RegistryFile,
   RegistryHealth,
+  RegistryImportOptions,
+  RegistryImportResult,
+  RegistryMigrationBundle,
+  RegistryMigrationRef,
+  RegistryMigrationType,
   RegistrySkillDetail,
   RegistrySkillEntry,
   RegistrySkillOverview,
@@ -85,6 +90,23 @@ export class HttpRegistryBackend implements RegistryBackend {
       auth,
       silent: true,
     });
+  }
+
+  async exportResources(type: RegistryMigrationType = "all"): Promise<RegistryMigrationBundle> {
+    const path = `/api/v1/migrate/export?type=${encodeURIComponent(type)}`;
+    return this.getObject(path, toMigrationBundle);
+  }
+
+  async importResources(bundle: RegistryMigrationBundle, options: RegistryImportOptions = {}): Promise<RegistryImportResult> {
+    return this.postObject("/api/v1/migrate/import", {
+      body: {
+        type: bundle.type,
+        skills: bundle.skills,
+        agentsmd: bundle.agentsmd,
+        skip_existing: options.skipExisting === true,
+      },
+      auth: options.auth,
+    }, toImportResult);
   }
 
   private async getObject<T>(path: string, map: (value: Record<string, JsonValue>) => T): Promise<T> {
@@ -202,5 +224,72 @@ function toAgentsMDDetail(row: Record<string, JsonValue>): RegistryAgentsMDDetai
     version: String(row.version || ""),
     id: String(row.id || ""),
     content: String(row.content || ""),
+  };
+}
+
+function toMigrationBundle(row: Record<string, JsonValue>): RegistryMigrationBundle {
+  const skills = Array.isArray(row.skills)
+    ? row.skills
+      .filter((item): item is Record<string, JsonValue> => !!item && typeof item === "object" && !Array.isArray(item))
+      .map(toSkillDetail)
+    : [];
+  const agentsmd = Array.isArray(row.agentsmd)
+    ? row.agentsmd
+      .filter((item): item is Record<string, JsonValue> => !!item && typeof item === "object" && !Array.isArray(item))
+      .map(toAgentsMDDetail)
+    : [];
+  const rawType = String(row.type || "all");
+  const type: RegistryMigrationType = rawType === "skill" || rawType === "agentsmd" ? rawType : "all";
+  return { type, skills, agentsmd };
+}
+
+function toImportResult(row: Record<string, JsonValue>): RegistryImportResult {
+  return {
+    imported: Array.isArray(row.imported)
+      ? row.imported
+        .map(toMigrationRef)
+        .filter((item): item is RegistryMigrationRef => !!item)
+      : [],
+    skipped: Array.isArray(row.skipped)
+      ? row.skipped
+        .map(toSkippedMigrationRef)
+        .filter((item): item is RegistryImportResult["skipped"][number] => !!item)
+      : [],
+  };
+}
+
+function toMigrationRef(value: JsonValue): RegistryMigrationRef | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const row = value as Record<string, JsonValue>;
+  const type = String(row.type || "");
+  const version = String(row.version || "");
+  if (type === "skill") {
+    return {
+      type: "skill",
+      skill_id: String(row.skill_id || ""),
+      version,
+    };
+  }
+  if (type === "agentsmd") {
+    return {
+      type: "agentsmd",
+      agentsmd_id: String(row.agentsmd_id || ""),
+      version,
+    };
+  }
+  return undefined;
+}
+
+function toSkippedMigrationRef(value: JsonValue): (RegistryMigrationRef & { reason: string }) | undefined {
+  const ref = toMigrationRef(value);
+  if (!ref || !value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const row = value as Record<string, JsonValue>;
+  return {
+    ...ref,
+    reason: String(row.reason || ""),
   };
 }

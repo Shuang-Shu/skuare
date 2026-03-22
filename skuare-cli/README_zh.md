@@ -2,7 +2,7 @@
 
 > 文档类型：README
 > 状态：已完成
-> 更新时间：2026-03-10
+> 更新时间：2026-03-22
 > 适用范围：skuare-cli
 
 ## 目标与范围
@@ -134,13 +134,21 @@ skuare --server git+file:///tmp/skuare-registry.git list
   - `remote create ... [--force|-f]` -> `remote publish` 的兼容别名，保留但标记弃用
   - `remote delete <skillID> <version>` -> `DELETE /api/v1/skills/:skillID/:version`
   - `remote delete --type agentsmd|agmd <agentsmd-id> <version>` -> `DELETE /api/v1/agentsmd/:agentsmdID/:version`
-  - `remote migrate <src> <dst> [--type <all|skill|agentsmd|agmd>] [--dry-run] [--skip-existing]` -> 从源远端读取资源详情并重发到目标远端；`src/dst` 支持命名 source 或直接 URL
+  - `remote migrate <src> <dst> [--type <all|skill|agentsmd|agmd>] [--dry-run] [--skip-existing]` -> 从源远端批量导出资源 bundle，再批量导入到目标远端；`src/dst` 支持命名 source 或直接 URL
 - 远端源管理命令：
   - `remote source list [--global]` -> 列出当前可见的命名远端源与默认源
   - `remote source add [--global] <originName> [--git|--svc] <remoteUrl>` -> 写入命名远端源
   - `remote source remove [--global] <originName>` -> 删除指定命名远端源
   - `remote source select [--global] <originName>` -> 选择默认源
   - `remote source use [--global] <originName>` -> `remote source select` 的兼容别名
+
+`remote migrate` 的当前实现说明：
+- HTTP backend 走 `GET /api/v1/migrate/export` 与 `POST /api/v1/migrate/import`
+- Git backend 在导出时只刷新一次仓库，在导入时整批写入后只做一次 `commit/push`
+- `--dry-run` 只输出迁移计划，不写目标端
+- `--skip-existing` 会跳过目标端已存在且内容冲突的同版本资源，并在结果中标记为 `version_conflict`
+- 当目标端同版本资源内容完全一致时，会自动跳过并标记为 `unchanged`
+- 当目标端同版本资源内容不一致时，默认报冲突；传 `--skip-existing` 时会跳过并标记为 `version_conflict`
 
 ## 鉴权机制说明
 - 写操作（`remote publish/update/create/delete/migrate`）若提供 `--key-id` 与 `--privkey-file` 会附加数字签名；是否允许免签写入由服务端决定。

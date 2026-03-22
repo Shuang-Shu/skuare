@@ -2,7 +2,7 @@
 
 > 文档类型：README
 > 状态：已完成
-> 更新时间：2026-03-11
+> 更新时间：2026-03-22
 > 适用范围：skuare-svc
 
 ## 目标与范围
@@ -33,17 +33,22 @@
   - `GET /api/v1/skills/:skillID`
   - `GET /api/v1/skills/:skillID/:version`
   - `DELETE /api/v1/skills/:skillID/:version`
-- `POST /api/v1/skills/:skillID/:version/validate`
-- `POST /api/v1/reindex`
+  - `POST /api/v1/skills/:skillID/:version/validate`
+  - `POST /api/v1/reindex`
+  - `GET /api/v1/migrate/export`
+  - `POST /api/v1/migrate/import`
 - OpenAPI：`skuare-svc/docs/openapi.yaml`
 - 查询/创建返回：当上传的 `SKILL.md` 含 `metadata.author` 时，`POST/GET /api/v1/skills*` 返回体会包含 `author` 字段。
 - 当 `metadata.author` 缺失时，服务端使用 `_anonymous` 作为保留作者目录名进行落盘，但接口返回的 `author` 仍保持空字符串。
 - 创建请求支持可选 `force: true`；传入后会覆盖相同 `skill_id@version` 的已有版本。
 - `POST /api/v1/skills` 同时支持 JSON 与 multipart/form-data；multipart 模式推荐用于包含二进制文件的完整 skill 上传，请求包含 `metadata` JSON part 与 `bundle.tar.gz` part。
 - `GET /api/v1/skills/:skillID/:version` 的 `files[*]` 现在会在二进制文件上返回 `encoding: base64` 与 `size`，CLI 可据此正确安装二进制资源。
+- `GET /api/v1/migrate/export` returns a `MigrateBundle`, reusing `SkillDetail` and `AgentsMDDetail`; binary files still use `encoding=base64`.
+- `POST /api/v1/migrate/import` accepts bulk `SkillDetail` and `AgentsMDDetail` payloads and supports `skip_existing=true`.
+- `POST /api/v1/migrate/import` returns `skipped.reason=unchanged` for byte-identical existing versions; differing content remains a conflict unless `skip_existing=true`, in which case it is reported as `version_conflict`.
 - 错误响应：统一为 `{ "code": "...", "message": "..." }`
 - 错误码定义：统一收敛到 `internal/util/errcode.go`
-- 写操作鉴权：`POST /api/v1/skills`、`DELETE /api/v1/skills/:skillID/:version`、`POST /api/v1/reindex` 需要数字签名请求头（`X-Skuare-Key-Id`/`X-Skuare-Timestamp`/`X-Skuare-Nonce`/`X-Skuare-Signature`）。
+- 写操作鉴权：`POST /api/v1/skills`、`DELETE /api/v1/skills/:skillID/:version`、`POST /api/v1/reindex`、`POST /api/v1/migrate/import` 需要数字签名请求头（`X-Skuare-Key-Id`/`X-Skuare-Timestamp`/`X-Skuare-Nonce`/`X-Skuare-Signature`）。
 
 ### 错误码约定
 - `SKILL_VERSION_ALREADY_EXISTS`：创建已存在的技能版本，且请求未显式传入 `force: true`。
@@ -55,8 +60,8 @@
 ## 鉴权机制说明
 - 目标：限制 server 端写操作，仅允许“持有已注册公钥对应私钥”的客户端执行写入。
 - 作用范围：
-  - 需要鉴权：`POST /api/v1/skills`、`DELETE /api/v1/skills/:skillID/:version`、`POST /api/v1/reindex`
-  - 不需要鉴权：`GET /healthz`、`GET /api/v1/skills*`、`POST /api/v1/skills/:skillID/:version/validate`
+  - 需要鉴权：`POST /api/v1/skills`、`DELETE /api/v1/skills/:skillID/:version`、`POST /api/v1/reindex`、`POST /api/v1/migrate/import`
+  - 不需要鉴权：`GET /healthz`、`GET /api/v1/skills*`、`POST /api/v1/skills/:skillID/:version/validate`、`GET /api/v1/migrate/export`
 - 公钥来源：
   - 启动参数：`--authorized-keys-file`
   - 环境变量：`SKUARE_AUTHORIZED_KEYS_FILE`
@@ -151,12 +156,35 @@ curl -X POST "http://127.0.0.1:15657/api/v1/skills" \
 
 When `force` is `true`, the server replaces the existing version directory under the per-skill lock.
 
+`GET /api/v1/migrate/export` example:
+```bash
+curl "http://127.0.0.1:15657/api/v1/migrate/export?type=all"
+curl "http://127.0.0.1:15657/api/v1/migrate/export?type=skill"
+```
+
+`POST /api/v1/migrate/import` example:
+```bash
+curl -X POST "http://127.0.0.1:15657/api/v1/migrate/import" \
+  -H "Content-Type: application/json" \
+  -H "X-Skuare-Key-Id: writer-a" \
+  -H "X-Skuare-Timestamp: <unix_ts>" \
+  -H "X-Skuare-Nonce: <nonce>" \
+  -H "X-Skuare-Signature: <base64_signature>" \
+  -d '{
+    "type": "all",
+    "skip_existing": true,
+    "skills": [],
+    "agentsmd": []
+  }'
+```
+
 ## 验收标准与风险
 - 验收：全量单测通过，服务可完成创建/查询/删除/校验/重建索引流程。
 - 风险：并发写入冲突、异常中断导致索引不一致。
 - 缓解：文件锁、临时目录写入+原子重命名、`reindex` 修复入口。
 
 ## 变更记录
+- 2026-03-22：新增 `GET /api/v1/migrate/export` 与 `POST /api/v1/migrate/import`，供 CLI 批量迁移 skill / agentsmd；导入支持 `skip_existing`。
 - 2026-03-13：`POST /api/v1/skills` 新增 multipart bundle 上传；服务端默认最大请求体提升至 64MB 且可配置；skill 详情文件支持 `encoding=size/base64` 二进制返回。
 - 2026-02-23：切换到 Hertz；新增 SkillHub 文件系统存储 MVP API 与存储实现。
 - 2026-02-23：创建接口改为结构化 `skill` 协议，移除 `openai_yaml` 与 `skill_md` 直传模式。

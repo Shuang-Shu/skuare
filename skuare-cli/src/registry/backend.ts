@@ -5,6 +5,10 @@ import type {
   RegistryAgentsMDEntry,
   RegistryAgentsMDOverview,
   RegistryHealth,
+  RegistryImportOptions,
+  RegistryImportResult,
+  RegistryMigrationBundle,
+  RegistryMigrationType,
   RegistrySkillDetail,
   RegistrySkillEntry,
   RegistrySkillOverview,
@@ -26,4 +30,7 @@ export interface RegistryBackend {
   getAgentsMDVersion(agentsmdID: string, version: string): Promise<RegistryAgentsMDDetail>;
   publishAgentsMD(request: PublishAgentsMDRequest): Promise<RegistryAgentsMDEntry>;
   deleteAgentsMD(agentsmdID: string, version: string, auth?: RegistryWriteAuth): Promise<void>;
+
+  exportResources(type?: RegistryMigrationType): Promise<RegistryMigrationBundle>;
+  importResources(bundle: RegistryMigrationBundle, options?: RegistryImportOptions): Promise<RegistryImportResult>;
 }

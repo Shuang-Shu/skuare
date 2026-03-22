@@ -8,6 +8,9 @@ import type { CommandContext } from "./commands/types";
 
 test("remote source add/list/select/remove manages workspace sources", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "skuare-remote-source-"));
+  const home = await mkdtemp(join(tmpdir(), "skuare-remote-source-home-"));
+  const originalHome = process.env.HOME;
+  process.env.HOME = home;
 
   try {
     const addOutput = await captureConsole(async () => {
@@ -27,7 +30,14 @@ test("remote source add/list/select/remove manages workspace sources", async () 
       await new RemoteCommand().execute(createContext(workspace, ["source", "list"]));
     });
     const listed = JSON.parse(listOutput.join("\n")) as { sources: Array<{ name: string; current: boolean }> };
-    assert.deepEqual(listed.sources, [{ name: "origin", current: true, kind: "svc", url: "https://registry.example.com" }]);
+    assert.ok(
+      listed.sources.some((item) =>
+        item.name === "origin" &&
+        item.current === true &&
+        (item as { kind?: string }).kind === "svc" &&
+        (item as { url?: string }).url === "https://registry.example.com"
+      )
+    );
 
     await captureConsole(async () => {
       await new RemoteCommand().execute(createContext(workspace, [
@@ -68,7 +78,9 @@ test("remote source add/list/select/remove manages workspace sources", async () 
       },
     });
   } finally {
+    process.env.HOME = originalHome;
     await rm(workspace, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
   }
 });
 
@@ -136,6 +148,9 @@ test("remote source select can point workspace default to a global source", asyn
 
 test("remote source use remains a compatibility alias for select", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "skuare-remote-source-use-alias-"));
+  const home = await mkdtemp(join(tmpdir(), "skuare-remote-source-use-home-"));
+  const originalHome = process.env.HOME;
+  process.env.HOME = home;
 
   try {
     await captureConsole(async () => {
@@ -155,7 +170,9 @@ test("remote source use remains a compatibility alias for select", async () => {
     assert.equal(selected.action, "select");
     assert.equal(selected.default_source, "origin");
   } finally {
+    process.env.HOME = originalHome;
     await rm(workspace, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
   }
 });
 

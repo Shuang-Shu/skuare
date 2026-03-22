@@ -68,3 +68,25 @@ export type PublishAgentsMDRequest = {
   content: string;
   auth?: RegistryWriteAuth;
 };
+
+export type RegistryMigrationType = "all" | "skill" | "agentsmd";
+
+export type RegistryMigrationRef =
+  | { type: "skill"; skill_id: string; version: string }
+  | { type: "agentsmd"; agentsmd_id: string; version: string };
+
+export type RegistryMigrationBundle = {
+  type: RegistryMigrationType;
+  skills: RegistrySkillDetail[];
+  agentsmd: RegistryAgentsMDDetail[];
+};
+
+export type RegistryImportOptions = {
+  auth?: RegistryWriteAuth;
+  skipExisting?: boolean;
+};
+
+export type RegistryImportResult = {
+  imported: RegistryMigrationRef[];
+  skipped: Array<RegistryMigrationRef & { reason: string }>;
+};

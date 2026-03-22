@@ -168,6 +168,51 @@ paths:
           $ref: '#/components/responses/ErrorResponse'
         '500':
           $ref: '#/components/responses/ErrorResponse'
+  /api/v1/migrate/export:
+    get:
+      summary: 导出迁移 bundle
+      parameters:
+        - in: query
+          name: type
+          required: false
+          schema:
+            $ref: '#/components/schemas/MigrateResourceType'
+      responses:
+        '200':
+          description: 导出成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MigrateBundle'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/v1/migrate/import:
+    post:
+      summary: 导入迁移 bundle
+      parameters:
+        - $ref: '#/components/parameters/SignatureKeyID'
+        - $ref: '#/components/parameters/SignatureTimestamp'
+        - $ref: '#/components/parameters/SignatureNonce'
+        - $ref: '#/components/parameters/SignatureValue'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportMigrateRequest'
+      responses:
+        '200':
+          description: 导入结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportMigrateResult'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
 
 components:
   parameters:
@@ -327,6 +372,77 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/FileSpec'
+    AgentsMDDetail:
+      type: object
+      properties:
+        agentsmd_id:
+          type: string
+        version:
+          type: string
+        id:
+          type: string
+        content:
+          type: string
+    MigrateResourceType:
+      type: string
+      enum: [all, skill, agentsmd]
+    MigrateRef:
+      type: object
+      properties:
+        type:
+          type: string
+        skill_id:
+          type: string
+        agentsmd_id:
+          type: string
+        version:
+          type: string
+    MigrateSkippedRef:
+      allOf:
+        - $ref: '#/components/schemas/MigrateRef'
+        - type: object
+          properties:
+            reason:
+              type: string
+    MigrateBundle:
+      type: object
+      properties:
+        type:
+          $ref: '#/components/schemas/MigrateResourceType'
+        skills:
+          type: array
+          items:
+            $ref: '#/components/schemas/SkillDetail'
+        agentsmd:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentsMDDetail'
+    ImportMigrateRequest:
+      type: object
+      properties:
+        type:
+          $ref: '#/components/schemas/MigrateResourceType'
+        skip_existing:
+          type: boolean
+        skills:
+          type: array
+          items:
+            $ref: '#/components/schemas/SkillDetail'
+        agentsmd:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentsMDDetail'
+    ImportMigrateResult:
+      type: object
+      properties:
+        imported:
+          type: array
+          items:
+            $ref: '#/components/schemas/MigrateRef'
+        skipped:
+          type: array
+          items:
+            $ref: '#/components/schemas/MigrateSkippedRef'
     ErrorResponse:
       type: object
       properties:

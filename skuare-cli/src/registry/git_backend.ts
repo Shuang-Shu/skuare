@@ -2,6 +2,7 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile, mkdir } from "node:fs/
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { execFile } from "node:child_process";
+import { timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { gunzipSync } from "node:zlib";
 import { DomainError } from "../domain/errors";
@@ -15,6 +16,11 @@ import type {
   RegistryAgentsMDEntry,
   RegistryAgentsMDOverview,
   RegistryHealth,
+  RegistryImportOptions,
+  RegistryImportResult,
+  RegistryMigrationBundle,
+  RegistryMigrationRef,
+  RegistryMigrationType,
   RegistrySkillDetail,
   RegistrySkillEntry,
   RegistrySkillOverview,
@@ -131,6 +137,10 @@ export class GitRegistryBackend implements RegistryBackend {
 
   async getSkillVersion(skillID: string, version: string): Promise<RegistrySkillDetail> {
     await this.refresh();
+    return this.getSkillVersionNoRefresh(skillID, version);
+  }
+
+  private async getSkillVersionNoRefresh(skillID: string, version: string): Promise<RegistrySkillDetail> {
     const versionDir = await this.findSkillVersionDir(skillID, version);
     const skillFile = join(versionDir, "SKILL.md");
     const parsed = parseSkillFrontmatter(await readFile(skillFile, "utf8"));
@@ -282,6 +292,10 @@ export class GitRegistryBackend implements RegistryBackend {
 
   async getAgentsMDVersion(agentsmdID: string, version: string): Promise<RegistryAgentsMDDetail> {
     await this.refresh();
+    return this.getAgentsMDVersionNoRefresh(agentsmdID, version);
+  }
+
+  private async getAgentsMDVersionNoRefresh(agentsmdID: string, version: string): Promise<RegistryAgentsMDDetail> {
     const versionDir = await this.findAgentsMDVersionDir(agentsmdID, version);
     const content = await readFile(join(versionDir, "AGENTS.md"), "utf8");
     return {
@@ -344,6 +358,81 @@ export class GitRegistryBackend implements RegistryBackend {
     await this.commitAndPush(buildRegistryCommitMessage("delete", "agentsmd", agentsmdID, version));
   }
 
+  async exportResources(type: RegistryMigrationType = "all"): Promise<RegistryMigrationBundle> {
+    await this.refresh();
+    const bundle: RegistryMigrationBundle = {
+      type,
+      skills: [],
+      agentsmd: [],
+    };
+    if (type === "all" || type === "skill") {
+      const items = await this.scanSkills();
+      for (const item of items) {
+        bundle.skills.push(await this.getSkillVersionNoRefresh(item.skill_id, item.version));
+      }
+    }
+    if (type === "all" || type === "agentsmd") {
+      const items = await this.scanAgentsMD();
+      for (const item of items) {
+        bundle.agentsmd.push(await this.getAgentsMDVersionNoRefresh(item.agentsmd_id, item.version));
+      }
+    }
+    return bundle;
+  }
+
+  async importResources(bundle: RegistryMigrationBundle, options: RegistryImportOptions = {}): Promise<RegistryImportResult> {
+    await this.refresh();
+    const result: RegistryImportResult = {
+      imported: [],
+      skipped: [],
+    };
+
+    for (const detail of bundle.skills) {
+      const ref: RegistryMigrationRef = { type: "skill", skill_id: detail.skill_id, version: detail.version };
+      const existing = await this.tryGetExistingSkillVersion(detail.skill_id, detail.version);
+      if (existing) {
+        if (sameSkillContent(existing, detail)) {
+          result.skipped.push({ ...ref, reason: "unchanged" });
+          continue;
+        }
+        if (options.skipExisting) {
+          result.skipped.push({ ...ref, reason: "version_conflict" });
+          continue;
+        }
+        throw versionConflictError(detail.skill_id, detail.version);
+      }
+      await this.writeSkillPayload(toParsedSkillUpload(detail));
+      result.imported.push(ref);
+    }
+
+    for (const detail of bundle.agentsmd) {
+      const ref: RegistryMigrationRef = { type: "agentsmd", agentsmd_id: detail.agentsmd_id, version: detail.version };
+      const existing = await this.tryGetExistingAgentsMDVersion(detail.agentsmd_id, detail.version);
+      if (existing) {
+        if (sameAgentsMDContent(existing, detail)) {
+          result.skipped.push({ ...ref, reason: "unchanged" });
+          continue;
+        }
+        if (options.skipExisting) {
+          result.skipped.push({ ...ref, reason: "version_conflict" });
+          continue;
+        }
+        throw versionConflictError(detail.agentsmd_id, detail.version);
+      }
+      await this.writeAgentsMD({
+        agentsmd_id: detail.agentsmd_id,
+        version: detail.version,
+        content: detail.content,
+      });
+      result.imported.push(ref);
+    }
+
+    if (result.imported.length > 0) {
+      await this.commitAndPush(buildRegistryBulkImportCommitMessage(result.imported));
+    }
+    return result;
+  }
+
   private async findSkillVersionDir(skillID: string, version: string): Promise<string> {
     const found = await this.tryFindSkillVersionDir(skillID, version);
     if (!found) {
@@ -367,6 +456,14 @@ export class GitRegistryBackend implements RegistryBackend {
     return undefined;
   }
 
+  private async tryGetExistingSkillVersion(skillID: string, version: string): Promise<RegistrySkillDetail | undefined> {
+    const found = await this.tryFindSkillVersionDir(skillID, version);
+    if (!found) {
+      return undefined;
+    }
+    return this.getSkillVersionNoRefresh(skillID, version);
+  }
+
   private async findAgentsMDVersionDir(agentsmdID: string, version: string): Promise<string> {
     const target = join(this.checkoutDir, "agentsmd", ...agentsmdID.split("/"), version);
     const info = await stat(target).catch(() => undefined);
@@ -374,6 +471,15 @@ export class GitRegistryBackend implements RegistryBackend {
       throw notFoundError();
     }
     return target;
+  }
+
+  private async tryGetExistingAgentsMDVersion(agentsmdID: string, version: string): Promise<RegistryAgentsMDDetail | undefined> {
+    const target = join(this.checkoutDir, "agentsmd", ...agentsmdID.split("/"), version);
+    const info = await stat(target).catch(() => undefined);
+    if (!info?.isDirectory()) {
+      return undefined;
+    }
+    return this.getAgentsMDVersionNoRefresh(agentsmdID, version);
   }
 
   private async commitAndPush(message: string): Promise<void> {
@@ -409,6 +515,12 @@ function buildRegistryCommitMessage(
   version: string
 ): string {
   return `registry(${resource}): ${action} ${resourceID}@${version}`;
+}
+
+function buildRegistryBulkImportCommitMessage(imported: RegistryMigrationRef[]): string {
+  const skillCount = imported.filter((item) => item.type === "skill").length;
+  const agentsmdCount = imported.filter((item) => item.type === "agentsmd").length;
+  return `registry(migrate): import skills=${skillCount}, agentsmd=${agentsmdCount}`;
 }
 
 function normalizePath(value: string): string {
@@ -452,6 +564,54 @@ type ParsedSkillUpload = {
   author: string;
   files: Array<{ path: string; content: Buffer }>;
 };
+
+function toParsedSkillUpload(detail: RegistrySkillDetail): ParsedSkillUpload {
+  const skillFile = detail.files.find((file) => file.path === "SKILL.md");
+  const parsed = parseSkillFrontmatter(String(skillFile?.content || ""));
+  return {
+    skill_id: detail.skill_id,
+    version: detail.version,
+    force: false,
+    author: parsed.metadataAuthor || detail.author || "",
+    files: detail.files.map((file) => ({
+      path: file.path,
+      content: file.encoding === "base64" ? Buffer.from(file.content, "base64") : Buffer.from(file.content, "utf8"),
+    })),
+  };
+}
+
+function isAlreadyExistsImportError(err: unknown): boolean {
+  return err instanceof DomainError && err.code === "SKILL_VERSION_ALREADY_EXISTS";
+}
+
+function sameSkillContent(left: RegistrySkillDetail, right: RegistrySkillDetail): boolean {
+  const leftFiles = normalizeSkillFiles(left);
+  const rightFiles = normalizeSkillFiles(right);
+  if (leftFiles.length !== rightFiles.length) {
+    return false;
+  }
+  return leftFiles.every((file, index) => {
+    const other = rightFiles[index];
+    return file.path === other.path && sameBuffer(file.content, other.content);
+  });
+}
+
+function sameAgentsMDContent(left: RegistryAgentsMDDetail, right: RegistryAgentsMDDetail): boolean {
+  return left.content === right.content;
+}
+
+function normalizeSkillFiles(detail: RegistrySkillDetail): Array<{ path: string; content: Buffer }> {
+  return detail.files
+    .map((file) => ({
+      path: file.path,
+      content: file.encoding === "base64" ? Buffer.from(file.content, "base64") : Buffer.from(file.content, "utf8"),
+    }))
+    .sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function sameBuffer(left: Buffer, right: Buffer): boolean {
+  return left.length === right.length && timingSafeEqual(left, right);
+}
 
 function parseJsonSkillUpload(body: JsonValue): ParsedSkillUpload {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -641,6 +801,12 @@ async function cleanupEmptyParents(startDir: string, stopDir: string): Promise<v
 
 function alreadyExistsError(): DomainError {
   return new DomainError("SKILL_VERSION_ALREADY_EXISTS", "skill version already exists", { details: { status: 409 } });
+}
+
+function versionConflictError(resourceID: string, version: string): DomainError {
+  return new DomainError("SKILL_VERSION_ALREADY_EXISTS", `skill version already exists with different content: ${resourceID}@${version}`, {
+    details: { status: 409 },
+  });
 }
 
 function notFoundError(): DomainError {

@@ -86,6 +86,7 @@ skr --server git+file:///tmp/skuare-registry.git list
 - `skr remote source add --git` 只接受 SSH Git 地址，例如 `git@github.com:team/skuare-registry.git` 或 `ssh://git@github.com/team/skuare-registry.git`。
 - `git+file://` 与 `git+https://` 仍可通过 `--server` 直接使用，但不会被 `remote source add --git` 接受。
 - Git backend 会在每次远端写操作后自动提交并推送；当前 commit message 模板为 `registry(<resource>): <action> <id>@<version>`。
+- `skr remote migrate` 在 Git backend 下会整批导入后统一提交，因此不会再为每个 skill 单独 `commit/push`。
 - Git 仓库目录布局需要保持为：
   - Skill：`<repoRoot>/<author>/<skillID>/<version>/...`
   - AGENTS.md：`<repoRoot>/agentsmd/<agentsmdID>/<version>/AGENTS.md`
@@ -94,7 +95,8 @@ skr --server git+file:///tmp/skuare-registry.git list
 - 依赖描述文件：`skill-deps.json`
 - 依赖锁定文件：`skill-deps.lock.json`
 - `skr remote publish --dir <skill-dir> [--force|-f]`：读取依赖描述并递归上传依赖 Skill 到远程仓库；`--force/-f` 可覆盖已存在版本。
-- `skr remote migrate <src> <dst> [--type <all|skill|agentsmd|agmd>] [--dry-run] [--skip-existing]`：从源远端枚举资源并迁移到目标远端；`src/dst` 支持命名 source 或直接 URL。
+- `skr remote migrate <src> <dst> [--type <all|skill|agentsmd|agmd>] [--dry-run] [--skip-existing]`：从源远端批量导出资源 bundle，再批量导入到目标远端；`src/dst` 支持命名 source 或直接 URL。
+  - 重复迁移时，若目标端同版本内容一致会自动跳过；若内容不同则视为冲突，传 `--skip-existing` 时会按冲突项跳过。
 - `skr remote update <skillRef> <newSkillDir>`：查询远端 skill 的 `maxVersion`，仅允许发布更大版本，并在发布前回写本地 `SKILL.md` 的 `metadata.version`。`skillRef` 支持 `skillID`、`name`、`author/name`；多候选时会复用 `get/peek` 的同一交互选择器。
 - `skr skill`：将内嵌的、作者为 `skuare` 的 LLM Skill 安装到 `cwd`；生成内容的 `metadata.version` 与当前 `skuare` 版本一致。
 - `skr build <skillName> [refSkill...] [--all]`：为本地 skill 自动创建或追加更新依赖文件（`skill-deps.json` / `skill-deps.lock.json`），当目标 skill 不存在时会先交互式创建最小 `SKILL.md` 模板，支持 `alias=refSkill`；`--all` 会将当前目录下全部合法 skillDir 作为引用 skill。
