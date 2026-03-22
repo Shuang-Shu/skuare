@@ -1,9 +1,10 @@
 import type { Command, CommandContext } from "./types";
 import { BaseCommand } from "./base";
 import { withCommandArgs } from "./resource_type";
+import { RemoteSourceCommand } from "./remote_source";
 import { CreateCommand, DeleteCommand, PublishCommand, UpdateCommand } from "./write";
 
-export const REMOTE_WRITE_SUBCOMMAND_NAMES = ["publish", "update", "create", "delete"] as const;
+export const REMOTE_SUBCOMMAND_NAMES = ["publish", "update", "create", "delete", "source"] as const;
 
 export const REMOTE_HELP_ENTRY: {
   name: string;
@@ -12,18 +13,23 @@ export const REMOTE_HELP_ENTRY: {
   details: string[];
 } = {
   name: "remote",
-  summary: "Run remote write operations",
+  summary: "Run remote registry operations",
   usage: [
-    "remote <publish|update|create|delete> ...",
+    "remote <publish|update|create|delete|source> ...",
     "remote publish [--type <skill|agentsmd|agmd>] --file <request.json|AGENTS.md> [--force|-f]",
     "remote update <skillRef> <newSkillDir>",
     "remote create ... [--type <skill|agentsmd|agmd>] [--force|-f]",
     "remote delete [--type <skill|agentsmd|agmd>] <resourceID> <version>",
+    "remote source list [--global]",
+    "remote source add [--global] <originName> [--git|--svc] <remoteUrl>",
+    "remote source remove [--global] <originName>",
+    "remote source use [--global] <originName>",
   ],
   details: [
-    "remote is the unified entry for all remote write operations",
+    "remote is the unified entry for remote registry operations",
     "publish, update, create, and delete reuse the existing write command implementations",
-    "Run `skuare help remote` to inspect the supported remote write subcommands",
+    "source manages named remote registry sources stored in config.json",
+    "Run `skuare help remote` to inspect the supported remote subcommands",
   ],
 };
 
@@ -35,12 +41,13 @@ function createDefaultRemoteSubcommands(): Map<string, RemoteSubcommandFactory> 
     ["update", () => new UpdateCommand()],
     ["create", () => new CreateCommand()],
     ["delete", () => new DeleteCommand()],
+    ["source", () => new RemoteSourceCommand()],
   ]);
 }
 
 export class RemoteCommand extends BaseCommand {
   readonly name = "remote";
-  readonly description = "Run remote write operations";
+  readonly description = "Run remote registry operations";
 
   constructor(
     private readonly subcommands: ReadonlyMap<string, RemoteSubcommandFactory> = createDefaultRemoteSubcommands(),
@@ -58,7 +65,7 @@ export class RemoteCommand extends BaseCommand {
     const factory = this.subcommands.get(subcommandName);
     if (!factory) {
       this.fail(
-        `Unknown remote subcommand: ${subcommandName}. Supported: ${REMOTE_WRITE_SUBCOMMAND_NAMES.join(", ")}`
+        `Unknown remote subcommand: ${subcommandName}. Supported: ${REMOTE_SUBCOMMAND_NAMES.join(", ")}`
       );
     }
 
@@ -69,7 +76,7 @@ export class RemoteCommand extends BaseCommand {
     const lines = [
       "remote",
       "",
-      "Run remote write operations",
+      "Run remote registry operations",
       "",
       "Usage:",
       ...REMOTE_HELP_ENTRY.usage.map((usageLine) => `  skuare ${usageLine}`),

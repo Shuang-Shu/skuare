@@ -9,6 +9,7 @@ import { DEFAULT_CONFIG_DIR_NAME, DEFAULT_CONFIG_FILE_NAME, createDefaultConfig 
 import { resolveInstallTargetRoot } from "../utils/install_paths";
 import { loadConfig } from "./loader";
 import { mergeConfig } from "./merger";
+import { DomainError } from "../domain/errors";
 
 /**
  * 配置解析结果
@@ -170,7 +171,7 @@ export async function resolveConfig(cwd: string, cli: CliArgs): Promise<Resolved
   const envPrivKeyFile = process.env.SKUARE_PRIVKEY_FILE;
 
   const server =
-    cli.serverOverride || envServer || buildServerURL(merged.remote.address, merged.remote.port);
+    cli.serverOverride || envServer || resolveConfiguredServer(merged);
 
   const auth = {
     keyId: cli.keyIdOverride || envKeyID || merged.auth.keyId,
@@ -178,6 +179,21 @@ export async function resolveConfig(cwd: string, cli: CliArgs): Promise<Resolved
   };
 
   return { server, localMode: merged.remote.mode === "local", auth, merged };
+}
+
+export function resolveConfiguredServer(config: SkuareConfig): string {
+  const defaultSource = String(config.remote.defaultSource || "").trim();
+  if (defaultSource) {
+    const source = config.remote.sources?.[defaultSource];
+    if (!source) {
+      throw new DomainError(
+        "CLI_INVALID_ARGUMENT",
+        `Configured default remote source '${defaultSource}' was not found in remote.sources`
+      );
+    }
+    return source.url;
+  }
+  return buildServerURL(config.remote.address, config.remote.port);
 }
 
 /**

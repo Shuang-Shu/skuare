@@ -12,12 +12,20 @@ export type ConfigScope = "global" | "workspace";
 export type WorkspaceInitMode = "reuse-global" | "modify" | "new";
 export type RemoteMode = "local" | "remote";
 export type ModifyField = "mode" | "address" | "port" | "keyId" | "privateKeyFile" | "llmTools";
+export type RemoteSourceKind = "svc" | "git";
+
+export type RemoteSourceConfig = {
+  kind: RemoteSourceKind;
+  url: string;
+};
 
 export type RemoteConfig = {
   mode: RemoteMode;
   address: string;
   port: number;
   storageDir?: string;
+  defaultSource?: string;
+  sources?: Record<string, RemoteSourceConfig>;
 };
 
 export type WriteAuth = {
@@ -89,6 +97,7 @@ export function createDefaultConfig(): SkuareConfig {
       mode: "remote",
       address: DEFAULT_REMOTE_ADDRESS,
       port: DEFAULT_REMOTE_PORT,
+      sources: {},
     },
     auth: {
       keyId: "",

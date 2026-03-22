@@ -20,6 +20,9 @@
   - `remove`：直接删除本地或全局已安装 Skill。
 - server 写命令：`remote publish`、`remote update`、`remote create`、`remote delete`
   - 会写远程仓库；CLI 仅在提供签名凭证时附加签名，最终是否接受无签名写入由服务端决定。
+- 远端源管理命令：`remote source list/add/remove/use`
+  - 管理 `remote.sources` 与 `remote.defaultSource`
+  - `remote source add --git` 仅接受 SSH Git URL
 - 统一资源切换：`list`、`peek`、`get`、`detail`、`remote publish`、`remote create`、`remote delete`
   - 默认操作 Skill；传入 `--type agentsmd` 或 `--type agmd` 时切换为 AGENTS.md 资源。
 
@@ -36,16 +39,47 @@
   - `skuare-cli`：本地局部仓库（Local Partial Repository）消费者
   - CLI 本地仓库默认根目录：global=`~/.skuare`，workspace=`<cwd>/.skuare`
 - 后端地址：
-  - 默认由配置项 `remote.address + remote.port` 组合得到
+  - 默认先看 `remote.defaultSource -> remote.sources[name].url`，未配置时再回退到 `remote.address + remote.port`
   - CLI 参数 `--server <url>` 优先级最高
   - `--server` 当前支持：
     - `http://` / `https://`：`skuare-svc` HTTP backend
     - `git+file://...`、`git+https://...`、`git+ssh://...`：Git registry backend
-  - Git backend 首版建议通过 `--server` 或 `SKUARE_SVC_URL` 使用；`skuare init` 目前仍主要面向 HTTP 地址/端口配置
+  - `remote source add --git` 当前只接受 SSH Git 地址，会规范化保存为 `git+ssh://...`
+  - Git backend 首版建议通过 `--server`、`SKUARE_SVC_URL` 或 `remote source` 命令使用；`skuare init` 目前仍主要面向 HTTP 地址/端口配置
 - Git registry 布局：
   - Skill：`<repoRoot>/<author>/<skillID>/<version>/...`
   - AGENTS.md：`<repoRoot>/agentsmd/<agentsmdID>/<version>/AGENTS.md`
   - 该布局与 `skuare-svc --spec-dir` 默认文件布局保持一致，便于两种 backend 复用同一份仓库内容
+
+### 用 Git 仓库作为远端 registry
+
+推荐做法是把 Git 远端注册为命名 source，再切成默认源：
+
+```bash
+# 添加 SSH Git 源
+skuare remote source add repo --git git@github.com:team/skuare-registry.git
+
+# 切换默认源
+skuare remote source use repo
+
+# 之后读写命令默认走该 Git 仓库
+skuare remote publish --dir ./skills/pdf-reader
+skuare list
+skuare peek team/pdf-reader
+```
+
+如果只是临时指定，也可以直接传 `--server`：
+
+```bash
+skuare --server git+ssh://git@github.com/team/skuare-registry.git remote publish --dir ./skills/pdf-reader
+skuare --server git+file:///tmp/skuare-registry.git list
+```
+
+约束与说明：
+- `remote source add --git` 只接受 SSH Git 地址，会规范化保存为 `git+ssh://...`
+- `git+file://` 与 `git+https://` 只支持通过 `--server` 直接使用，不支持写入命名 source
+- Git backend 的远端写操作会自动执行 `clone/pull/commit/push`
+- 当前 commit message 模板统一为 `registry(<resource>): <action> <id>@<version>`
 - 远端模式：
   - `remote.mode=local`：表示目标服务端处于本地模式，是否允许无签名写操作由服务端自己决定
   - `remote.mode=remote`：表示目标服务端处于远端模式，通常要求签名写请求
@@ -99,6 +133,11 @@
   - `remote create ... [--force|-f]` -> `remote publish` 的兼容别名，保留但标记弃用
   - `remote delete <skillID> <version>` -> `DELETE /api/v1/skills/:skillID/:version`
   - `remote delete --type agentsmd|agmd <agentsmd-id> <version>` -> `DELETE /api/v1/agentsmd/:agentsmdID/:version`
+- 远端源管理命令：
+  - `remote source list [--global]` -> 列出当前可见的命名远端源与默认源
+  - `remote source add [--global] <originName> [--git|--svc] <remoteUrl>` -> 写入命名远端源
+  - `remote source remove [--global] <originName>` -> 删除指定命名远端源
+  - `remote source use [--global] <originName>` -> 切换默认源
 
 ## 鉴权机制说明
 - 写操作（`remote publish/update/create/delete`）若提供 `--key-id` 与 `--privkey-file` 会附加数字签名；是否允许免签写入由服务端决定。
@@ -138,6 +177,7 @@ skr help get
 - 只想改本地 Skill 文件时，优先使用 `build`、`format`，不需要先启动 server。
 - 只读查询时，使用 `health/list/peek/validate`。
 - 涉及远程发布、更新或删除时，使用 `remote publish/update/create/delete`；是否要求签名由服务端决定。
+- 需要维护多个远端 registry 时，使用 `remote source list/add/remove/use`；其中 Git 源仅支持 SSH。
 - 需要把远程 Skill 安装到本地局部仓库时，使用 `get`。
 - 需要先只落根 Skill、后续再按需查看或安装依赖时，使用 `get --wrap` 配合 `deps`。
 
@@ -322,7 +362,7 @@ skuare detail skuare/report-generator references/details.md notes.txt
 skuare --server http://127.0.0.1:15657 \
   --key-id writer-a \
   --privkey-file ~/.skuare/keys/writer-a.pem \
-  publish --dir ./skills/pdf-reader
+  remote publish --dir ./skills/pdf-reader
 ```
 
 ## 验收标准与风险

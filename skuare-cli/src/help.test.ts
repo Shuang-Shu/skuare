@@ -37,7 +37,7 @@ test("buildHelpText uses unified --type entry and hides removed suffix commands"
   const helpText = buildHelpText();
 
   assert.match(helpText, /--type <skill\|agentsmd\|agmd>/);
-  assert.match(helpText, /\n  remote\n    Run remote write operations\n    Usage:\n      remote <publish\|update\|create\|delete> \.\.\./);
+  assert.match(helpText, /\n  remote\n    Run remote registry operations\n    Usage:\n      remote <publish\|update\|create\|delete\|source> \.\.\./);
   assert.doesNotMatch(helpText, /\n  publish\n/);
   assert.doesNotMatch(helpText, /\n  update\n/);
   assert.doesNotMatch(helpText, /\n  create\n/);
@@ -76,9 +76,10 @@ test("buildCommandHelpText renders remote command help page", () => {
   const helpText = buildCommandHelpText("remote");
 
   assert.ok(helpText);
-  assert.match(helpText, /^remote\n\nRun remote write operations\n\nUsage:/);
+  assert.match(helpText, /^remote\n\nRun remote registry operations\n\nUsage:/);
   assert.match(helpText, /skuare remote publish \[--type <skill\|agentsmd\|agmd>] --file <request\.json\|AGENTS\.md> \[--force\|-f]/);
   assert.match(helpText, /skr remote delete \[--type <skill\|agentsmd\|agmd>] <resourceID> <version>/);
+  assert.match(helpText, /skuare remote source add \[--global] <originName> \[--git\|--svc] <remoteUrl>/);
 });
 
 test("buildHelpText describes aligned peek selector forms", () => {
@@ -112,8 +113,8 @@ test("HelpCommand supports help remote", async () => {
   });
 
   assert.equal(logs.length, 1);
-  assert.match(logs[0], /^remote\n\nRun remote write operations\n\nUsage:/);
-  assert.match(logs[0], /skuare remote <publish\|update\|create\|delete> \.\.\./);
+  assert.match(logs[0], /^remote\n\nRun remote registry operations\n\nUsage:/);
+  assert.match(logs[0], /skuare remote <publish\|update\|create\|delete\|source> \.\.\./);
 });
 
 test("HelpCommand rejects unknown help topic", async () => {
