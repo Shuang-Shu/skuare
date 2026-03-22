@@ -1,8 +1,8 @@
-import { mkdtemp, readFile, readdir, rm, stat, writeFile, mkdir } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, readdir, rm, stat, writeFile, mkdir } from "node:fs/promises";
+import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { execFile } from "node:child_process";
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { gunzipSync } from "node:zlib";
 import { DomainError } from "../domain/errors";
@@ -28,6 +28,8 @@ import type {
 
 const execFileAsync = promisify(execFile);
 const anonymousSkillAuthorDir = "_anonymous";
+const gitRegistryCacheTTLMilliseconds = 24 * 60 * 60 * 1000;
+const gitRegistryCacheMetadataFile = ".skuare-git-cache.json";
 
 export function isGitRegistryServer(server: string): boolean {
   const trimmed = server.trim();
@@ -41,44 +43,35 @@ export class GitRegistryBackend implements RegistryBackend {
   ) {}
 
   static async create(server: string): Promise<GitRegistryBackend> {
-    const checkoutDir = await mkdtemp(join(tmpdir(), "skuare-git-registry-"));
     const repoUrl = normalizeGitServer(server);
-    try {
-      await git(["clone", "--quiet", repoUrl, checkoutDir], process.cwd());
-    } catch (err) {
-      await rm(checkoutDir, { recursive: true, force: true }).catch(() => undefined);
-      throw new DomainError("CLI_NETWORK_ERROR", `Failed to clone git registry: ${repoUrl}`, { cause: err });
-    }
-
-    const cleanup = async (): Promise<void> => {
-      await rm(checkoutDir, { recursive: true, force: true }).catch(() => undefined);
-    };
-    process.once("exit", () => {
-      void cleanup();
-    });
-    process.once("SIGINT", () => {
-      void cleanup();
-    });
-    process.once("SIGTERM", () => {
-      void cleanup();
-    });
-
+    const checkoutDir = await ensureGitRegistryCacheCheckout(repoUrl);
     return new GitRegistryBackend(repoUrl, checkoutDir);
   }
 
   async health(): Promise<RegistryHealth> {
-    await this.refresh();
+    await this.refresh({ allowStaleReadCache: true });
     return { status: "ok", name: "skuare-git" };
   }
 
-  private async refresh(): Promise<void> {
-    await git(["pull", "--ff-only", "--quiet"], this.checkoutDir).catch(async () => {
-      await git(["fetch", "--all", "--quiet"], this.checkoutDir);
-    });
+  private async refresh(options: { forceRemote?: boolean; allowStaleReadCache?: boolean } = {}): Promise<void> {
+    if (!options.forceRemote && await isGitRegistryCacheFresh(this.checkoutDir)) {
+      return;
+    }
+    try {
+      await git(["pull", "--ff-only", "--quiet"], this.checkoutDir).catch(async () => {
+        await git(["fetch", "--all", "--quiet"], this.checkoutDir);
+      });
+      await writeGitRegistryCacheMetadata(this.checkoutDir, { repoUrl: this.repoUrl, refreshedAt: new Date().toISOString() });
+    } catch (err) {
+      if (options.allowStaleReadCache && await hasGitRegistryCheckout(this.checkoutDir)) {
+        return;
+      }
+      throw new DomainError("CLI_NETWORK_ERROR", `Failed to refresh git registry: ${this.repoUrl}`, { cause: err });
+    }
   }
 
   async listSkills(query = ""): Promise<RegistrySkillEntry[]> {
-    await this.refresh();
+    await this.refresh({ allowStaleReadCache: true });
     const items = await this.scanSkills();
     const q = query.trim().toLowerCase();
     return items
@@ -123,7 +116,7 @@ export class GitRegistryBackend implements RegistryBackend {
   }
 
   async getSkillOverview(skillID: string): Promise<RegistrySkillOverview> {
-    await this.refresh();
+    await this.refresh({ allowStaleReadCache: true });
     const entries = (await this.scanSkills()).filter((item) => item.skill_id === skillID);
     if (entries.length === 0) {
       throw notFoundError();
@@ -136,7 +129,7 @@ export class GitRegistryBackend implements RegistryBackend {
   }
 
   async getSkillVersion(skillID: string, version: string): Promise<RegistrySkillDetail> {
-    await this.refresh();
+    await this.refresh({ allowStaleReadCache: true });
     return this.getSkillVersionNoRefresh(skillID, version);
   }
 
@@ -187,7 +180,7 @@ export class GitRegistryBackend implements RegistryBackend {
   }
 
   async publishSkill(request: PublishSkillRequest): Promise<RegistrySkillEntry> {
-    await this.refresh();
+    await this.refresh({ forceRemote: true });
     const { body, contentType } = request;
     if (body === undefined) {
       throw invalidArgumentError("missing request body");
@@ -230,7 +223,7 @@ export class GitRegistryBackend implements RegistryBackend {
   }
 
   async deleteSkill(skillID: string, version: string, _auth?: WriteAuth): Promise<void> {
-    await this.refresh();
+    await this.refresh({ forceRemote: true });
     const versionDir = await this.findSkillVersionDir(skillID, version);
     await rm(versionDir, { recursive: true, force: true });
     await cleanupEmptyParents(dirname(versionDir), this.checkoutDir);
@@ -238,7 +231,7 @@ export class GitRegistryBackend implements RegistryBackend {
   }
 
   async listAgentsMD(query = ""): Promise<RegistryAgentsMDEntry[]> {
-    await this.refresh();
+    await this.refresh({ allowStaleReadCache: true });
     const items = await this.scanAgentsMD();
     const q = query.trim().toLowerCase();
     return items
@@ -278,7 +271,7 @@ export class GitRegistryBackend implements RegistryBackend {
   }
 
   async getAgentsMDOverview(agentsmdID: string): Promise<RegistryAgentsMDOverview> {
-    await this.refresh();
+    await this.refresh({ allowStaleReadCache: true });
     const items = (await this.scanAgentsMD()).filter((item) => item.agentsmd_id === agentsmdID);
     if (items.length === 0) {
       throw notFoundError();
@@ -291,7 +284,7 @@ export class GitRegistryBackend implements RegistryBackend {
   }
 
   async getAgentsMDVersion(agentsmdID: string, version: string): Promise<RegistryAgentsMDDetail> {
-    await this.refresh();
+    await this.refresh({ allowStaleReadCache: true });
     return this.getAgentsMDVersionNoRefresh(agentsmdID, version);
   }
 
@@ -307,7 +300,7 @@ export class GitRegistryBackend implements RegistryBackend {
   }
 
   async publishAgentsMD(request: PublishAgentsMDRequest): Promise<RegistryAgentsMDEntry> {
-    await this.refresh();
+    await this.refresh({ forceRemote: true });
     const created = await this.writeAgentsMD({
       agentsmd_id: request.agentsmdID,
       version: request.version,
@@ -351,7 +344,7 @@ export class GitRegistryBackend implements RegistryBackend {
   }
 
   async deleteAgentsMD(agentsmdID: string, version: string, _auth?: WriteAuth): Promise<void> {
-    await this.refresh();
+    await this.refresh({ forceRemote: true });
     const versionDir = await this.findAgentsMDVersionDir(agentsmdID, version);
     await rm(versionDir, { recursive: true, force: true });
     await cleanupEmptyParents(dirname(versionDir), join(this.checkoutDir, "agentsmd"));
@@ -359,7 +352,7 @@ export class GitRegistryBackend implements RegistryBackend {
   }
 
   async exportResources(type: RegistryMigrationType = "all"): Promise<RegistryMigrationBundle> {
-    await this.refresh();
+    await this.refresh({ allowStaleReadCache: true });
     const bundle: RegistryMigrationBundle = {
       type,
       skills: [],
@@ -381,7 +374,7 @@ export class GitRegistryBackend implements RegistryBackend {
   }
 
   async importResources(bundle: RegistryMigrationBundle, options: RegistryImportOptions = {}): Promise<RegistryImportResult> {
-    await this.refresh();
+    await this.refresh({ forceRemote: true });
     const result: RegistryImportResult = {
       imported: [],
       skipped: [],
@@ -493,6 +486,7 @@ export class GitRegistryBackend implements RegistryBackend {
       this.checkoutDir
     );
     await git(["push", "origin", "HEAD"], this.checkoutDir);
+    await writeGitRegistryCacheMetadata(this.checkoutDir, { repoUrl: this.repoUrl, refreshedAt: new Date().toISOString() });
   }
 }
 
@@ -506,6 +500,81 @@ function normalizeGitServer(server: string): string {
     return trimmed.slice(4);
   }
   return trimmed;
+}
+
+type GitRegistryCacheMetadata = {
+  repoUrl: string;
+  refreshedAt?: string;
+};
+
+async function ensureGitRegistryCacheCheckout(repoUrl: string): Promise<string> {
+  const checkoutDir = join(getGitRegistryCacheRoot(), hashGitRegistryRepo(repoUrl), "checkout");
+  if (await hasGitRegistryCheckout(checkoutDir)) {
+    return checkoutDir;
+  }
+  await mkdir(dirname(checkoutDir), { recursive: true });
+  try {
+    await git(["clone", "--quiet", repoUrl, checkoutDir], process.cwd());
+    await writeGitRegistryCacheMetadata(checkoutDir, { repoUrl, refreshedAt: new Date().toISOString() });
+    return checkoutDir;
+  } catch (err) {
+    await rm(dirname(checkoutDir), { recursive: true, force: true }).catch(() => undefined);
+    throw new DomainError("CLI_NETWORK_ERROR", `Failed to clone git registry: ${repoUrl}`, { cause: err });
+  }
+}
+
+function getGitRegistryCacheRoot(): string {
+  const configured = String(process.env.SKUARE_GIT_CACHE_DIR || "").trim();
+  if (configured) {
+    return resolve(configured);
+  }
+  return join(homedir(), ".skuare", "cache", "git-registry");
+}
+
+function getGitRegistryCacheTTL(): number {
+  const raw = Number(process.env.SKUARE_GIT_CACHE_TTL_SEC || "");
+  if (Number.isFinite(raw) && raw > 0) {
+    return raw * 1000;
+  }
+  return gitRegistryCacheTTLMilliseconds;
+}
+
+function hashGitRegistryRepo(repoUrl: string): string {
+  return createHash("sha256").update(repoUrl).digest("hex");
+}
+
+async function hasGitRegistryCheckout(checkoutDir: string): Promise<boolean> {
+  const gitDir = join(checkoutDir, ".git");
+  const info = await stat(gitDir).catch(() => undefined);
+  return Boolean(info);
+}
+
+async function isGitRegistryCacheFresh(checkoutDir: string): Promise<boolean> {
+  const metadata = await readGitRegistryCacheMetadata(checkoutDir);
+  if (!metadata?.refreshedAt) {
+    return false;
+  }
+  const refreshedAt = Date.parse(metadata.refreshedAt);
+  if (!Number.isFinite(refreshedAt)) {
+    return false;
+  }
+  return Date.now() - refreshedAt < getGitRegistryCacheTTL();
+}
+
+async function readGitRegistryCacheMetadata(checkoutDir: string): Promise<GitRegistryCacheMetadata | undefined> {
+  const raw = await readFile(join(checkoutDir, gitRegistryCacheMetadataFile), "utf8").catch(() => undefined);
+  if (!raw) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(raw) as GitRegistryCacheMetadata;
+  } catch {
+    return undefined;
+  }
+}
+
+async function writeGitRegistryCacheMetadata(checkoutDir: string, metadata: GitRegistryCacheMetadata): Promise<void> {
+  await writeFile(join(checkoutDir, gitRegistryCacheMetadataFile), JSON.stringify(metadata, null, 2) + "\n", "utf8");
 }
 
 function buildRegistryCommitMessage(
@@ -578,10 +647,6 @@ function toParsedSkillUpload(detail: RegistrySkillDetail): ParsedSkillUpload {
       content: file.encoding === "base64" ? Buffer.from(file.content, "base64") : Buffer.from(file.content, "utf8"),
     })),
   };
-}
-
-function isAlreadyExistsImportError(err: unknown): boolean {
-  return err instanceof DomainError && err.code === "SKILL_VERSION_ALREADY_EXISTS";
 }
 
 function sameSkillContent(left: RegistrySkillDetail, right: RegistrySkillDetail): boolean {

@@ -85,7 +85,8 @@ skr --server git+file:///tmp/skuare-registry.git list
 注意：
 - `skr remote source add --git` 只接受 SSH Git 地址，例如 `git@github.com:team/skuare-registry.git` 或 `ssh://git@github.com/team/skuare-registry.git`。
 - `git+file://` 与 `git+https://` 仍可通过 `--server` 直接使用，但不会被 `remote source add --git` 接受。
-- Git backend 会在每次远端写操作后自动提交并推送；当前 commit message 模板为 `registry(<resource>): <action> <id>@<version>`。
+- Git backend 会把远端仓库缓存到本地目录，默认缓存根为 `~/.skuare/cache/git-registry`，读缓存 TTL 默认为 1 天。
+- Git backend 会在远端写操作时自动提交并推送；当前 commit message 模板为 `registry(<resource>): <action> <id>@<version>`。
 - `skr remote migrate` 在 Git backend 下会整批导入后统一提交，因此不会再为每个 skill 单独 `commit/push`。
 - Git 仓库目录布局需要保持为：
   - Skill：`<repoRoot>/<author>/<skillID>/<version>/...`
