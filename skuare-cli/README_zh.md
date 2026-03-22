@@ -79,8 +79,12 @@ skuare --server git+file:///tmp/skuare-registry.git list
 约束与说明：
 - `remote source add --git` 只接受 SSH Git 地址，会规范化保存为 `git+ssh://...`
 - `git+file://` 与 `git+https://` 只支持通过 `--server` 直接使用，不支持写入命名 source
-- Git backend 的远端写操作会自动执行 `clone/pull/commit/push`
+- Git backend 会把远端仓库缓存到本地目录，默认缓存根为 `~/.skuare/cache/git-registry`，读缓存 TTL 默认为 1 天
+- Git backend 的远端写操作会自动执行 `pull/commit/push`；只读命令在缓存未过期时直接使用本地缓存
 - 当前 commit message 模板统一为 `registry(<resource>): <action> <id>@<version>`
+- 可选环境变量：
+  - `SKUARE_GIT_CACHE_DIR`：覆盖 Git registry 本地缓存根目录
+  - `SKUARE_GIT_CACHE_TTL_SEC`：覆盖缓存 TTL，单位秒，默认 `86400`
 - 远端模式：
   - `remote.mode=local`：表示目标服务端处于本地模式，是否允许无签名写操作由服务端自己决定
   - `remote.mode=remote`：表示目标服务端处于远端模式，通常要求签名写请求

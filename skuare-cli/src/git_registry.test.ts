@@ -169,6 +169,43 @@ test("git registry bulk import skips unchanged versions without creating extra c
   }
 });
 
+test("git registry reuses fresh local cache for readonly access", async () => {
+  const repo = await createGitRegistry();
+  const cacheDir = await mkdtemp(join(tmpdir(), "skuare-git-cache-"));
+  const previousCacheDir = process.env.SKUARE_GIT_CACHE_DIR;
+  const previousCacheTTL = process.env.SKUARE_GIT_CACHE_TTL_SEC;
+
+  process.env.SKUARE_GIT_CACHE_DIR = cacheDir;
+  process.env.SKUARE_GIT_CACHE_TTL_SEC = "86400";
+
+  try {
+    await seedRegistry(repo);
+    const firstBackend = await getRegistryBackend(repo.server);
+    const firstItems = await firstBackend.listSkills();
+    assert.equal(firstItems.length, 1);
+
+    await rm(repo.remoteDir, { recursive: true, force: true });
+
+    const secondBackend = await getRegistryBackend(repo.server);
+    const secondItems = await secondBackend.listSkills();
+    assert.equal(secondItems.length, 1);
+    assert.equal(secondItems[0].skill_id, "demo-skill");
+  } finally {
+    if (previousCacheDir === undefined) {
+      delete process.env.SKUARE_GIT_CACHE_DIR;
+    } else {
+      process.env.SKUARE_GIT_CACHE_DIR = previousCacheDir;
+    }
+    if (previousCacheTTL === undefined) {
+      delete process.env.SKUARE_GIT_CACHE_TTL_SEC;
+    } else {
+      process.env.SKUARE_GIT_CACHE_TTL_SEC = previousCacheTTL;
+    }
+    await rm(cacheDir, { recursive: true, force: true });
+    await rm(repo.rootDir, { recursive: true, force: true });
+  }
+});
+
 async function createGitRegistry(): Promise<{ rootDir: string; remoteDir: string; server: string }> {
   const rootDir = await mkdtemp(join(tmpdir(), "skuare-git-registry-"));
   const remoteDir = join(rootDir, "remote.git");
