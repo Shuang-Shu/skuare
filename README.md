@@ -101,13 +101,16 @@ make start-be LOCAL_MODE=true DAEMON=true
 
 # 2) Install dependencies and CLI entry
 make install
-export PATH=/tmp/skuare-bin/bin:$PATH
+# By default this links skr to /usr/local/bin/skr on Linux.
+# If /usr/local/bin is not writable, use sudo or override the target:
+# make install PREFIX=$HOME/.local
 
 # If the repo already has skuare-cli/dist, skr will reuse the pre-built artifacts;
 # It will only rebuild when needed and local TypeScript toolchain is available.
 # If falling back to old dist, `skr remote publish ...` will bridge to old command `publish ...` or `create ...` for basic compatibility.
 # `make install` requires local `npm` and `go` in PATH; it installs `skuare-cli` dependencies,
-# runs `go mod download` for `skuare-svc`, and then registers `skr` into `LOCAL_BIN`.
+# runs `go mod download` for `skuare-svc`, and then registers `skr` into `BINDIR`
+# (default `/usr/local/bin`, override with `PREFIX=/path` or `BINDIR=/path`).
 
 # 3) Initialize (optional)
 skr init
