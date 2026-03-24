@@ -129,13 +129,16 @@ make start-be LOCAL_MODE=true DAEMON=true
 
 # 2) 安装依赖并注册 CLI
 make install
-export PATH=/tmp/skuare-bin/bin:$PATH
+# Linux 默认会把 skr 链接到 /usr/local/bin/skr。
+# 若 /usr/local/bin 不可写，可用 sudo，或覆盖目标目录：
+# make install PREFIX=$HOME/.local
 
 # 若仓库已自带 skuare-cli/dist，skr 会优先复用预构建产物；
 # 只有在需要重建且本地具备 TypeScript 工具链时才会重新编译。
 # 若当前只能回退到旧 dist，`skr remote publish ...` 会桥接为旧命令 `publish ...` 或 `create ...` 以保持基础兼容。
 # `make install` 依赖本机 PATH 中已存在 `npm` 和 `go`；
-# 它会先安装 `skuare-cli` 依赖、执行 `skuare-svc` 的 `go mod download`，再把 `skr` 注册到 `LOCAL_BIN`。
+# 它会先安装 `skuare-cli` 依赖、执行 `skuare-svc` 的 `go mod download`，再把 `skr` 注册到 `BINDIR`
+#（默认 `/usr/local/bin`，可用 `PREFIX=/path` 或 `BINDIR=/path` 覆盖）。
 
 # 3) 初始化（可选）
 skr init

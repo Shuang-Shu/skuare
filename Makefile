@@ -18,7 +18,9 @@ VERSION ?=
 FILE ?=
 SKILL_FILE ?=
 SKILL_DIR ?=
-LOCAL_BIN ?= /tmp/skuare-bin/bin
+PREFIX ?= /usr/local
+BINDIR ?= $(if $(LOCAL_BIN),$(LOCAL_BIN),$(PREFIX)/bin)
+LOCAL_BIN ?=
 RELEASE_REPO ?=
 SVC_VERSION ?= latest
 
@@ -31,7 +33,7 @@ help:
 	@echo "  make stop-be                   # 停止后台守护的 skuare-svc"
 	@echo "  make start-cli                 # 启动 CLI（默认 help）"
 	@echo "  make start-cli CLI_ARGS='...'  # 传入 CLI 参数"
-	@echo "  make install                   # 安装前后端依赖并注册 skr 到本地 bin"
+	@echo "  make install                   # 安装前后端依赖并将 skr 链接到 Linux 默认可执行目录"
 	@echo "  make install-skr               # 兼容别名：仅注册链接目标名已迁移到 make install"
 	@echo "  make install-backend RELEASE_REPO=owner/repo [SVC_VERSION=v0.1.0]"
 	@echo "  make <write-op> KEY_ID=... PRIVKEY_FILE=...  # 写操作需提供签名参数"
@@ -59,11 +61,12 @@ install-svc-deps:
 	cd skuare-svc && GOCACHE=$(GOCACHE) go mod download
 
 install-link:
-	mkdir -p $(LOCAL_BIN)
+	mkdir -p $(BINDIR)
 	chmod +x ./skr
-	ln -sf $(abspath ./skr) $(LOCAL_BIN)/skr
-	@echo "skr installed at: $(LOCAL_BIN)/skr"
-	@echo "Add to PATH if needed: export PATH=$(LOCAL_BIN):\$$PATH"
+	ln -sf $(abspath ./skr) $(BINDIR)/skr
+	@echo "skr installed at: $(BINDIR)/skr"
+	@echo "Default Linux install dir is $(PREFIX)/bin; override with PREFIX=/path or BINDIR=/path if needed"
+	@echo "If $(BINDIR) is not writable, rerun with sudo or use a writable BINDIR"
 
 start-be:
 	@if [ "$(DAEMON)" = "true" ]; then \
