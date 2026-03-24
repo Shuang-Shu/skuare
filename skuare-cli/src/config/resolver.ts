@@ -4,6 +4,7 @@
 
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { stat } from "node:fs/promises";
 import type { CliArgs, SkuareConfig } from "../types";
 import { DEFAULT_CONFIG_DIR_NAME, DEFAULT_CONFIG_FILE_NAME, createDefaultConfig } from "../types";
 import { resolveInstallTargetRoot } from "../utils/install_paths";
@@ -43,6 +44,13 @@ export function getGlobalConfigPath(): string {
  */
 export function getWorkspaceConfigPath(cwd: string): string {
   return join(cwd, DEFAULT_CONFIG_DIR_NAME, DEFAULT_CONFIG_FILE_NAME);
+}
+
+/**
+ * 获取工作区本地仓库目录
+ */
+export function getWorkspaceRepoDirPath(cwd: string): string {
+  return join(cwd, DEFAULT_CONFIG_DIR_NAME);
 }
 
 /**
@@ -87,10 +95,53 @@ export function getGlobalRepoDirPath(): string {
 }
 
 /**
- * 获取工作区本地仓库目录
+ * 从 cwd 开始逐级向上枚举 workspace 仓库目录路径，直到文件系统根目录。
  */
-export function getWorkspaceRepoDirPath(cwd: string): string {
-  return join(cwd, DEFAULT_CONFIG_DIR_NAME);
+export function getWorkspaceRepoLookupPaths(cwd: string): string[] {
+  const paths: string[] = [];
+  let current = resolve(cwd);
+
+  while (true) {
+    paths.push(getWorkspaceRepoDirPath(current));
+    const parent = dirname(current);
+    if (parent === current) {
+      break;
+    }
+    current = parent;
+  }
+
+  return paths;
+}
+
+export type WorkspaceRepoLookupResult = {
+  workspaceRoot: string;
+  repoDir: string;
+  isGlobalHomeRepo: boolean;
+};
+
+/**
+ * 从 cwd 开始逐级向上查找最近的 `.skuare` 目录。
+ */
+export async function findNearestWorkspaceRepo(
+  cwd: string
+): Promise<WorkspaceRepoLookupResult | undefined> {
+  const globalRepoDir = resolve(getGlobalRepoDirPath());
+
+  for (const repoDir of getWorkspaceRepoLookupPaths(cwd)) {
+    const info = await stat(repoDir).catch(() => undefined);
+    if (!info?.isDirectory()) {
+      continue;
+    }
+    const absoluteRepoDir = resolve(repoDir);
+    const workspaceRoot = dirname(absoluteRepoDir);
+    return {
+      workspaceRoot,
+      repoDir: absoluteRepoDir,
+      isGlobalHomeRepo: absoluteRepoDir === globalRepoDir,
+    };
+  }
+
+  return undefined;
 }
 
 /**
@@ -160,10 +211,10 @@ export function resolveToolSkillsDir(cwd: string, tool: string, configured?: str
  */
 export async function resolveConfig(cwd: string, cli: CliArgs): Promise<ResolvedConfig> {
   const globalPath = getGlobalConfigPath();
-  const workspacePath = getWorkspaceConfigPath(cwd);
 
   const globalCfg = await loadConfig(globalPath);
-  const workspaceCfg = await loadConfig(workspacePath);
+  const workspaceFound = await findNearestWorkspaceConfig(cwd);
+  const workspaceCfg = workspaceFound?.config;
   const merged = mergeConfig(createDefaultConfig(), globalCfg, workspaceCfg);
 
   const envServer = process.env.SKUARE_SVC_URL;

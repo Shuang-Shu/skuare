@@ -133,6 +133,7 @@ test("get resolves name selector with explicit version via shared catalog select
   });
 
   try {
+    await mkdir(join(workspace, ".skuare"), { recursive: true });
     const logs = await captureConsole(async () => {
       await new GetCommand().execute(createContext(workspace, ["root-skill", "1.0.0", "--wrap"]));
     });

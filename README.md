@@ -79,7 +79,8 @@ skr --server git+file:///tmp/skuare-registry.git list
 - `skr build <skillName> [refSkill...] [--all]`: automatically create or append dependency files (`skill-deps.json` / `skill-deps.lock.json`) for a local Skill. When the target Skill does not exist, it interactively creates a minimal `SKILL.md` template first. Supports `alias=refSkill`; `--all` uses all valid Skill directories in the current directory as references.
 - `skr detail <skillName|skillID> [relativePath...]`: show files under a local installed Skill. Defaults to the target Skill's `SKILL.md` when no path is provided.
 - `skr get <skill-ref> [version] [--global] [--wrap] [--slink]`: fetch a Skill from a remote registry. When directly targeting one Skill, `peek/get/deps` share the same selector logic for `skillID`, `name`, and `author/name`.
-  - Without `--global`: install to every configured tool's workspace Skill directory, by default `<cwd>/.{llmTool}/skills/<skillID>/`
+  - Without `--global`: walk upward from `cwd` to the nearest directory containing `.skuare`, then install to every configured tool's workspace Skill directory, by default `<workspace-root>/.{llmTool}/skills/<skillID>/`
+  - If upward lookup only finds `~/.skuare`, `skr get` refuses to treat it as a workspace and asks you to run `skr init` in the project first
   - With `--global`: install to every configured tool's global Skill directory, by default `~/.{llmTool}/skills/<skillID>/`
   - `--global` changes install location only; the configured tool set stays the same
   - `--slink` creates symlinks to the local CLI repository Skill directory instead of copying remote files

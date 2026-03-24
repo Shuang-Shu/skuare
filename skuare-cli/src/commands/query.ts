@@ -8,6 +8,7 @@ import type { JsonValue } from "./types";
 import { lstat, mkdir, readFile, readdir, readlink, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { resolveToolSkillsDir } from "../config/resolver";
+import { findNearestWorkspaceRepo } from "../config/resolver";
 import { collectPositionalArgs, parseRegexOption, stripRegexOptions } from "../utils/command_args";
 import { resolveInstallTargetRoot, resolvePrimaryTool } from "../utils/install_paths";
 import { parseSkillFrontmatter } from "../utils/skill_manifest";
@@ -1683,11 +1684,23 @@ export class GetCommand extends DependencyAwareCommand {
   readonly name = "get";
   readonly description = "Install skill to local partial repository";
 
-  private resolveGetInstallTargets(context: CommandContext, isGlobal: boolean): InstallTargetPlan[] {
+  private async resolveWorkspaceInstallBaseDir(context: CommandContext): Promise<string> {
+    const workspaceRepo = await findNearestWorkspaceRepo(context.cwd);
+    if (!workspaceRepo) {
+      this.fail(`Workspace root not found from ${context.cwd} up to /. Run \`skr init\` in your project directory first, or pass \`--global\`.`);
+    }
+    if (workspaceRepo.isGlobalHomeRepo) {
+      this.fail(`Found only global repo at ${workspaceRepo.repoDir}. Run \`skr init\` in your project directory first, or pass \`--global\`.`);
+    }
+    return workspaceRepo.workspaceRoot;
+  }
+
+  private async resolveGetInstallTargets(context: CommandContext, isGlobal: boolean): Promise<InstallTargetPlan[]> {
     const tools = Array.from(new Set((context.llmTools || []).map((value) => value.trim()).filter(Boolean)));
+    const installBaseDir = isGlobal ? context.cwd : await this.resolveWorkspaceInstallBaseDir(context);
     const targets = new Map<string, string[]>();
     for (const tool of tools) {
-      const targetRoot = this.resolveInstallTargetRoot(context.cwd, tool, context.toolSkillDirs[tool], isGlobal);
+      const targetRoot = this.resolveInstallTargetRoot(installBaseDir, tool, context.toolSkillDirs[tool], isGlobal);
       const existing = targets.get(targetRoot);
       if (existing) {
         existing.push(tool);
@@ -1743,12 +1756,13 @@ export class GetCommand extends DependencyAwareCommand {
       versionArg = resolved.version;
     }
 
-    const installTargets = this.resolveGetInstallTargets(skillContext, isGlobal);
+    const installTargets = await this.resolveGetInstallTargets(skillContext, isGlobal);
     const primaryTool = isGlobal
       ? installTargets.flatMap((entry) => entry.tools)[0] || this.resolvePrimaryTool(skillContext.llmTools)
       : this.resolvePrimaryTool(skillContext.llmTools);
+    const installBaseDir = isGlobal ? skillContext.cwd : await this.resolveWorkspaceInstallBaseDir(skillContext);
     const primaryTargetRoot = installTargets[0]?.targetRoot || this.resolveInstallTargetRoot(
-      skillContext.cwd,
+      installBaseDir,
       primaryTool,
       skillContext.toolSkillDirs[primaryTool],
       isGlobal

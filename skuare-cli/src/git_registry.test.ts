@@ -21,6 +21,7 @@ test("git registry supports skill read and write flows", async () => {
 
   try {
     await seedRegistry(repo);
+    await mkdir(join(workspace, ".skuare"), { recursive: true });
     await createSkillDir(localSkillDir, "demo-skill", "team", "1.1.0", "Updated from git backend");
 
     const healthLogs = await captureConsole(async () => {

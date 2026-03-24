@@ -60,6 +60,7 @@ test("get --wrap installs only the root skill and writes wrap metadata", async (
   });
 
   try {
+    await initWorkspace(workspace);
     const logs = await captureConsole(async () => {
       await new GetCommand().execute(createContext(workspace, ["demo/root@1.0.0", "--wrap"]));
     });
@@ -99,6 +100,7 @@ test("get installs binary files returned as base64-encoded remote files", async 
   });
 
   try {
+    await initWorkspace(workspace);
     await new GetCommand().execute(createContext(workspace, ["demo/root@1.0.0"]));
     const installed = await readFile(join(workspace, ".codex", "skills", "demo", "root", "assets", "icon.bin"));
     assert.deepEqual(installed, binary);
@@ -123,6 +125,7 @@ test("get --slink creates symlinks to local CLI repository skill directories", a
   });
 
   try {
+    await initWorkspace(workspace);
     await mkdir(sourceDir, { recursive: true });
     await writeFile(join(sourceDir, "SKILL.md"), renderSkill("demo/root", "1.0.0", "Root description"), "utf8");
 
@@ -163,6 +166,7 @@ test("get --slink reuses one install target when LOCALMODE tools share the same 
   });
 
   try {
+    await initWorkspace(workspace);
     await mkdir(rootSource, { recursive: true });
     await mkdir(childSource, { recursive: true });
     await writeFile(join(rootSource, "SKILL.md"), renderSkill("demo/root", "1.0.0", "Root description"), "utf8");
@@ -216,6 +220,7 @@ test("get reports circular dependencies instead of silently skipping them", asyn
   });
 
   try {
+    await initWorkspace(workspace);
     await assert.rejects(
       () => new GetCommand().execute(createContext(workspace, ["demo/root@1.0.0"])),
       /Detected circular dependency: demo\/root@1\.0\.0 -> demo\/child@2\.0\.0 -> demo\/root@1\.0\.0/
@@ -285,6 +290,7 @@ test("get installs the same skill into all configured workspace tool directories
   });
 
   try {
+    await initWorkspace(workspace);
     const logs = await captureConsole(async () => {
       await new GetCommand().execute(createContext(workspace, ["demo/root@1.0.0"], {
         llmTools: ["codex", "claudecode", "jojo"],
@@ -350,6 +356,57 @@ test("get --global respects explicit global toolSkillDirs and ignores workspace-
     restore();
     process.env.HOME = originalHome;
     await rm(workspace, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("get installs into the nearest parent workspace root instead of the current nested directory", async () => {
+  const base = await mkdtemp(join(tmpdir(), "skuare-get-parent-workspace-"));
+  const workspace = join(base, "workspace");
+  const nested = join(workspace, "apps", "web");
+  const restore = mockFetch({
+    "GET /api/v1/skills": new Response(JSON.stringify({
+      items: [{ skill_id: "demo/root", version: "1.0.0", name: "root", author: "demo", description: "Root description" }],
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+    "GET /api/v1/skills/demo%2Froot/1.0.0": skillDetail("demo/root", "1.0.0", "Root description"),
+  });
+
+  try {
+    await initWorkspace(workspace);
+    await mkdir(nested, { recursive: true });
+    const logs = await captureConsole(async () => {
+      await new GetCommand().execute(createContext(nested, ["demo/root@1.0.0"]));
+    });
+    const output = JSON.parse(logs.join("\n")) as { target: string; targets: Array<{ target: string }> };
+
+    assert.equal(output.target, join(workspace, ".codex", "skills"));
+    assert.equal(output.targets[0]?.target, join(workspace, ".codex", "skills"));
+    assert.equal((await stat(join(workspace, ".codex", "skills", "demo", "root", "SKILL.md"))).isFile(), true);
+    await assert.rejects(stat(join(nested, ".codex", "skills", "demo", "root", "SKILL.md")), /ENOENT/);
+  } finally {
+    restore();
+    await rm(base, { recursive: true, force: true });
+  }
+});
+
+test("get warns when upward lookup only finds the global home repo and --global is omitted", async () => {
+  const home = await mkdtemp(join(tmpdir(), "skuare-get-global-home-"));
+  const workspace = join(home, "project", "nested");
+  const originalHome = process.env.HOME;
+  process.env.HOME = home;
+
+  try {
+    await mkdir(join(home, ".skuare"), { recursive: true });
+    await mkdir(workspace, { recursive: true });
+    await assert.rejects(
+      () => new GetCommand().execute(createContext(workspace, ["demo/root@1.0.0"])),
+      /Found only global repo at .*\.skuare\. Run `skr init` in your project directory first, or pass `--global`\./
+    );
+  } finally {
+    process.env.HOME = originalHome;
     await rm(home, { recursive: true, force: true });
   }
 });
@@ -432,6 +489,7 @@ test("get reuses an already installed shared child when multiple roots depend on
   });
 
   try {
+    await initWorkspace(workspace);
     const logs = await captureConsole(async () => {
       await new GetCommand().execute(createContext(workspace, ["demo/root-b@1.0.0"]));
     });
@@ -474,6 +532,7 @@ test("get blocks non-interactive overwrite when shared child version would chang
   });
 
   try {
+    await initWorkspace(workspace);
     await assert.rejects(
       () => new GetCommand().execute(createContext(workspace, ["demo/root-b@1.0.0"])),
       /Overwrite confirmation required, but current session is not interactive\.[\s\S]*demo\/shared-child:1\.0\.0->2\.0\.0 \(shared with demo\/root-a\)/
@@ -508,6 +567,7 @@ test("get cancels the whole install target when overwrite confirmation is reject
   });
 
   try {
+    await initWorkspace(workspace);
     await assert.rejects(
       () => new InteractiveGetCommand(false).execute(createContext(workspace, ["demo/root-b@1.0.0"])),
       /Install cancelled/
@@ -586,6 +646,10 @@ async function createWrappedRoot(
     }, null, 2)}\n`,
     "utf8"
   );
+}
+
+async function initWorkspace(workspace: string): Promise<void> {
+  await mkdir(join(workspace, ".skuare"), { recursive: true });
 }
 
 async function writeInstalledSkill(
