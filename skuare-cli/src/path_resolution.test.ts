@@ -117,6 +117,59 @@ test("workspace config clears inherited global toolSkillDirs so get installs int
   }
 });
 
+test("resolveConfig uses the nearest parent workspace config instead of only cwd config", async () => {
+  const base = await mkdtemp(join(tmpdir(), "skuare-config-parent-"));
+  const workspace = join(base, "workspace");
+  const nested = join(workspace, "apps", "web");
+  const home = await mkdtemp(join(tmpdir(), "skuare-config-home-"));
+  const originalHome = process.env.HOME;
+  process.env.HOME = home;
+
+  try {
+    await mkdir(join(home, ".skuare"), { recursive: true });
+    await writeConfig(join(home, ".skuare", "config.json"), {
+      remote: {
+        mode: "local",
+        address: "global.example",
+        port: 15657,
+      },
+      auth: {
+        keyId: "",
+        privateKeyFile: "",
+      },
+      llmTools: ["codex"],
+      toolSkillDirs: {},
+    });
+    await mkdir(join(workspace, ".skuare"), { recursive: true });
+    await mkdir(nested, { recursive: true });
+    await writeConfig(join(workspace, ".skuare", "config.json"), {
+      remote: {
+        mode: "local",
+        address: "workspace.example",
+        port: 16666,
+      },
+      auth: {
+        keyId: "workspace-key",
+        privateKeyFile: "/tmp/workspace.pem",
+      },
+      llmTools: ["qwen"],
+      toolSkillDirs: {
+        qwen: "./custom-qwen-skills",
+      },
+    });
+
+    const resolved = await resolveConfig(nested, { rest: [] });
+    assert.equal(resolved.server, "http://workspace.example:16666");
+    assert.deepEqual(resolved.merged.llmTools, ["qwen"]);
+    assert.deepEqual(resolved.merged.toolSkillDirs, { qwen: "./custom-qwen-skills" });
+    assert.equal(resolved.auth.keyId, "workspace-key");
+  } finally {
+    process.env.HOME = originalHome;
+    await rm(base, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 test("resolveConfig prefers configured default remote source before legacy remote.address", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "skuare-source-config-"));
   const home = await mkdtemp(join(tmpdir(), "skuare-source-home-"));
